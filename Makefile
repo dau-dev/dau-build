@@ -3,13 +3,13 @@ tests: ## Make unit tests
 test: tests # alias
 
 lint: ## run linter
-	python -m isort --check dau_build setup.py
-	python -m ruff check dau_build setup.py
-	python -m ruff format --check dau_build setup.py
+	python -m isort --check dau_build *.py
+	python -m ruff check dau_build *.py
+	python -m ruff format --check dau_build *.py
 
 fix:  ## run black fix
-	python -m isort dau_build/ setup.py
-	python -m ruff format dau_build/ setup.py
+	python -m isort dau_build/ *.py
+	python -m ruff format dau_build/ *.py
 
 check:  ## run manifest checks
 	check-manifest -v
@@ -17,7 +17,8 @@ check:  ## run manifest checks
 clean: ## clean the repository
 	find . -name "__pycache__" | xargs  rm -rf
 	find . -name "*.pyc" | xargs rm -rf
-	rm -rf .coverage cover htmlcov logs build dist *.egg-info
+	rm -rf .coverage cover htmlcov logs build dist *.egg-info .ruff_cache
+	rm -rf finn-build*
 
 install:  ## install to site-packages
 	python -m pip install .

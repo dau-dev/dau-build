@@ -3,8 +3,14 @@ include LICENSE
 include README.md
 
 include pyproject.toml
+
+# Dev / CI
 exclude .bumpversion.cfg
 exclude Makefile
+exclude end_to_end*.py
+prune .github
+prune .ruff_cache
+prune finn-build-*
 
 # Patterns to exclude from any directory
 global-exclude *~
