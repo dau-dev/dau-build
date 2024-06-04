@@ -1,25 +1,38 @@
-# from qonnx.core.datatype import DataType
+from logging import getLogger
 from qonnx.transformation.fold_constants import FoldConstants
 from qonnx.transformation.general import GiveReadableTensorNames, GiveUniqueNodeNames, RemoveStaticGraphInputs, RemoveUnusedTensors
 from qonnx.transformation.infer_data_layouts import InferDataLayouts
 from qonnx.transformation.infer_datatypes import InferDataTypes
 from qonnx.transformation.infer_shapes import InferShapes
 
-# print("Step 3: Tidying Model")
-# global_inp_name = model.graph.input[0].name
-# model.set_tensor_datatype(global_inp_name, DataType["INT32"])
+__all__ = (
+    "FoldConstants",
+    "GiveUniqueNodeNames",
+    "InferDataLayouts",
+    "InferDataTypes",
+    "InferShapes",
+    "RemoveStaticGraphInputs",
+    "RemoveUnusedTensors",
+    "tidy_model",
+)
+
+log = getLogger(__name__)
 
 
 def tidy_model(model):
-    model = model.transform(InferShapes())
-    model = model.transform(FoldConstants())
-    # model = model.transform(InsertTopK())
-    # model = model.transform(AbsorbScalarMulAddIntoTopK())
-    model = model.transform(InferShapes())
-    model = model.transform(InferDataTypes())
-    model = model.transform(InferDataLayouts())
-    model = model.transform(GiveUniqueNodeNames())
-    model = model.transform(GiveReadableTensorNames())
-    model = model.transform(RemoveStaticGraphInputs())
-    model = model.transform(RemoveUnusedTensors())
+    for t in (
+        InferShapes,
+        FoldConstants,
+        # InsertTopK
+        # AbsorbScalarMulAddIntoTopK
+        InferShapes,
+        InferDataTypes,
+        InferDataLayouts,
+        GiveUniqueNodeNames,
+        GiveReadableTensorNames,
+        RemoveStaticGraphInputs,
+        RemoveUnusedTensors,
+    ):
+        log.info(f"Transforming model with {t.__name__}")
+        model = model.transform(t())
     return model
