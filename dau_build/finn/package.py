@@ -1,5 +1,6 @@
+from datetime import datetime
 from distutils.dir_util import copy_tree
-from shutil import copy
+from shutil import copy, make_archive
 
 from finn.util.basic import make_build_dir
 
@@ -26,3 +27,7 @@ def package(model):
     iname = model.graph.input[0].name
     ishape = model.get_tensor_shape(iname)
     print("\tExpected network input shape is " + str(ishape))
+
+    zip = f"deploy-on-pynq-simplenet-{datetime.now().strftime('%Y%m%d-%H-%M-%S')}"
+    make_archive(zip, "zip", deployment_dir)
+    print(f"Assets ready: {zip}")

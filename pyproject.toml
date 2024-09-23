@@ -27,7 +27,59 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 
+# https://github.com/Xilinx/finn/blob/dev/fetch-repos.sh
+# "https://github.com/xilinx/brevitas/archive/84f42259ec869eb151af4cb8a8b23ad925f493db.zip",
+# "https://github.com/xilinx/maltanar/pyverilator/ce0a08c20cb8c1d1e84181d6f392390f846adbd1.zip",
+# "https://github.com/xilinx/finn/archive/39fb8859fec0e47276ffadcafe43092d1b10af7e.zip",
+# "https://github.com/Xilinx/finn-experimental/archive/7a587b2ccc8fbd4daaec946f3bc66c273f85451b.zip",
+# "https://github.com/xilinx/finn-hlslib/archive/16e5847a5e3ef76cffe84c8fad2f010d593457d3.zip",
+# "https://github.com/fastmachinelearning/qonnx/archive/fd61cfeebbdaba351abf7e9d54cd785d7776fa4f.zip",
 dependencies = [
+    # Core
+    "brevitas@git+https://github.com/xilinx/brevitas#egg=84f42259ec869eb151af4cb8a8b23ad925f493db",
+    "pyverilator@git+https://github.com/maltanar/pyverilator#egg=ce0a08c20cb8c1d1e84181d6f392390f846adbd1",
+    "finn@git+https://github.com/xilinx/finn#egg=39fb8859fec0e47276ffadcafe43092d1b10af7e",
+    "finn-experimental@git+https://github.com/xilinx/finn-experimental#egg=7a587b2ccc8fbd4daaec946f3bc66c273f85451b",
+    # "finn-hlslib@git+https://github.com/xilinx/finn-hlslib#egg=16e5847a5e3ef76cffe84c8fad2f010d593457d3",
+    "qonnx@git+https://github.com/fastmachinelearning/qonnx#egg=fd61cfeebbdaba351abf7e9d54cd785d7776fa4f",
+
+    # Normal ones
+    "bitstring",
+    "clize",
+    "dataclasses-json",
+    "gspread==3.6.0",
+    "importlib-resources",
+    "ipython",
+    "numpy",
+    "onnx",
+    "onnxoptimizer",
+    "onnxruntime",
+    "protobuf>=3.20,<4",
+    "psutil",
+    "pyscaffold==4.4",
+    "scipy",
+    "setupext-janitor>=1.1.2",
+    "setuptools",
+    "sigtools",
+    "toposort",
+    "torch==1.13.1",
+    "torchvision==0.14.1",
+    "torchaudio==0.13.1",
+    "jupyterlab>=4",
+    "matplotlib>=3.7",
+    "netron>=5.0.0",
+    "pandas>=1.5,<2",
+    "scikit-learn>=1.2,<1.3",
+    "tqdm",
+    "deap",
+    "mip",
+    "networkx",
+    "future-annotations",
+    "tokenize-rt==4.2.1",
+    "tclwrapper",
+
+    # Extras
+    "colorlog",
 ]
 
 [project.optional-dependencies]
@@ -95,4 +147,4 @@ known-first-party = ["dau_build"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["F401", "F403"]
