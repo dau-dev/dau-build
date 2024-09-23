@@ -32,9 +32,9 @@ dependencies = [
 
 [project.optional-dependencies]
 develop = [
+    "bump-my-version",
     "check-manifest",
-    "isort>=5,<6",
-    "ruff>=0.3,<0.4",
+    "ruff>=0.5,<0.6",
     # test
     "pytest",
     "pytest-cov",
@@ -48,23 +48,51 @@ test = [
 repository = "https://github.com/dau-dev/dau-build"
 homepage = "https://github.com/dau-dev/dau-build"
 
-[tool.isort]
-combine_as_imports = true
-include_trailing_comma = true
-line_length = 150
-profile = "black"
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = false
 
-default_section = "THIRDPARTY"
-sections = "FUTURE,THIRDPARTY,FIRSTPARTY,LOCALFOLDER"
+[[tool.bumpversion.files]]
+filename = "dau_build/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
 
-known_first_party = "dau_build"
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[tool.coverage.run]
+branch = true
+omit = [
+    "dau_build/tests/integration/",
+]
+[tool.coverage.report]
+exclude_also = [
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+fail_under = 50
 
 [tool.pytest.ini_options]
+addopts = ["-vvv", "--junitxml=junit.xml"]
 asyncio_mode = "strict"
 testpaths = "dau_build/tests"
 
 [tool.ruff]
 line-length = 150
 
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+default-section = "third-party"
+known-first-party = ["dau_build"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401", "F403"]
+"__init__.py" = ["F401"]

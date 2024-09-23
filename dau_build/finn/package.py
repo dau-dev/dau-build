@@ -1,6 +1,7 @@
 from distutils.dir_util import copy_tree
-from finn.util.basic import make_build_dir
 from shutil import copy
+
+from finn.util.basic import make_build_dir
 
 
 def package(model):
