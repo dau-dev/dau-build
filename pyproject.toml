@@ -23,7 +23,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-dependencies = []
+dependencies = [
+    "amaranth",
+    "pydantic",
+    "pyslang",
+    "typing_extensions",
+]
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
@@ -113,4 +118,4 @@ known-first-party = ["dau_build"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["F401", "F403"]
