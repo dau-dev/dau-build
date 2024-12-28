@@ -1,8 +1,27 @@
-from typing import List, Literal, Optional
+from __future__ import annotations
 
-from amaranth.lib.wiring import Component, In, Module, Out
+from typing import Literal
+
+from amaranth import Instance
+from amaranth.lib.wiring import Component, In, Out
 from pydantic import BaseModel, Field, model_validator
-from pyslang import ImplicitAnsiPortSyntax, SyntaxNode, SyntaxTree
+from pyslang import (
+    HierarchyInstantiationSyntax,
+    IdentifierNameSyntax,
+    ImplicitAnsiPortSyntax,
+    ImplicitTypeSyntax,
+    InterfacePortHeaderSyntax,
+    ModportDeclarationSyntax,
+    ModportNamedPortSyntax,
+    ModportSimplePortListSyntax,
+    NamedPortConnectionSyntax,
+    OrderedPortConnectionSyntax,
+    ScopedNameSyntax,
+    SyntaxNode,
+    SyntaxTree,
+    TokenKind,
+    WildcardPortConnectionSyntax,
+)
 from typing_extensions import Self
 
 __all__ = (
@@ -25,7 +44,11 @@ class Size(BaseModel):
 
 
 class Dimensions(BaseModel):
-    dimensions: List[int] = Field(default_factory=list)
+    dimensions: list[int] = Field(default_factory=list)
+
+    @property
+    def unresolved(self) -> bool:
+        return len(self.dimensions) > 0
 
     def __str__(self):
         if len(self.dimensions) == 1:
@@ -36,19 +59,19 @@ class Dimensions(BaseModel):
             # TODO
             assert False
 
-    def size(self):
+    def size(self) -> int:
         if len(self.dimensions) == 1:
             return self.dimensions[0]
         elif len(self.dimensions) == 2:
             return self.dimensions[0] - self.dimensions[1] + 1
         else:
             # TODO
-            assert False
+            return 0
 
 
 class _Base(BaseModel):
     name: str
-    node: Optional[object] = Field(default=None)
+    node: object | None = Field(default=None)
 
     def __str__(self):
         return f"{self.__class__.__name__}({self.name})"
@@ -60,9 +83,19 @@ class _Base(BaseModel):
         raise NotImplementedError()
 
 
+class Modport(_Base):
+    name: str
+    inputs: list[Input] = Field(default_factory=list)
+    outputs: list[Output] = Field(default_factory=list)
+    modports: list["Modport"] = Field(default_factory=list)
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.name})"
+
+
 class Port(_Base):
-    keyword: Keyword
-    dimensions: Dimensions
+    keyword: Keyword = Field(default="")
+    dimensions: Dimensions = Field(default_factory=Dimensions)
 
     def __str__(self):
         return f"{self.__class__.__name__}({self.keyword} {self.dimensions} {self.name})"
@@ -82,6 +115,21 @@ class Output(Port):
         return self
 
 
+class Link(_Base):
+    # for point-to-point links
+    # like: submod_in(my_local_out)
+    input: str = Field(default="")
+    output: str = Field(default="")
+
+    # for positional links
+    connection: str = Field(default="")
+    position: int = Field(default=-1)
+
+    # for modport links
+    modport: Modport | None = Field(default=None)
+    # TODO: add validation, either input+output or modport
+
+
 class Parameter(_Base):
     value: int
 
@@ -89,10 +137,40 @@ class Parameter(_Base):
         return f"{self.__class__.__name__}({self.name}={self.value})"
 
 
+class SubModule(_Base):
+    """Submodule instantiation inside a module"""
+
+    name: str
+    type: str
+    links: list[Link] = Field(default_factory=list)
+
+
 class Module(_Base):
-    parameters: List[Parameter] = Field(default_factory=list)
-    inputs: List[Input] = Field(default_factory=list)
-    outputs: List[Output] = Field(default_factory=list)
+    parameters: list[Parameter] = Field(default_factory=list)
+    inputs: list[Input] = Field(default_factory=list)
+    outputs: list[Output] = Field(default_factory=list)
+    modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
+
+    submodules: list[SubModule] = Field(default_factory=list, description="Sub module instantiations")
+    submodports: list[Modport] = Field(default_factory=list, description="Modport instantiations")
+
+    def instance(self) -> Instance:
+        """Return an Amaranth `Instance` type correctly specified for the underlying systemverilog code
+
+        See: https://amaranth-lang.org/docs/amaranth/latest/guide.html#instances
+        """
+        # TODO pass in inputs,outputs and bind
+        # the below isnt correct
+        return Instance(
+            self.name,
+            # attributes
+            # parameters
+            # inputs
+            *(("i", i.name, i.__amaranth__) for i in self.inputs),
+            # outputs
+            *(("o", o.name, o.__amaranth__) for o in self.outputs),
+            # inouts
+        )
 
     @classmethod
     def from_str(self, st: str) -> Module:
@@ -122,6 +200,9 @@ class Module(_Base):
     def _parse_structure(self) -> Self:
         self._parse_params()
         self._parse_ports()
+        self._parse_submodules()
+        self._parse_modports()
+
         self.__amaranth__ = type(self.name, (Component,), {})
         for input in self.inputs:
             self.__amaranth__.__annotations__[input.name] = input.__amaranth__
@@ -130,9 +211,12 @@ class Module(_Base):
         return self
 
     def _parse_params(self):
-        for paramlist in self.node.header.parameters:
+        for paramlist in self.node.header.parameters or []:
             if isinstance(paramlist, SyntaxNode):
                 for param in paramlist:
+                    if param.kind == TokenKind.Comma:
+                        # Comma
+                        continue
                     for declaration in param.declarators:
                         self.parameters.append(
                             Parameter(
@@ -146,46 +230,110 @@ class Module(_Base):
         if len(self.node.header.ports) == 3:
             for port in self.node.header.ports[1]:
                 if isinstance(port, ImplicitAnsiPortSyntax):
-                    direction = port.header.direction.valueText
-                    keyword = port.header.dataType.keyword.valueText
-                    declarator = port.declarator.name.value
-                    if port.header.dataType.dimensions:
-                        if len(port.header.dataType.dimensions) == 1:
-                            left = port.header.dataType.dimensions[0].specifier[0][0]
-                            right = port.header.dataType.dimensions[0].specifier[0][2]
-                            # TODO
-                            # print(eval(left.__str__(), {"SIZE": 30}))
-                            dimensions = [
-                                int(eval(left.__str__(), {p.name: p.value for p in self.parameters})),
-                                int(eval(right.__str__(), {p.name: p.value for p in self.parameters})),
-                            ]
+                    if isinstance(port.header, InterfacePortHeaderSyntax):
+                        # ifc_name = port.header.nameOrKeyword.value
+                        # modport_member = port.header.modport.member.value
+                        # modport = Modport(name=ifc_name, value=modport_member)
+                        # TODO
+                        raise NotImplementedError("Modports coming soon")
+                    else:
+                        direction = port.header.direction.valueText
+                        if isinstance(port.header.dataType, ImplicitTypeSyntax):
+                            keyword = "bit"
+                        else:
+                            keyword = port.header.dataType.keyword.valueText
+                        declarator = port.declarator.name.value
+                        if port.header.dataType.dimensions:
+                            if len(port.header.dataType.dimensions) == 1:
+                                left = port.header.dataType.dimensions[0].specifier[0][0]
+                                right = port.header.dataType.dimensions[0].specifier[0][2]
+                                # TODO
+                                # print(eval(left.__str__(), {"SIZE": 30}))
+                                dimensions = [
+                                    int(eval(left.__str__(), {p.name: p.value for p in self.parameters})),
+                                    int(eval(right.__str__(), {p.name: p.value for p in self.parameters})),
+                                ]
+                            else:
+                                # TODO
+                                assert False
+                        else:
+                            dimensions = [1]
+                        if direction == "input":
+                            self.inputs.append(
+                                Input(
+                                    name=declarator,
+                                    keyword=keyword,
+                                    dimensions=Dimensions(dimensions=dimensions),
+                                    node=port,
+                                )
+                            )
+                        elif direction == "output":
+                            self.outputs.append(
+                                Output(
+                                    name=declarator,
+                                    keyword=keyword,
+                                    dimensions=Dimensions(dimensions=dimensions),
+                                    node=port,
+                                )
+                            )
                         else:
                             # TODO
                             assert False
-                    else:
-                        dimensions = [1]
-                    if direction == "input":
-                        self.inputs.append(
-                            Input(
-                                name=declarator,
-                                keyword=keyword,
-                                dimensions=Dimensions(dimensions=dimensions),
-                                node=port,
-                            )
-                        )
-                    elif direction == "output":
-                        self.outputs.append(
-                            Output(
-                                name=declarator,
-                                keyword=keyword,
-                                dimensions=Dimensions(dimensions=dimensions),
-                                node=port,
-                            )
-                        )
-                    else:
-                        # TODO
-                        assert False
-                    # print(f"{direction} {keyword} {dimensions} {declarator}")
+                elif port.kind == TokenKind.Comma:
+                    continue
+                else:
+                    assert False
         else:
             # TODO
             assert False
+
+    def _parse_submodules(self):
+        for member in self.node.members:
+            if isinstance(member, HierarchyInstantiationSyntax):
+                # name of module instance
+                # TODO more than 1?
+                instance_name = member.instances[0].decl.name.value
+                # module type of instance
+                module_type = member.type.value
+
+                submod = SubModule(name=instance_name, type=module_type)
+
+                for i, connection in enumerate(member.instances[0].connections):
+                    if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
+                        # TODO
+                        if isinstance(connection.expr[0][0], ScopedNameSyntax):
+                            # name = connection.expr[0][0].right.identifier.value
+                            # TODO: split apart?
+                            val = connection.expr[0][0].__str__().strip()
+                            link = Link(name=val, connection=val, position=i)
+                            submod.links.append(link)
+                        elif isinstance(connection.expr[0][0], IdentifierNameSyntax):
+                            val = connection.expr[0][0].identifier.value
+                            link = Link(name=val, connection=val, position=i)
+                            submod.links.append(link)
+                        else:
+                            # TODO
+                            assert False
+                    elif isinstance(connection, WildcardPortConnectionSyntax):
+                        # connection like conn(.*)
+                        # TODO
+                        raise NotImplementedError
+                # TODO
+                self.submodules.append(submod)
+
+    def _parse_modports(self):
+        for member in self.node.members:
+            if isinstance(member, ModportDeclarationSyntax):
+                name = member.items[0].name.valueText
+                mp = Modport(name=name)
+                for in_out in member.items[0].ports[1]:
+                    if isinstance(in_out, ModportSimplePortListSyntax):
+                        direction = in_out.direction.valueText
+                        for port in in_out.ports:
+                            if isinstance(port, ModportNamedPortSyntax):
+                                port_name = port.name.valueText
+                                if direction == "input":
+                                    mp.inputs.append(Input(name=port_name))
+                                elif direction == "output":
+                                    mp.outputs.append(Output(name=port_name))
+                self.submodports.append(mp)

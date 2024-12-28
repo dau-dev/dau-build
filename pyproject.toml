@@ -25,14 +25,12 @@ classifiers = [
 
 dependencies = [
     "amaranth",
+    "hydra-core",
     "pydantic",
     "pyslang",
+    "toml",
     "typing_extensions",
 ]
-
-[project.urls]
-Repository = "https://github.com/dau-dev/dau-build"
-Homepage = "https://github.com/dau-dev/dau-build"
 
 [project.optional-dependencies]
 develop = [
@@ -48,6 +46,10 @@ develop = [
 ]
 
 [project.scripts]
+
+[project.urls]
+Repository = "https://github.com/dau-dev/dau-build"
+Homepage = "https://github.com/dau-dev/dau-build"
 
 [tool.bumpversion]
 current_version = "0.1.0"
@@ -93,10 +95,10 @@ artifacts = []
 src = "/"
 
 [tool.hatch.build.targets.sdist]
-packages = ["dau_build"]
+packages = ["dau_build", "hydra_plugins"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["dau_build"]
+packages = ["dau_build", "hydra_plugins"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 
@@ -119,3 +121,8 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
+
+[tool.setuptools]
+ext-modules = [
+  {name = "mylib.foo", sources = ["foo.c"]}
+]

@@ -9,10 +9,8 @@ module ff #(parameter SIZE = 32)(
   output logic valid_o
 );
 
-
 reg valid;
 reg [SIZE-1:0] data;
-reg [15:0] memory [0:3][0:1];
 
 assign data_o = data;
 assign valid_o = valid;
@@ -21,12 +19,10 @@ always_ff @(posedge clk) begin
   if(reset) begin
     data <= 'b0;
     valid <= 1'b0;
-  end
-  else if (valid_i) begin
+  end else if (valid_i) begin
     data <= data_i;
     valid <= 1'b1;
-  end
-  else begin
+  end else begin
     valid <= 1'b0;
   end
 end
