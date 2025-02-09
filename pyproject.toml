@@ -5,7 +5,7 @@ build-backend="hatchling.build"
 [project]
 name = "dau-build"
 authors = [{name = "the dau authors", email = "dev@dau.dev"}]
-description="Build tools for dau"
+description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 version = "0.1.0"
@@ -14,6 +14,7 @@ keywords = []
 
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: 3",
@@ -30,10 +31,6 @@ dependencies = [
     "typing_extensions",
 ]
 
-[project.urls]
-Repository = "https://github.com/dau-dev/dau-build"
-Homepage = "https://github.com/dau-dev/dau-build"
-
 [project.optional-dependencies]
 develop = [
     "build",
@@ -48,6 +45,10 @@ develop = [
 ]
 
 [project.scripts]
+
+[project.urls]
+Repository = "https://github.com/dau-dev/dau-build"
+Homepage = "https://github.com/dau-dev/dau-build"
 
 [tool.bumpversion]
 current_version = "0.1.0"
@@ -68,7 +69,6 @@ replace = 'version = "{new_version}"'
 ignore = [
     ".copier-answers.yml",
     "Makefile",
-    "setup.py",
     "docs/**/*",
 ]
 
