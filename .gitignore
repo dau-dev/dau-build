@@ -141,3 +141,10 @@ _template/labextension
 # Rust
 target
 
+# IDE
+.vscode
+
+# Verilator
+obj_dir
+logs
+

@@ -26,8 +26,10 @@ classifiers = [
 
 dependencies = [
     "amaranth",
+    "hydra-core",
     "pydantic",
     "pyslang",
+    "toml",
     "typing_extensions",
 ]
 
@@ -93,10 +95,10 @@ artifacts = []
 src = "/"
 
 [tool.hatch.build.targets.sdist]
-packages = ["dau_build"]
+packages = ["dau_build", "hydra_plugins"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["dau_build"]
+packages = ["dau_build", "hydra_plugins"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 
@@ -119,3 +121,8 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
+
+[tool.setuptools]
+ext-modules = [
+  {name = "mylib.foo", sources = ["foo.c"]}
+]
