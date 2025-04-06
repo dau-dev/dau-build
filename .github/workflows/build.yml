@@ -73,6 +73,7 @@ jobs:
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        slug: dau-dev/dau-build
 
     - name: Make dist
       run: make dist
