@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from amaranth import Instance
@@ -137,21 +138,13 @@ class Parameter(_Base):
         return f"{self.__class__.__name__}({self.name}={self.value})"
 
 
-class SubModule(_Base):
-    """Submodule instantiation inside a module"""
-
-    name: str
-    type: str
-    links: list[Link] = Field(default_factory=list)
-
-
 class Module(_Base):
     parameters: list[Parameter] = Field(default_factory=list)
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
     modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
 
-    submodules: list[SubModule] = Field(default_factory=list, description="Sub module instantiations")
+    submodules: list["SubModule"] = Field(default_factory=list, description="Sub module instantiations")
     submodports: list[Modport] = Field(default_factory=list, description="Modport instantiations")
 
     def instance(self) -> Instance:
@@ -173,31 +166,68 @@ class Module(_Base):
         )
 
     @classmethod
-    def from_str(self, st: str) -> Module:
+    def from_module(cls, name: str, *, root: Path = Path("."), extension: str = "sv") -> Module:
+        # TODO: override root, extension
+        file = root / f"{name}.{extension}"
+        file.resolve()
+        if not file.exists():
+            raise FileNotFoundError(file)
+        return cls.from_file(file)
+
+    @classmethod
+    def from_file(cls, path: Path) -> Module:
+        st = path.read_text()
+        return cls.from_str(st)
+
+    @classmethod
+    def from_str(cls, st: str) -> Module:
         tree = SyntaxTree.fromText(st)
         return Module(name=tree.root.header.name.value, node=tree.root)
 
-    def __str__(self):
+    def to_string(self, indent=""):
         ret = f"{self.__class__.__name__}({self.name})"
         for param in self.parameters:
-            ret += f"\n\t{param}"
+            ret += f"\n{indent}\t{param}"
         if self.parameters:
             ret += "\n"
         for input in self.inputs:
-            ret += f"\n\t{input}"
+            ret += f"\n{indent}\t{input}"
         if self.inputs:
             ret += "\n"
         for output in self.outputs:
-            ret += f"\n\t{output}"
+            ret += f"\n{indent}\t{output}"
         if self.outputs:
             ret += "\n"
+        for modport in self.modports:
+            ret += f"\n{indent}\t{modport}"
+        if self.modports:
+            ret += "\n"
+        for submodule in self.submodules:
+            submod_str = submodule.to_string(indent=indent + "\t")
+            ret += f"\n{indent}\t{submodule.instance_name}: {submod_str}"
+        if self.submodules:
+            ret += "\n"
         return ret
+
+    def __str__(self):
+        return self.to_string()
 
     def __repr__(self):
         return self.__str__()
 
+    def resolve_submodules(self, root: Path = Path(".")) -> Module:
+        for i, submodule in enumerate(self.submodules):
+            self.submodules[i] = submodule.resolve(root=root)
+            # recurse
+            self.submodules[i].resolve_submodules(root=root)
+        return self
+
     @model_validator(mode="after")
     def _parse_structure(self) -> Self:
+        # Skip parsing if not parseable
+        if isinstance(self, SubModule) and not self.node:
+            return self
+
         self._parse_params()
         self._parse_ports()
         self._parse_submodules()
@@ -296,7 +326,7 @@ class Module(_Base):
                 # module type of instance
                 module_type = member.type.value
 
-                submod = SubModule(name=instance_name, type=module_type)
+                submod = SubModule(instance_name=instance_name, name=module_type)
 
                 for i, connection in enumerate(member.instances[0].connections):
                     if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
@@ -337,3 +367,15 @@ class Module(_Base):
                                 elif direction == "output":
                                     mp.outputs.append(Output(name=port_name))
                 self.submodports.append(mp)
+
+
+class SubModule(Module):
+    """Submodule instantiation inside a module"""
+
+    name: str
+    instance_name: str
+    links: list[Link] = Field(default_factory=list)
+
+    def resolve(self, root: Path = Path(".")) -> "SubModule":
+        m = Module.from_module(self.name, root=root)
+        return SubModule(**{**m.model_dump(), "name": self.name, "instance_name": self.instance_name, "links": self.links})
