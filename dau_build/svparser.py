@@ -58,7 +58,7 @@ class Dimensions(BaseModel):
             return f"[{self.dimensions[0]}: {self.dimensions[1]}]"
         else:
             # TODO
-            assert False
+            return "?"
 
     def size(self) -> int:
         if len(self.dimensions) == 1:
@@ -74,8 +74,11 @@ class _Base(BaseModel):
     name: str
     node: object | None = Field(default=None)
 
-    def __str__(self):
+    def to_string(self, indent: str = ""):
         return f"{self.__class__.__name__}({self.name})"
+
+    def __str__(self):
+        return self.to_string()
 
     def __repr__(self):
         return self.__str__()
@@ -90,12 +93,25 @@ class Modport(_Base):
     outputs: list[Output] = Field(default_factory=list)
     modports: list["Modport"] = Field(default_factory=list)
 
-    def __str__(self):
-        return f"{self.__class__.__name__}({self.name})"
+    def to_string(self, indent: str = ""):
+        ret = f"{self.__class__.__name__}({self.name})"
+        for input in self.inputs:
+            ret += f"\n{indent}\t{input}"
+        if self.inputs:
+            ret += "\n"
+        for output in self.outputs:
+            ret += f"\n{indent}\t{output}"
+        if self.outputs:
+            ret += "\n"
+        for modport in self.modports:
+            ret += f"\n{indent}\t{modport}"
+        if self.modports:
+            ret += "\n"
+        return ret
 
 
 class Port(_Base):
-    keyword: Keyword = Field(default="")
+    keyword: Keyword = Field(default="logic")
     dimensions: Dimensions = Field(default_factory=Dimensions)
 
     def __str__(self):
@@ -199,7 +215,8 @@ class Module(_Base):
         if self.outputs:
             ret += "\n"
         for modport in self.modports:
-            ret += f"\n{indent}\t{modport}"
+            mod_str = modport.to_string(indent=indent + "\t")
+            ret += f"\n{indent}\t{mod_str.name}: {mod_str}"
         if self.modports:
             ret += "\n"
         for submodule in self.submodules:
@@ -343,7 +360,7 @@ class Module(_Base):
                             submod.links.append(link)
                         else:
                             # TODO
-                            assert False
+                            raise NotImplementedError
                     elif isinstance(connection, WildcardPortConnectionSyntax):
                         # connection like conn(.*)
                         # TODO
@@ -366,6 +383,7 @@ class Module(_Base):
                                     mp.inputs.append(Input(name=port_name))
                                 elif direction == "output":
                                     mp.outputs.append(Output(name=port_name))
+                print(mp)
                 self.submodports.append(mp)
 
 
@@ -378,4 +396,5 @@ class SubModule(Module):
 
     def resolve(self, root: Path = Path(".")) -> "SubModule":
         m = Module.from_module(self.name, root=root)
+        print(m.submodports)
         return SubModule(**{**m.model_dump(), "name": self.name, "instance_name": self.instance_name, "links": self.links})

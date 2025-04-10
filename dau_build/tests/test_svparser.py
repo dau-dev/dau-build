@@ -1,7 +1,8 @@
 from pathlib import Path
 
-import pyslang
 import pytest
+
+from dau_build import Module
 
 
 class TestParser:
@@ -23,11 +24,7 @@ class TestParser:
         ],
     )
     def test_parse(self, file, parameters, inputs, outputs, submodules, submodports):
-        from dau_build import Module
-
-        fl = (Path(__file__).parent / ".." / "sv" / file).resolve()
-        st = pyslang.SyntaxTree.fromText(fl.read_text())
-        mod = Module(name=st.root.header.name.value, node=st.root)
+        mod = Module.from_file((Path(__file__).parent / ".." / "sv" / file).resolve())
         print(mod)
         assert len(mod.parameters) == parameters
         assert len(mod.inputs) == inputs
@@ -39,14 +36,17 @@ class TestParser:
 
     @pytest.mark.parametrize(("file",), [("ff.sv",)])
     def test_parse_amaranth(self, file):
-        from dau_build import Module
-
-        fl = (Path(__file__).parent / ".." / "sv" / file).resolve()
-        st = pyslang.SyntaxTree.fromText(fl.read_text())
-        mod = Module(name=st.root.header.name.value, node=st.root)
+        mod = Module.from_file((Path(__file__).parent / ".." / "sv" / file).resolve())
         print(mod)
         for input in mod.inputs:
             print(input.__amaranth__)
         for output in mod.outputs:
             print(output.__amaranth__)
         print(mod.__amaranth__)
+
+    def test_resolve_submodules(self):
+        root = (Path(__file__).parent / ".." / "sv").resolve()
+        fl = root / "cam_top.sv"
+        mod = Module.from_file(fl)
+        mod.resolve_submodules(root)
+        print(mod)
