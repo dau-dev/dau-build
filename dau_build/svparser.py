@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
@@ -72,6 +72,7 @@ class Dimensions(BaseModel):
 
 class _Base(BaseModel):
     name: str
+    instance_name: Optional[str] = Field(default="")
     node: object | None = Field(default=None)
 
     def to_string(self, indent: str = ""):
@@ -160,8 +161,10 @@ class Module(_Base):
     outputs: list[Output] = Field(default_factory=list)
     modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
 
-    submodules: list["SubModule"] = Field(default_factory=list, description="Sub module instantiations")
+    submodules: list["Module"] = Field(default_factory=list, description="Sub module instantiations")
     submodports: list[Modport] = Field(default_factory=list, description="Modport instantiations")
+
+    links: list[Link] = Field(default_factory=list)
 
     def instance(self) -> Instance:
         """Return an Amaranth `Instance` type correctly specified for the underlying systemverilog code
@@ -232,17 +235,15 @@ class Module(_Base):
     def __repr__(self):
         return self.__str__()
 
-    def resolve_submodules(self, root: Path = Path(".")) -> Module:
+    def resolve(self, root: Path = Path(".")) -> Module:
         for i, submodule in enumerate(self.submodules):
-            self.submodules[i] = submodule.resolve(root=root)
-            # recurse
-            self.submodules[i].resolve_submodules(root=root)
+            self.submodules[i] = Module.from_module(submodule.name, root=root).resolve(root=root)
         return self
 
     @model_validator(mode="after")
     def _parse_structure(self) -> Self:
         # Skip parsing if not parseable
-        if isinstance(self, SubModule) and not self.node:
+        if not self.node:
             return self
 
         self._parse_params()
@@ -343,7 +344,7 @@ class Module(_Base):
                 # module type of instance
                 module_type = member.type.value
 
-                submod = SubModule(instance_name=instance_name, name=module_type)
+                submod = Module(instance_name=instance_name, name=module_type)
 
                 for i, connection in enumerate(member.instances[0].connections):
                     if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
@@ -383,18 +384,4 @@ class Module(_Base):
                                     mp.inputs.append(Input(name=port_name))
                                 elif direction == "output":
                                     mp.outputs.append(Output(name=port_name))
-                print(mp)
                 self.submodports.append(mp)
-
-
-class SubModule(Module):
-    """Submodule instantiation inside a module"""
-
-    name: str
-    instance_name: str
-    links: list[Link] = Field(default_factory=list)
-
-    def resolve(self, root: Path = Path(".")) -> "SubModule":
-        m = Module.from_module(self.name, root=root)
-        print(m.submodports)
-        return SubModule(**{**m.model_dump(), "name": self.name, "instance_name": self.instance_name, "links": self.links})
