@@ -48,5 +48,5 @@ class TestParser:
         root = (Path(__file__).parent / ".." / "sv").resolve()
         fl = root / "cam_top.sv"
         mod = Module.from_file(fl)
-        mod.resolve_submodules(root)
+        mod.resolve(root)
         print(mod)
