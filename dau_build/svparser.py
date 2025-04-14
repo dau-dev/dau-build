@@ -7,6 +7,7 @@ from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
 from pydantic import BaseModel, Field, model_validator
 from pyslang import (
+    DataDeclarationSyntax,
     HierarchyInstantiationSyntax,
     IdentifierNameSyntax,
     ImplicitAnsiPortSyntax,
@@ -18,6 +19,7 @@ from pyslang import (
     NamedPortConnectionSyntax,
     OrderedPortConnectionSyntax,
     ScopedNameSyntax,
+    SyntaxKind,
     SyntaxNode,
     SyntaxTree,
     TokenKind,
@@ -37,7 +39,7 @@ __all__ = (
 )
 
 
-Keyword = Literal["bit", "wire", "logic"]
+Keyword = Literal["bit", "wire", "logic", "reg"]
 
 
 class Size(BaseModel):
@@ -89,25 +91,19 @@ class _Base(BaseModel):
 
 
 class Modport(_Base):
-    name: str
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
     modports: list["Modport"] = Field(default_factory=list)
 
     def to_string(self, indent: str = ""):
-        ret = f"{self.__class__.__name__}({self.name})"
+        ret = f"{indent}{self.__class__.__name__}({self.name})"
         for input in self.inputs:
             ret += f"\n{indent}\t{input}"
-        if self.inputs:
-            ret += "\n"
         for output in self.outputs:
             ret += f"\n{indent}\t{output}"
-        if self.outputs:
-            ret += "\n"
         for modport in self.modports:
-            ret += f"\n{indent}\t{modport}"
-        if self.modports:
-            ret += "\n"
+            modport_str = modport.to_string(indent=indent + "\t")
+            ret += f"\n{modport_str}"
         return ret
 
 
@@ -159,10 +155,9 @@ class Module(_Base):
     parameters: list[Parameter] = Field(default_factory=list)
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
-    modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
 
-    submodules: list["Module"] = Field(default_factory=list, description="Sub module instantiations")
-    submodports: list[Modport] = Field(default_factory=list, description="Modport instantiations")
+    modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
+    modules: list["Module"] = Field(default_factory=list, description="Sub module instantiations")
 
     links: list[Link] = Field(default_factory=list)
 
@@ -201,32 +196,24 @@ class Module(_Base):
     @classmethod
     def from_str(cls, st: str) -> Module:
         tree = SyntaxTree.fromText(st)
+        if tree.root.kind == SyntaxKind.InterfaceDeclaration:
+            return Interface(name=tree.root.header.name.value, node=tree.root)
         return Module(name=tree.root.header.name.value, node=tree.root)
 
     def to_string(self, indent=""):
-        ret = f"{self.__class__.__name__}({self.name})"
+        ret = f"\n{indent}{self.__class__.__name__}({self.name})"
         for param in self.parameters:
             ret += f"\n{indent}\t{param}"
-        if self.parameters:
-            ret += "\n"
         for input in self.inputs:
             ret += f"\n{indent}\t{input}"
-        if self.inputs:
-            ret += "\n"
         for output in self.outputs:
             ret += f"\n{indent}\t{output}"
-        if self.outputs:
-            ret += "\n"
         for modport in self.modports:
-            mod_str = modport.to_string(indent=indent + "\t")
-            ret += f"\n{indent}\t{mod_str.name}: {mod_str}"
-        if self.modports:
-            ret += "\n"
-        for submodule in self.submodules:
-            submod_str = submodule.to_string(indent=indent + "\t")
-            ret += f"\n{indent}\t{submodule.instance_name}: {submod_str}"
-        if self.submodules:
-            ret += "\n"
+            modport_str = modport.to_string(indent=indent + "\t")
+            ret += f"\n{modport_str}"
+        for module in self.modules:
+            module_str = module.to_string(indent=indent + "\t")
+            ret += f"\n{module_str}"
         return ret
 
     def __str__(self):
@@ -236,8 +223,8 @@ class Module(_Base):
         return self.__str__()
 
     def resolve(self, root: Path = Path(".")) -> Module:
-        for i, submodule in enumerate(self.submodules):
-            self.submodules[i] = Module.from_module(submodule.name, root=root).resolve(root=root)
+        for i, module in enumerate(self.modules):
+            self.modules[i] = Module.from_module(module.name, root=root).resolve(root=root)
         return self
 
     @model_validator(mode="after")
@@ -248,7 +235,7 @@ class Module(_Base):
 
         self._parse_params()
         self._parse_ports()
-        self._parse_submodules()
+        self._parse_modules()
         self._parse_modports()
 
         self.__amaranth__ = type(self.name, (Component,), {})
@@ -335,7 +322,7 @@ class Module(_Base):
             # TODO
             assert False
 
-    def _parse_submodules(self):
+    def _parse_modules(self):
         for member in self.node.members:
             if isinstance(member, HierarchyInstantiationSyntax):
                 # name of module instance
@@ -344,7 +331,7 @@ class Module(_Base):
                 # module type of instance
                 module_type = member.type.value
 
-                submod = Module(instance_name=instance_name, name=module_type)
+                mod = Module(instance_name=instance_name, name=module_type)
 
                 for i, connection in enumerate(member.instances[0].connections):
                     if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
@@ -354,11 +341,11 @@ class Module(_Base):
                             # TODO: split apart?
                             val = connection.expr[0][0].__str__().strip()
                             link = Link(name=val, connection=val, position=i)
-                            submod.links.append(link)
+                            mod.links.append(link)
                         elif isinstance(connection.expr[0][0], IdentifierNameSyntax):
                             val = connection.expr[0][0].identifier.value
                             link = Link(name=val, connection=val, position=i)
-                            submod.links.append(link)
+                            mod.links.append(link)
                         else:
                             # TODO
                             raise NotImplementedError
@@ -367,9 +354,42 @@ class Module(_Base):
                         # TODO
                         raise NotImplementedError
                 # TODO
-                self.submodules.append(submod)
+                self.modules.append(mod)
 
     def _parse_modports(self):
+        data_declarations = {}
+        for member in self.node.members:
+            if isinstance(member, DataDeclarationSyntax):
+                # TODO: if i am an interface, pull the sizes out of this for use in modport construction
+                name = member.declarators[0].name.value
+                if member.type.kind == SyntaxKind.LogicType:
+                    keyword = "logic"
+                elif member.type.kind == SyntaxKind.RegType:
+                    keyword = "reg"
+                elif member.type.kind == SyntaxKind.BitType:
+                    keyword = "bit"
+                else:
+                    keyword = "wire"
+                if member.type.kind == SyntaxKind.NamedType:
+                    # TODO class names, etc
+                    continue
+                if member.type.dimensions:
+                    if len(member.type.dimensions) == 1:
+                        left = member.type.dimensions[0].specifier[0][0]
+                        right = member.type.dimensions[0].specifier[0][2]
+                        # TODO
+                        # print(eval(left.__str__(), {"SIZE": 30}))
+                        dimensions = [
+                            int(eval(left.__str__(), {p.name: p.value for p in self.parameters})),
+                            int(eval(right.__str__(), {p.name: p.value for p in self.parameters})),
+                        ]
+                    else:
+                        # TODO
+                        assert False
+                else:
+                    dimensions = [1]
+                data_declarations[name] = (keyword, Dimensions(dimensions=dimensions))
+
         for member in self.node.members:
             if isinstance(member, ModportDeclarationSyntax):
                 name = member.items[0].name.valueText
@@ -380,8 +400,46 @@ class Module(_Base):
                         for port in in_out.ports:
                             if isinstance(port, ModportNamedPortSyntax):
                                 port_name = port.name.valueText
+
+                                # try to resolve modport size and type
+                                resolved = False
+
+                                # first, check prior data declarations
+                                if port_name in data_declarations:
+                                    keyword, dimensions = data_declarations[port_name]
+                                    resolved = True
+
+                                # if not resolved, look in inputs
+                                if not resolved:
+                                    for input in self.inputs:
+                                        if port_name == input.name:
+                                            keyword = input.keyword
+                                            dimensions = input.dimensions
+                                            resolved = True
+                                            break
+
+                                # if still not resolved, look in outputs
+                                if not resolved:
+                                    for output in self.outputs:
+                                        if port_name == output.name:
+                                            keyword = output.keyword
+                                            dimensions = output.dimensions
+                                            resolved = True
+                                            break
+
+                                # if still not resolved, give up and just default to
+                                # input and empty dimensions
+                                if not resolved:
+                                    keyword = "input"
+                                    dimensions = Dimensions()
+
+                                # now attach input/output to modport
                                 if direction == "input":
-                                    mp.inputs.append(Input(name=port_name))
+                                    mp.inputs.append(Input(name=port_name, keyword=keyword, dimensions=dimensions))
                                 elif direction == "output":
-                                    mp.outputs.append(Output(name=port_name))
-                self.submodports.append(mp)
+                                    mp.outputs.append(Output(name=port_name, keyword=keyword, dimensions=dimensions))
+                self.modports.append(mp)
+
+
+class Interface(Module):
+    pass

@@ -25,14 +25,14 @@ class TestParser:
     )
     def test_parse(self, file, parameters, inputs, outputs, submodules, submodports):
         mod = Module.from_file((Path(__file__).parent / ".." / "sv" / file).resolve())
-        print(mod)
+        print(mod.parameters)
         assert len(mod.parameters) == parameters
         assert len(mod.inputs) == inputs
         assert len(mod.outputs) == outputs
-        assert len(mod.submodules) == submodules
-        assert len(mod.submodports) == submodports
-        assert all(len(sm.links) > 0 for sm in mod.submodules)
-        assert all((len(smp.inputs) + len(smp.outputs)) > 0 for smp in mod.submodports)
+        assert len(mod.modules) == submodules
+        assert len(mod.modports) == submodports
+        assert all(len(sm.links) > 0 for sm in mod.modules)
+        assert all((len(smp.inputs) + len(smp.outputs)) > 0 for smp in mod.modports)
 
     @pytest.mark.parametrize(("file",), [("ff.sv",)])
     def test_parse_amaranth(self, file):
