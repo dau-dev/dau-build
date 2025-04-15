@@ -43,6 +43,11 @@ jobs:
         cache-dependency-path: 'pyproject.toml'
 
     - name: Install dependencies
+      run: |
+        wget https://github.com/dau-dev/tools/releases/download/v0.0.10/verilator_5.034_amd64.deb
+        sudo dpkg -i ./*.deb
+
+    - name: Install dependencies
       run: make develop
 
     - name: Lint

@@ -1,4 +1,4 @@
-module counter #(parameter int OUT_SIZE) (
+module counter #(parameter int OUT_SIZE=32) (
   input clk,
   output logic[OUT_SIZE-1:0] out
 );
