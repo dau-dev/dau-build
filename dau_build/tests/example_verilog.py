@@ -1,14 +1,13 @@
 from math import log2
 from pathlib import Path
 
-from amaranth_boards.nitefury import NitefuryIIPlatform
 from amaranth import (
-    Elaboratable,
-    Module,
-    Instance,
-    ClockSignal,
-    Signal,
     Cat,
+    ClockSignal,
+    Elaboratable,
+    Instance,
+    Module,
+    Signal,
 )
 from amaranth.lib.io import Buffer
 
