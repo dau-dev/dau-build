@@ -36,9 +36,11 @@ dependencies = [
 
 [project.optional-dependencies]
 develop = [
+    "amaranth-boards@git+https://github.com/amaranth-lang/amaranth-boards.git",
     "build",
     "bump-my-version",
     "check-manifest",
+    "cocotb@git+https://github.com/cocotb/cocotb.git",
     "hatchling",
     "pytest",
     "pytest-cov",
@@ -46,6 +48,7 @@ develop = [
     "twine",
     "uv",
     "wheel",
+    "verilator",
 ]
 
 [project.scripts]
@@ -77,7 +80,6 @@ ignore = [
 ]
 
 [tool.coverage.run]
-branch = true
 omit = [
     "dau_build/tests/integration/",
 ]
@@ -89,6 +91,10 @@ exclude_also = [
 ]
 ignore_errors = true
 fail_under = 50
+
+[tool.hatch.metadata]
+# TODO remove when cocotb is released
+allow-direct-references = true
 
 [tool.hatch.build]
 artifacts = []
