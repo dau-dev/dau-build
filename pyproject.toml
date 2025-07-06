@@ -127,9 +127,13 @@ known-first-party = ["dau_build"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.ruff.lint.per-file-ignores]
+<<<<<<< before updating
 "__init__.py" = ["F401", "F403"]
 
 [tool.setuptools]
 ext-modules = [
   {name = "mylib.foo", sources = ["foo.c"]}
 ]
+=======
+"__init__.py" = ["F401", "F403"]
+>>>>>>> after updating
