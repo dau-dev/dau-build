@@ -150,14 +150,3 @@ dau_build/labextension
 
 # Rust
 target
-<<<<<<< before updating
-
-# IDE
-.vscode
-
-# Verilator
-obj_dir
-logs
-
-=======
->>>>>>> after updating
