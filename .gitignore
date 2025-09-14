@@ -146,6 +146,7 @@ dau_build/extension
 # Jupyter
 .ipynb_checkpoints
 .autoversion
+Untitled*.ipynb
 !dau_build/extension/dau_build.json
 !dau_build/extension/install.json
 dau_build/nbextension
