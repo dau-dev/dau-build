@@ -40,7 +40,7 @@ develop = [
     "build",
     "bump-my-version",
     "check-manifest",
-    "cocotb@git+https://github.com/cocotb/cocotb.git",
+    "cocotb>=2",
     "codespell>=2.4,<2.5",
     "hatchling",
     "mdformat>=0.7.22,<1.1",

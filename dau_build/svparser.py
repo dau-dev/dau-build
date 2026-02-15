@@ -7,6 +7,7 @@ from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
 from pydantic import BaseModel, Field, model_validator
 from pyslang import (
+    ContinuousAssignSyntax,
     DataDeclarationSyntax,
     HierarchyInstantiationSyntax,
     IdentifierNameSyntax,
@@ -18,6 +19,7 @@ from pyslang import (
     ModportSimplePortListSyntax,
     NamedPortConnectionSyntax,
     OrderedPortConnectionSyntax,
+    ProceduralBlockSyntax,
     ScopedNameSyntax,
     SyntaxKind,
     SyntaxNode,
@@ -34,8 +36,15 @@ __all__ = (
     "Port",
     "Input",
     "Output",
+    "Inout",
     "Parameter",
+    "Wire",
+    "ContinuousAssignment",
+    "ProceduralBlock",
+    "GenerateBlock",
     "Module",
+    "Interface",
+    "Design",
 )
 
 
@@ -70,6 +79,14 @@ class Dimensions(BaseModel):
         else:
             # TODO
             return 0
+
+    def to_sv(self) -> str:
+        """Return SV range syntax e.g. [7:0]."""
+        if len(self.dimensions) == 2:
+            return f"[{self.dimensions[0]}:{self.dimensions[1]}]"
+        elif len(self.dimensions) == 1 and self.dimensions[0] > 1:
+            return f"[{self.dimensions[0] - 1}:0]"
+        return ""
 
 
 class _Base(BaseModel):
@@ -129,6 +146,60 @@ class Output(Port):
         return self
 
 
+class Inout(Port):
+    """Bidirectional port."""
+
+    pass
+
+
+class Wire(BaseModel):
+    """Internal wire/reg/logic/bit declaration within a module body."""
+
+    name: str
+    keyword: str = "logic"
+    dimensions: Dimensions = Field(default_factory=Dimensions)
+    unpacked_dimensions: str = ""
+    body: str = ""
+
+    def __str__(self):
+        return f"Wire({self.keyword} {self.dimensions} {self.name})"
+
+
+class ContinuousAssignment(BaseModel):
+    """A continuous assign statement."""
+
+    lhs: str
+    rhs: str
+    body: str = ""
+
+    def __str__(self):
+        return f"assign {self.lhs} = {self.rhs}"
+
+
+class ProceduralBlock(BaseModel):
+    """A procedural block (always_comb, always_ff, always_latch, always, initial, final)."""
+
+    kind: str  # "always_comb", "always_ff", "always_latch", "always", "initial", "final"
+    sensitivity: str = ""
+    body: str = ""
+
+    def __str__(self):
+        if self.sensitivity:
+            return f"{self.kind} {self.sensitivity} begin...end"
+        return f"{self.kind} begin...end"
+
+
+class GenerateBlock(BaseModel):
+    """A generate construct (region, for-loop, if, case)."""
+
+    kind: str = "region"
+    body: str = ""
+    modules: list["Module"] = Field(default_factory=list)
+
+    def __str__(self):
+        return f"Generate({self.kind}, {len(self.modules)} submodules)"
+
+
 class Link(_Base):
     # for point-to-point links
     # like: submod_in(my_local_out)
@@ -155,11 +226,25 @@ class Module(_Base):
     parameters: list[Parameter] = Field(default_factory=list)
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
+    inouts: list[Inout] = Field(default_factory=list)
 
     modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
     modules: list["Module"] = Field(default_factory=list, description="Sub module instantiations")
 
     links: list[Link] = Field(default_factory=list)
+
+    # Extended structure fields
+    wires: list[Wire] = Field(default_factory=list, description="Internal signal declarations")
+    assigns: list[ContinuousAssignment] = Field(default_factory=list, description="Continuous assignments")
+    always_comb_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    always_ff_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    always_latch_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    always_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    initial_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    final_blocks: list[ProceduralBlock] = Field(default_factory=list)
+    generate_blocks: list[GenerateBlock] = Field(default_factory=list, description="Generate constructs")
+
+    source_path: Optional[Path] = Field(default=None, description="Path to source SV file")
 
     def instance(self) -> Instance:
         """Return an Amaranth `Instance` type correctly specified for the underlying systemverilog code
@@ -191,7 +276,9 @@ class Module(_Base):
     @classmethod
     def from_file(cls, path: Path) -> Module:
         st = path.read_text()
-        return cls.from_str(st)
+        mod = cls.from_str(st)
+        mod.source_path = path
+        return mod
 
     @classmethod
     def from_str(cls, st: str) -> Module:
@@ -208,6 +295,26 @@ class Module(_Base):
             ret += f"\n{indent}\t{input}"
         for output in self.outputs:
             ret += f"\n{indent}\t{output}"
+        for inout in self.inouts:
+            ret += f"\n{indent}\tInout({inout.name})"
+        for wire in self.wires:
+            ret += f"\n{indent}\t{wire}"
+        for assign in self.assigns:
+            ret += f"\n{indent}\t{assign}"
+        for block in self.always_comb_blocks:
+            ret += f"\n{indent}\t{block}"
+        for block in self.always_ff_blocks:
+            ret += f"\n{indent}\t{block}"
+        for block in self.always_latch_blocks:
+            ret += f"\n{indent}\t{block}"
+        for block in self.always_blocks:
+            ret += f"\n{indent}\t{block}"
+        for block in self.initial_blocks:
+            ret += f"\n{indent}\t{block}"
+        for block in self.final_blocks:
+            ret += f"\n{indent}\t{block}"
+        for gen in self.generate_blocks:
+            ret += f"\n{indent}\t{gen}"
         for modport in self.modports:
             modport_str = modport.to_string(indent=indent + "\t")
             ret += f"\n{modport_str}"
@@ -237,6 +344,10 @@ class Module(_Base):
         self._parse_ports()
         self._parse_modules()
         self._parse_modports()
+        self._parse_wires()
+        self._parse_assigns()
+        self._parse_procedural_blocks()
+        self._parse_generates()
 
         self.__amaranth__ = type(self.name, (Component,), {})
         for input in self.inputs:
@@ -261,14 +372,37 @@ class Module(_Base):
                             )
                         )
 
+    def _eval_dim_expr(self, expr) -> int:
+        """Evaluate a dimension expression using known parameters."""
+        return int(eval(str(expr), {p.name: p.value for p in self.parameters}))
+
+    def _parse_dimensions(self, type_node) -> list[int]:
+        """Parse packed dimensions from a type node."""
+        if type_node.dimensions:
+            if len(type_node.dimensions) == 1:
+                left = type_node.dimensions[0].specifier[0][0]
+                right = type_node.dimensions[0].specifier[0][2]
+                return [self._eval_dim_expr(left), self._eval_dim_expr(right)]
+            else:
+                # TODO: multi-dimensional
+                return [1]
+        return [1]
+
+    @staticmethod
+    def _keyword_from_kind(kind) -> str:
+        """Map a SyntaxKind type to a keyword string."""
+        mapping = {
+            SyntaxKind.LogicType: "logic",
+            SyntaxKind.RegType: "reg",
+            SyntaxKind.BitType: "bit",
+        }
+        return mapping.get(kind, "wire")
+
     def _parse_ports(self):
         if len(self.node.header.ports) == 3:
             for port in self.node.header.ports[1]:
                 if isinstance(port, ImplicitAnsiPortSyntax):
                     if isinstance(port.header, InterfacePortHeaderSyntax):
-                        # ifc_name = port.header.nameOrKeyword.value
-                        # modport_member = port.header.modport.member.value
-                        # modport = Modport(name=ifc_name, value=modport_member)
                         # TODO
                         raise NotImplementedError("Modports coming soon")
                     else:
@@ -278,21 +412,7 @@ class Module(_Base):
                         else:
                             keyword = port.header.dataType.keyword.valueText
                         declarator = port.declarator.name.value
-                        if port.header.dataType.dimensions:
-                            if len(port.header.dataType.dimensions) == 1:
-                                left = port.header.dataType.dimensions[0].specifier[0][0]
-                                right = port.header.dataType.dimensions[0].specifier[0][2]
-                                # TODO
-                                # print(eval(left.__str__(), {"SIZE": 30}))
-                                dimensions = [
-                                    int(eval(left.__str__(), {p.name: p.value for p in self.parameters})),
-                                    int(eval(right.__str__(), {p.name: p.value for p in self.parameters})),
-                                ]
-                            else:
-                                # TODO
-                                assert False
-                        else:
-                            dimensions = [1]
+                        dimensions = self._parse_dimensions(port.header.dataType)
                         if direction == "input":
                             self.inputs.append(
                                 Input(
@@ -311,8 +431,17 @@ class Module(_Base):
                                     node=port,
                                 )
                             )
+                        elif direction == "inout":
+                            self.inouts.append(
+                                Inout(
+                                    name=declarator,
+                                    keyword=keyword,
+                                    dimensions=Dimensions(dimensions=dimensions),
+                                    node=port,
+                                )
+                            )
                         else:
-                            # TODO
+                            # TODO: ref ports, etc.
                             assert False
                 elif port.kind == TokenKind.Comma:
                     continue
@@ -325,69 +454,173 @@ class Module(_Base):
     def _parse_modules(self):
         for member in self.node.members:
             if isinstance(member, HierarchyInstantiationSyntax):
-                # name of module instance
-                # TODO more than 1?
-                instance_name = member.instances[0].decl.name.value
-                # module type of instance
-                module_type = member.type.value
+                self._parse_hierarchy_instantiation(member, self.modules)
 
-                mod = Module(instance_name=instance_name, name=module_type)
+    def _parse_hierarchy_instantiation(self, member, target_list):
+        """Parse a single HierarchyInstantiationSyntax into a Module and add to target_list."""
+        instance_name = member.instances[0].decl.name.value
+        module_type = member.type.value
 
-                for i, connection in enumerate(member.instances[0].connections):
-                    if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
-                        # TODO
+        mod = Module(instance_name=instance_name, name=module_type)
+
+        for i, connection in enumerate(member.instances[0].connections):
+            if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
+                if isinstance(connection.expr[0][0], ScopedNameSyntax):
+                    val = connection.expr[0][0].__str__().strip()
+                    link = Link(name=val, connection=val, position=i)
+                    mod.links.append(link)
+                elif isinstance(connection.expr[0][0], IdentifierNameSyntax):
+                    val = connection.expr[0][0].identifier.value
+                    link = Link(name=val, connection=val, position=i)
+                    mod.links.append(link)
+                else:
+                    # TODO
+                    raise NotImplementedError
+            elif isinstance(connection, WildcardPortConnectionSyntax):
+                # connection like conn(.*)
+                # TODO
+                raise NotImplementedError
+        target_list.append(mod)
+
+    def _parse_wires(self):
+        """Parse internal wire/reg/logic/bit declarations from module body."""
+        for member in self.node.members:
+            if isinstance(member, DataDeclarationSyntax):
+                if member.type.kind == SyntaxKind.NamedType:
+                    continue
+                keyword = self._keyword_from_kind(member.type.kind)
+                dimensions = self._parse_dimensions(member.type)
+                for decl in member.declarators:
+                    name = decl.name.value
+                    unpacked = ""
+                    if decl.dimensions:
+                        unpacked = str(decl.dimensions).strip()
+                    self.wires.append(
+                        Wire(
+                            name=name,
+                            keyword=keyword,
+                            dimensions=Dimensions(dimensions=dimensions),
+                            unpacked_dimensions=unpacked,
+                            body=str(member).strip(),
+                        )
+                    )
+            elif hasattr(member, "kind") and member.kind == SyntaxKind.NetDeclaration:
+                keyword = "wire"
+                try:
+                    dimensions = self._parse_dimensions(member.type)
+                except Exception:
+                    dimensions = [1]
+                for decl in member.declarators:
+                    name = decl.name.value
+                    unpacked = ""
+                    if decl.dimensions:
+                        unpacked = str(decl.dimensions).strip()
+                    self.wires.append(
+                        Wire(
+                            name=name,
+                            keyword=keyword,
+                            dimensions=Dimensions(dimensions=dimensions),
+                            unpacked_dimensions=unpacked,
+                            body=str(member).strip(),
+                        )
+                    )
+
+    def _parse_assigns(self):
+        """Parse continuous assignment statements."""
+        for member in self.node.members:
+            if isinstance(member, ContinuousAssignSyntax):
+                for assignment in member.assignments:
+                    lhs = str(assignment.left).strip()
+                    rhs = str(assignment.right).strip()
+                    self.assigns.append(
+                        ContinuousAssignment(
+                            lhs=lhs,
+                            rhs=rhs,
+                            body=str(member).strip(),
+                        )
+                    )
+
+    def _parse_procedural_blocks(self):
+        """Parse procedural blocks (always_comb, always_ff, always_latch, always, initial, final)."""
+        kind_map = {
+            SyntaxKind.AlwaysCombBlock: "always_comb",
+            SyntaxKind.AlwaysFFBlock: "always_ff",
+            SyntaxKind.AlwaysLatchBlock: "always_latch",
+            SyntaxKind.AlwaysBlock: "always",
+            SyntaxKind.InitialBlock: "initial",
+            SyntaxKind.FinalBlock: "final",
+        }
+        for member in self.node.members:
+            if isinstance(member, ProceduralBlockSyntax):
+                kind = kind_map.get(member.kind, str(member.kind))
+                sensitivity = ""
+                if member.kind == SyntaxKind.AlwaysFFBlock:
+                    if hasattr(member.statement, "timingControl") and member.statement.timingControl:
+                        sensitivity = str(member.statement.timingControl).strip()
+                body = str(member).strip()
+                block = ProceduralBlock(kind=kind, sensitivity=sensitivity, body=body)
+                if kind == "always_comb":
+                    self.always_comb_blocks.append(block)
+                elif kind == "always_ff":
+                    self.always_ff_blocks.append(block)
+                elif kind == "always_latch":
+                    self.always_latch_blocks.append(block)
+                elif kind == "always":
+                    self.always_blocks.append(block)
+                elif kind == "initial":
+                    self.initial_blocks.append(block)
+                elif kind == "final":
+                    self.final_blocks.append(block)
+
+    def _parse_generates(self):
+        """Parse generate constructs."""
+        for member in self.node.members:
+            if hasattr(member, "kind") and member.kind == SyntaxKind.GenerateRegion:
+                gen = GenerateBlock(kind="region", body=str(member).strip())
+                self._find_instantiations_in_generate(member, gen)
+                self.generate_blocks.append(gen)
+            elif hasattr(member, "kind") and member.kind == SyntaxKind.LoopGenerate:
+                gen = GenerateBlock(kind="for", body=str(member).strip())
+                self._find_instantiations_in_generate(member, gen)
+                self.generate_blocks.append(gen)
+
+    def _find_instantiations_in_generate(self, node, gen_block):
+        """Recursively find HierarchyInstantiationSyntax inside generate constructs."""
+        if isinstance(node, HierarchyInstantiationSyntax):
+            instance_name = node.instances[0].decl.name.value
+            module_type = node.type.value
+            mod = Module(instance_name=instance_name, name=module_type)
+            for i, connection in enumerate(node.instances[0].connections):
+                if isinstance(connection, (OrderedPortConnectionSyntax, NamedPortConnectionSyntax)):
+                    try:
                         if isinstance(connection.expr[0][0], ScopedNameSyntax):
-                            # name = connection.expr[0][0].right.identifier.value
-                            # TODO: split apart?
-                            val = connection.expr[0][0].__str__().strip()
-                            link = Link(name=val, connection=val, position=i)
-                            mod.links.append(link)
+                            val = str(connection.expr[0][0]).strip()
                         elif isinstance(connection.expr[0][0], IdentifierNameSyntax):
                             val = connection.expr[0][0].identifier.value
-                            link = Link(name=val, connection=val, position=i)
-                            mod.links.append(link)
                         else:
-                            # TODO
-                            raise NotImplementedError
-                    elif isinstance(connection, WildcardPortConnectionSyntax):
-                        # connection like conn(.*)
-                        # TODO
-                        raise NotImplementedError
-                # TODO
-                self.modules.append(mod)
+                            val = str(connection.expr[0][0]).strip()
+                        link = Link(name=val, connection=val, position=i)
+                        mod.links.append(link)
+                    except Exception:
+                        pass
+            gen_block.modules.append(mod)
+            return
+        try:
+            for child in node:
+                if isinstance(child, SyntaxNode):
+                    self._find_instantiations_in_generate(child, gen_block)
+        except TypeError:
+            pass
 
     def _parse_modports(self):
         data_declarations = {}
         for member in self.node.members:
             if isinstance(member, DataDeclarationSyntax):
-                # TODO: if i am an interface, pull the sizes out of this for use in modport construction
                 name = member.declarators[0].name.value
-                if member.type.kind == SyntaxKind.LogicType:
-                    keyword = "logic"
-                elif member.type.kind == SyntaxKind.RegType:
-                    keyword = "reg"
-                elif member.type.kind == SyntaxKind.BitType:
-                    keyword = "bit"
-                else:
-                    keyword = "wire"
                 if member.type.kind == SyntaxKind.NamedType:
-                    # TODO class names, etc
                     continue
-                if member.type.dimensions:
-                    if len(member.type.dimensions) == 1:
-                        left = member.type.dimensions[0].specifier[0][0]
-                        right = member.type.dimensions[0].specifier[0][2]
-                        # TODO
-                        # print(eval(left.__str__(), {"SIZE": 30}))
-                        dimensions = [
-                            int(eval(left.__str__(), {p.name: p.value for p in self.parameters})),
-                            int(eval(right.__str__(), {p.name: p.value for p in self.parameters})),
-                        ]
-                    else:
-                        # TODO
-                        assert False
-                else:
-                    dimensions = [1]
+                keyword = self._keyword_from_kind(member.type.kind)
+                dimensions = self._parse_dimensions(member.type)
                 data_declarations[name] = (keyword, Dimensions(dimensions=dimensions))
 
         for member in self.node.members:
@@ -443,3 +676,117 @@ class Module(_Base):
 
 class Interface(Module):
     pass
+
+
+class Design(BaseModel):
+    """A collection of parsed SV modules that can be composed into a top-level design."""
+
+    modules: dict[str, Module] = Field(default_factory=dict)
+
+    @classmethod
+    def from_directory(cls, path: Path, extension: str = "sv") -> "Design":
+        """Parse all SV files in a directory."""
+        design = cls()
+        for f in sorted(path.glob(f"*.{extension}")):
+            try:
+                mod = Module.from_file(f)
+                design.modules[mod.name] = mod
+            except Exception:
+                pass
+        return design
+
+    @classmethod
+    def from_files(cls, paths: list[Path]) -> "Design":
+        """Parse specific SV files."""
+        design = cls()
+        for f in paths:
+            try:
+                mod = Module.from_file(f)
+                design.modules[mod.name] = mod
+            except Exception:
+                pass
+        return design
+
+    def resolve(self) -> "Design":
+        """Resolve all submodule references within the design."""
+        for name, mod in self.modules.items():
+            for i, sub in enumerate(mod.modules):
+                if sub.name in self.modules:
+                    resolved = self.modules[sub.name]
+                    resolved_copy = resolved.model_copy()
+                    resolved_copy.instance_name = sub.instance_name
+                    resolved_copy.links = sub.links
+                    mod.modules[i] = resolved_copy
+        return self
+
+    def generate_top_sv(
+        self,
+        name: str = "top",
+        module_names: list[str] | None = None,
+        clk: str = "clk",
+        reset: str = "reset",
+    ) -> str:
+        """Generate a top-level SV module that instantiates and wires together the specified modules.
+
+        Args:
+            name: Name for the generated top module
+            module_names: List of module names to include (None = all non-interface/testbench modules)
+            clk: Clock signal name
+            reset: Reset signal name
+
+        Returns:
+            Generated SystemVerilog source code as a string
+        """
+        if module_names is None:
+            module_names = [n for n in self.modules if not isinstance(self.modules[n], Interface)]
+        selected = {n: self.modules[n] for n in module_names if n in self.modules}
+
+        lines = ["`timescale 1ns/1ns", "", f"module {name} ("]
+
+        port_lines = []
+        port_lines.append(f"  input bit {clk}")
+        port_lines.append(f"  input bit {reset}")
+
+        for mod_name, mod in selected.items():
+            for inp in mod.inputs:
+                if inp.name in (clk, reset):
+                    continue
+                dim_str = inp.dimensions.to_sv()
+                space = f" {dim_str} " if dim_str else " "
+                port_lines.append(f"  input {inp.keyword}{space}{mod_name}_{inp.name}")
+            for out in mod.outputs:
+                dim_str = out.dimensions.to_sv()
+                space = f" {dim_str} " if dim_str else " "
+                port_lines.append(f"  output {out.keyword}{space}{mod_name}_{out.name}")
+
+        lines.append(",\n".join(port_lines))
+        lines.append(");")
+        lines.append("")
+
+        for mod_name, mod in selected.items():
+            params_str = ""
+            if mod.parameters:
+                param_parts = [f".{p.name}({p.value})" for p in mod.parameters]
+                params_str = f" #({', '.join(param_parts)})"
+            lines.append(f"  {mod_name}{params_str} {mod_name}_inst (")
+            conn_lines = []
+            for inp in mod.inputs:
+                if inp.name in (clk, reset):
+                    conn_lines.append(f"    .{inp.name}({inp.name})")
+                else:
+                    conn_lines.append(f"    .{inp.name}({mod_name}_{inp.name})")
+            for out in mod.outputs:
+                conn_lines.append(f"    .{out.name}({mod_name}_{out.name})")
+            lines.append(",\n".join(conn_lines))
+            lines.append("  );")
+            lines.append("")
+
+        lines.append("endmodule")
+        lines.append("")
+        return "\n".join(lines)
+
+    def __str__(self):
+        parts = [f"Design({len(self.modules)} modules):"]
+        for name, mod in self.modules.items():
+            parts.append(f"  {mod.to_string('  ')}")
+        return "\n".join(parts)
