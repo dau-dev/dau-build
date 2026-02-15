@@ -112,21 +112,16 @@ artifacts = []
 src = "/"
 
 [tool.hatch.build.targets.sdist]
-<<<<<<< before updating
-packages = ["dau_build", "hydra_plugins"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["dau_build", "hydra_plugins"]
-=======
 packages = [
     "dau_build",
+    "hydra_plugins",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = [
     "dau_build",
+    "hydra_plugins",
 ]
->>>>>>> after updating
 
 [tool.hatch.build.targets.wheel.shared-data]
 
@@ -160,11 +155,7 @@ section-order = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-<<<<<<< before updating
-"__init__.py" = ["F401", "F403"]
-=======
 "__init__.py" = [
     "F401",
     "F403",
 ]
->>>>>>> after updating
