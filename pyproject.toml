@@ -1,10 +1,14 @@
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "hatchling",
+]
 build-backend="hatchling.build"
 
 [project]
 name = "dau-build"
-authors = [{name = "the dau authors", email = "dev@dau.dev"}]
+authors = [
+    {name = "the dau authors", email = "dev@dau.dev"},
+]
 description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -49,6 +53,7 @@ develop = [
     "pytest-cov",
     "ruff>=0.9,<0.15",
     "twine",
+    "ty",
     "uv",
     "wheel",
     "verilator",
@@ -107,28 +112,59 @@ artifacts = []
 src = "/"
 
 [tool.hatch.build.targets.sdist]
+<<<<<<< before updating
 packages = ["dau_build", "hydra_plugins"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dau_build", "hydra_plugins"]
+=======
+packages = [
+    "dau_build",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "dau_build",
+]
+>>>>>>> after updating
 
 [tool.hatch.build.targets.wheel.shared-data]
 
 [tool.pytest.ini_options]
-addopts = ["-vvv", "--junitxml=junit.xml"]
+addopts = [
+    "-vvv",
+    "--junitxml=junit.xml",
+]
 testpaths = "dau_build/tests"
 
 [tool.ruff]
 line-length = 150
 
 [tool.ruff.lint]
-extend-select = ["I"]
+extend-select = [
+    "I",
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
 default-section = "third-party"
-known-first-party = ["dau_build"]
-section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+known-first-party = [
+    "dau_build",
+]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
 
 [tool.ruff.lint.per-file-ignores]
+<<<<<<< before updating
 "__init__.py" = ["F401", "F403"]
+=======
+"__init__.py" = [
+    "F401",
+    "F403",
+]
+>>>>>>> after updating
