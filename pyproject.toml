@@ -43,14 +43,9 @@ develop = [
     "amaranth-boards@git+https://github.com/amaranth-lang/amaranth-boards.git",
     "build",
     "bump-my-version",
-<<<<<<< before updating
-    "check-manifest",
-    "cocotb>=2",
-    "codespell>=2.4,<2.5",
-=======
     "check-dist",
+    "cocotb>=2",
     "codespell",
->>>>>>> after updating
     "hatchling",
     "mdformat",
     "mdformat-tables>=1",
