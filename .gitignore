@@ -141,14 +141,12 @@ js/node_modules
 js/test-results
 js/playwright-report
 js/*.tgz
-dau_build/extension
 
 # Jupyter
 .ipynb_checkpoints
 .autoversion
 Untitled*.ipynb
-!dau_build/extension/dau_build.json
-!dau_build/extension/install.json
+dau_build/extension
 dau_build/nbextension
 dau_build/labextension
 
@@ -158,6 +156,8 @@ dau_build/labextension
 # Rust
 target
 
-
+# Hydra
+outputs/
+multirun/
 
 sim_build
