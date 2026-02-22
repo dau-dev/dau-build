@@ -60,6 +60,7 @@ develop = [
 ]
 
 [project.scripts]
+dau-vivado = "dau_build.vivado:_cli"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
@@ -124,6 +125,10 @@ packages = [
 ]
 
 [tool.hatch.build.targets.wheel.shared-data]
+
+[tool.hatch.build.force-include]
+"dau_build/tcl" = "dau_build/tcl"
+"dau_build/sv" = "dau_build/sv"
 
 [tool.pytest.ini_options]
 addopts = [

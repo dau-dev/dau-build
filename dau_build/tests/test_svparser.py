@@ -234,10 +234,12 @@ class TestDesign:
 
     def test_from_directory(self):
         design = Design.from_directory(_SV_DIR)
-        assert len(design.modules) == 11  # all .sv files
+        assert len(design.modules) == 13  # all .sv files
         assert "cam" in design.modules
         assert "ff" in design.modules
         assert "cam_ifc" in design.modules
+        assert "doubler" in design.modules
+        assert "doubler_engine" in design.modules
 
     def test_from_files(self):
         design = Design.from_files([_SV_DIR / "ff.sv", _SV_DIR / "decoder.sv"])
