@@ -85,6 +85,7 @@ replace = 'version = "{new_version}"'
 omit = [
     "dau_build/tests/integration/",
 ]
+
 [tool.coverage.report]
 exclude_also = [
     "raise NotImplementedError",
