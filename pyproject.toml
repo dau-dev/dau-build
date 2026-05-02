@@ -44,7 +44,7 @@ develop = [
     "build",
     "bump-my-version",
     "check-dist",
-    "cocotb>=2",
+    "cocotb>=2.0.1",
     "codespell",
     "hatchling",
     "mdformat",
