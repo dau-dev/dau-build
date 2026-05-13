@@ -53,9 +53,7 @@ class DauSVConfigSourceExample(ConfigSource):
     def scheme() -> str:
         return "sv"
 
-    def load_config(
-        self, config_path: str, package_override: Optional[str] = None
-    ) -> ConfigResult:
+    def load_config(self, config_path: str, package_override: Optional[str] = None) -> ConfigResult:
         name = self._normalize_file_name(config_path)
 
         if name not in self.configs:

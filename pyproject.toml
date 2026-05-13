@@ -31,6 +31,7 @@ classifiers = [
 
 dependencies = [
     "amaranth",
+    "dau-utils",
     "hydra-core",
     "pydantic",
     "pyslang",
@@ -60,6 +61,8 @@ develop = [
 ]
 
 [project.scripts]
+dau-build = "dau_build.build_spec:main"
+dau-nitefury-plan = "dau_build.nitefury:main"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
