@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import tomllib
 from ccflow import CallableModel
 from dau_core.hdl import DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV
 
@@ -139,6 +140,15 @@ def test_execute_override_task_plans_identity_smoke_test() -> None:
     )
 
 
+def test_execute_override_task_accepts_public_hardware_plan_surface() -> None:
+    result = execute_override_task(("task=hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"))
+
+    assert result == BuildStepResult(
+        step="hardware-plan",
+        message="thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx",
+    )
+
+
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
@@ -148,6 +158,26 @@ def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys)
     assert capsys.readouterr().out.splitlines() == [
         f"dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec={spec_path} status=validated"
     ]
+
+
+def test_dau_build_main_dispatches_public_hardware_plan_arguments(capsys) -> None:
+    exit_code = main(["task=hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    ]
+
+
+def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = pyproject["project"]["scripts"]
+
+    assert "dau-hardware-plan" not in scripts
+    assert scripts == {
+        "dau-build": "dau_build.build_spec:main",
+        "dau-build-steps": "dau_build.build_spec:main_callable_steps",
+    }
 
 
 def _write_spec(tmp_path: Path) -> Path:

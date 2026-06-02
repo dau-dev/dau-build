@@ -548,6 +548,14 @@ def _stage_shell_script(*, source_shell_root: Path, work_root: Path) -> str:
 
 
 def _execute_steps(steps: Sequence[ToolStep]) -> int:
+    return execute_plan_steps(steps)
+
+
+def format_plan_steps(steps: Sequence[ToolStep]) -> str:
+    return "\n".join(f"{step.name}\t{step.command_line}" for step in steps)
+
+
+def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
     for index, step in enumerate(steps):
         print(f"+ {step.command_line}", flush=True)
         result = subprocess.run(step.argv)
@@ -741,9 +749,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         steps = thunderbolt_release_plan(config)
     if args.execute:
-        return _execute_steps(steps)
-    for step in steps:
-        print(f"{step.name}\t{step.command_line}")
+        return execute_plan_steps(steps)
+    print(format_plan_steps(steps))
     return 0
 
 

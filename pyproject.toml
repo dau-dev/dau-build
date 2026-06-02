@@ -67,7 +67,6 @@ develop = [
 [project.scripts]
 dau-build = "dau_build.build_spec:main"
 dau-build-steps = "dau_build.build_spec:main_callable_steps"
-dau-hardware-plan = "dau_build.hardware_plan:main"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
