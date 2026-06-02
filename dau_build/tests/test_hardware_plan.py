@@ -6,36 +6,32 @@ from pathlib import Path
 
 import pytest
 
+import dau_build.hardware_plan as hardware_plan
 import dau_build.vivado_backend as vivado_backend
-from dau_build.nitefury import (
-    NiteFuryToolchainConfig,
+from dau_build.hardware_plan import (
+    HardwareToolchainConfig,
     build_and_program_plan,
     flash_plan,
     local_build_and_program_plan,
     main,
     recovery_plan,
-    remote_build_and_program_plan,
-    remote_build_plan,
-    remote_flash_plan,
-    remote_xdma_load_plan,
-    remote_xdma_rebuild_plan,
-    stage_nitefury_project_plan,
-    stage_nitefury_shell_plan,
+    stage_shell_plan,
     stage_vivado_overlay_plan,
+    stage_vivado_project_plan,
     thunderbolt_hold_plan,
     thunderbolt_release_plan,
     validate_bitstream_plan,
 )
 from dau_build.vivado_backend import (
-    NiteFuryBackendRequest,
-    NiteFuryProjectGenerationRequest,
+    VivadoBackendRequest,
+    VivadoProjectGenerationRequest,
     dau_overlay_manifest,
     dau_overlay_manifest_text,
     dau_overlay_tcl,
-    generate_nitefury_backend_artifacts,
-    generate_nitefury_project_generation_artifacts,
-    validate_nitefury_backend_artifact_bundle,
-    validate_nitefury_project_artifact_bundle,
+    generate_vivado_backend_artifacts,
+    generate_vivado_project_generation_artifacts,
+    validate_vivado_backend_artifact_bundle,
+    validate_vivado_project_artifact_bundle,
     write_dau_overlay_tcl,
 )
 
@@ -58,7 +54,7 @@ EXPECTED_LSPCI_ENDPOINT_SNIPPET = "endpoint_output=$(lspci -Dnn -d 10ee:7011 || 
 EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI_RESCAN_SCRIPT};"
 
 
-def test_nitefury_source_fixtures_do_not_embed_local_hardware_paths() -> None:
+def test_hardware_plan_source_fixtures_do_not_embed_local_hardware_paths() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     checked_files = (Path(__file__), repo_root / "README.md")
     forbidden_fragments = tuple(
@@ -91,8 +87,8 @@ def _decode_write_text_step_source(step) -> str:
     return base64.b64decode(payload).decode("utf-8")
 
 
-def _write_backend_artifacts(request: NiteFuryBackendRequest):
-    artifacts = generate_nitefury_backend_artifacts(request)
+def _write_backend_artifacts(request: VivadoBackendRequest):
+    artifacts = generate_vivado_backend_artifacts(request)
     artifacts.overlay_tcl_path.parent.mkdir(parents=True, exist_ok=True)
     artifacts.overlay_tcl_path.write_text(artifacts.overlay_tcl_text, encoding="utf-8")
     artifacts.build_tcl_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,8 +100,8 @@ def _write_backend_artifacts(request: NiteFuryBackendRequest):
     return artifacts
 
 
-def _write_project_artifacts(request: NiteFuryProjectGenerationRequest):
-    artifacts = generate_nitefury_project_generation_artifacts(request)
+def _write_project_artifacts(request: VivadoProjectGenerationRequest):
+    artifacts = generate_vivado_project_generation_artifacts(request)
     backend_artifacts = artifacts.backend_artifacts
     artifacts.project_manifest_path.parent.mkdir(parents=True, exist_ok=True)
     artifacts.project_manifest_path.write_text(artifacts.project_manifest_text, encoding="utf-8")
@@ -120,12 +116,12 @@ def _write_project_artifacts(request: NiteFuryProjectGenerationRequest):
     return artifacts
 
 
-def test_structured_nitefury_backend_request_records_ci_artifact_contract() -> None:
-    request = NiteFuryBackendRequest(
+def test_structured_vivado_backend_request_records_ci_artifact_contract() -> None:
+    request = VivadoBackendRequest(
         dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
-        build_root=Path("/repo/dau-build/outputs/nitefury"),
+        build_root=Path("/repo/dau-build/outputs/vivado"),
         artifact_stem="dau-ci",
-        platform="nitefury",
+        platform="vivado-xdma",
         shell="seeded-xdma",
         operator_set=("identity", "sum_i64"),
         register_map_version="0.1",
@@ -136,18 +132,18 @@ def test_structured_nitefury_backend_request_records_ci_artifact_contract() -> N
         vivado_executable="vivado2025.1",
     )
 
-    artifacts = generate_nitefury_backend_artifacts(request)
+    artifacts = generate_vivado_backend_artifacts(request)
 
     manifest = dict(line.split("=", 1) for line in artifacts.manifest_text.splitlines())
-    assert artifacts.overlay_tcl_path == Path("/repo/dau-build/outputs/nitefury/scripts/dau_ci_overlay.tcl")
-    assert artifacts.manifest_path == Path("/repo/dau-build/outputs/nitefury/dau-ci.manifest")
-    assert artifacts.command_plan_path == Path("/repo/dau-build/outputs/nitefury/dau-ci.plan")
-    assert artifacts.bitstream_path == Path("/repo/dau-build/outputs/nitefury/artifacts/dau-ci.bit")
-    assert manifest["backend"] == "dau_build.vivado_backend.nitefury_overlay"
-    assert manifest["platform"] == "nitefury"
+    assert artifacts.overlay_tcl_path == Path("/repo/dau-build/outputs/vivado/scripts/dau_ci_overlay.tcl")
+    assert artifacts.manifest_path == Path("/repo/dau-build/outputs/vivado/dau-ci.manifest")
+    assert artifacts.command_plan_path == Path("/repo/dau-build/outputs/vivado/dau-ci.plan")
+    assert artifacts.bitstream_path == Path("/repo/dau-build/outputs/vivado/artifacts/dau-ci.bit")
+    assert manifest["backend"] == "dau_build.vivado_backend.vivado_overlay"
+    assert manifest["platform"] == "vivado-xdma"
     assert manifest["shell"] == "seeded-xdma"
     assert manifest["artifact_stem"] == "dau-ci"
-    assert manifest["build_root"] == "/repo/dau-build/outputs/nitefury"
+    assert manifest["build_root"] == "/repo/dau-build/outputs/vivado"
     assert manifest["overlay"] == "scripts/dau_ci_overlay.tcl"
     assert manifest["bitstream"] == "artifacts/dau-ci.bit"
     assert manifest["manifest"] == "dau-ci.manifest"
@@ -157,23 +153,171 @@ def test_structured_nitefury_backend_request_records_ci_artifact_contract() -> N
     assert manifest["operator_set"] == "identity,sum_i64"
     assert manifest["vivado_settings"] == "/tools/Vivado/settings64.sh"
     assert manifest["vivado_executable"] == "vivado2025.1"
-    assert "cd /repo/dau-build/outputs/nitefury" in artifacts.command_plan_text
+    assert "cd /repo/dau-build/outputs/vivado" in artifacts.command_plan_text
     assert 'puts $manifest_file "overlay=scripts/dau_ci_overlay.tcl"' in artifacts.overlay_tcl_text
     assert 'puts $manifest_file "bitstream=artifacts/dau-ci.bit"' in artifacts.overlay_tcl_text
     assert "vivado2025.1 -mode batch -source scripts/dau_ci_overlay.tcl" in artifacts.command_plan_text
 
 
-def test_structured_nitefury_project_generation_request_records_workdir_inputs() -> None:
-    request = NiteFuryProjectGenerationRequest(
-        source_nite_root=Path("/repo/projects/nite"),
-        work_nite_root=Path("/repo/dau-build/outputs/nitefury"),
+def test_structured_vivado_backend_request_supports_source_only_vivado_wrapper() -> None:
+    request = VivadoBackendRequest(
+        dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+        build_root=Path("/repo/dau-build/outputs/vivado"),
+        artifact_stem="dau-ci",
+        overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
+        vivado_settings=Path("/tools/Vivado/settings64.sh"),
+        vivado_executable="vivado",
+        vivado_invocation="source-only",
+    )
+
+    artifacts = generate_vivado_backend_artifacts(request)
+
+    manifest = dict(line.split("=", 1) for line in artifacts.manifest_text.splitlines())
+    assert manifest["vivado_invocation"] == "source-only"
+    assert "cd /repo/dau-build/outputs/vivado" in artifacts.command_plan_text
+    assert ". /tools/Vivado/settings64.sh" not in artifacts.command_plan_text
+    assert "vivado -mode batch -source" not in artifacts.command_plan_text
+    assert "vivado scripts/dau_ci_overlay.tcl" in artifacts.command_plan_text
+    assert "vivado scripts/dau_build.tcl" in artifacts.command_plan_text
+
+
+def test_structured_vivado_backend_request_supports_source_only_mount_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    build_root = repo_root / "dau-build" / "outputs" / "vivado-xdma"
+    bundle_root = repo_root / "dau-build" / "outputs" / "dau-bundle"
+    (bundle_root / "generated").mkdir(parents=True)
+    (bundle_root / "rtl").mkdir()
+    (bundle_root / "generated" / "dau_identity_top.sv").write_text("module dau_identity_top; endmodule\n", encoding="utf-8")
+    (bundle_root / "rtl" / "operator.sv").write_text("module operator; endmodule\n", encoding="utf-8")
+    bundle_path = bundle_root / "dau-identity.artifacts.yaml"
+    bundle_path.write_text(
+        "\n".join(
+            (
+                "schema: artlink.manifest/v0",
+                "name: dau-identity",
+                "artifacts:",
+                "  - path: generated/dau_identity_top.sv",
+                "    kind: source",
+                "    role: generated-top",
+                "    language: systemverilog",
+                "    provides:",
+                "      - kind: hdl-module",
+                "        name: dau_identity_top",
+                "  - path: rtl/operator.sv",
+                "    kind: source",
+                "    role: hdl-source",
+                "    language: systemverilog",
+                "    provides:",
+                "      - kind: hdl-module",
+                "        name: operator",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    request = VivadoBackendRequest(
+        dau_core_hdl_root=repo_root / "dau-core" / "dau_core" / "hdl",
+        build_root=build_root,
+        artifact_stem="dau-ci",
+        dau_artifact_bundle_path=bundle_path,
+        vivado_invocation="source-only",
+        vivado_mount_root=repo_root,
+    )
+
+    artifacts = generate_vivado_backend_artifacts(request)
+    manifest = dict(line.split("=", 1) for line in artifacts.manifest_text.splitlines())
+
+    assert artifacts.overlay_driver_tcl_path == build_root / "scripts" / "dau_overlay.driver.tcl"
+    assert artifacts.build_driver_tcl_path == build_root / "scripts" / "dau_build.driver.tcl"
+    assert artifacts.overlay_driver_tcl_text == "cd dau-build/outputs/vivado-xdma\nsource scripts/dau_overlay.tcl\n"
+    assert artifacts.build_driver_tcl_text == "cd dau-build/outputs/vivado-xdma\nsource scripts/dau_build.tcl\n"
+    assert manifest["vivado_mount_root"] == repo_root.as_posix()
+    assert manifest["dau_artifact_bundle"] == "../dau-bundle/dau-identity.artifacts.yaml"
+    assert manifest["dau_generated_top"] == "../dau-bundle/generated/dau_identity_top.sv"
+    assert manifest["dau_bundle_hdl_sources"] == "../dau-bundle/generated/dau_identity_top.sv,../dau-bundle/rtl/operator.sv"
+    assert repo_root.as_posix() not in artifacts.overlay_tcl_text
+    assert 'set dau_identity_registers_sv [file normalize "../../../dau-core/dau_core/hdl/dau_identity_registers.sv"]' in artifacts.overlay_tcl_text
+    assert '[file normalize "../dau-bundle/generated/dau_identity_top.sv"]' in artifacts.overlay_tcl_text
+    assert f"cd {repo_root.as_posix()}" in artifacts.command_plan_text
+    assert "vivado dau-build/outputs/vivado-xdma/scripts/dau_overlay.driver.tcl" in artifacts.command_plan_text
+    assert "rm -f dau-build/outputs/vivado-xdma/Top.v" in artifacts.command_plan_text
+    assert "vivado dau-build/outputs/vivado-xdma/scripts/dau_build.driver.tcl" in artifacts.command_plan_text
+
+    artifacts.overlay_tcl_path.parent.mkdir(parents=True, exist_ok=True)
+    artifacts.overlay_tcl_path.write_text(artifacts.overlay_tcl_text, encoding="utf-8")
+    artifacts.manifest_path.write_text(artifacts.manifest_text, encoding="utf-8")
+    artifacts.command_plan_path.write_text(artifacts.command_plan_text, encoding="utf-8")
+    validation = validate_vivado_backend_artifact_bundle(build_root, manifest_path=Path("dau-ci.manifest"), command_plan_path=Path("dau-ci.plan"))
+
+    assert validation.ok
+
+
+def test_structured_vivado_backend_request_consumes_dau_artifact_bundle(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "dau-bundle"
+    (bundle_root / "generated").mkdir(parents=True)
+    (bundle_root / "rtl").mkdir()
+    (bundle_root / "generated" / "dau_identity_top.sv").write_text("module dau_identity_top; endmodule\n", encoding="utf-8")
+    (bundle_root / "rtl" / "operator.sv").write_text("module operator; endmodule\n", encoding="utf-8")
+    bundle_path = bundle_root / "dau-identity.artifacts.yaml"
+    bundle_path.write_text(
+        "\n".join(
+            (
+                "schema: artlink.manifest/v0",
+                "name: dau-identity",
+                "artifacts:",
+                "  - path: generated/dau_identity_top.sv",
+                "    kind: source",
+                "    role: generated-top",
+                "    language: systemverilog",
+                "    provides:",
+                "      - kind: hdl-module",
+                "        name: dau_identity_top",
+                "  - path: rtl/operator.sv",
+                "    kind: source",
+                "    role: hdl-source",
+                "    language: systemverilog",
+                "    provides:",
+                "      - kind: hdl-module",
+                "        name: operator",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    request = VivadoBackendRequest(
+        dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+        build_root=tmp_path / "vivado-xdma",
+        artifact_stem="dau-ci",
+        dau_artifact_bundle_path=bundle_path,
+    )
+
+    artifacts = generate_vivado_backend_artifacts(request)
+
+    manifest = dict(line.split("=", 1) for line in artifacts.manifest_text.splitlines())
+    generated_top = (bundle_root / "generated" / "dau_identity_top.sv").resolve().as_posix()
+    operator_source = (bundle_root / "rtl" / "operator.sv").resolve().as_posix()
+    assert manifest["dau_artifact_bundle"] == bundle_path.resolve().as_posix()
+    assert manifest["dau_generated_top"] == generated_top
+    assert manifest["dau_bundle_hdl_sources"] == f"{generated_top},{operator_source}"
+    assert "set dau_bundle_hdl_sources [list" in artifacts.overlay_tcl_text
+    assert generated_top in artifacts.overlay_tcl_text
+    assert operator_source in artifacts.overlay_tcl_text
+    assert "foreach dau_bundle_hdl_source" in artifacts.overlay_tcl_text
+    assert f'puts $manifest_file "dau_artifact_bundle={bundle_path.resolve().as_posix()}"' in artifacts.overlay_tcl_text
+    assert f'puts $manifest_file "dau_generated_top={generated_top}"' in artifacts.overlay_tcl_text
+
+
+def test_structured_vivado_project_generation_request_records_workdir_inputs() -> None:
+    request = VivadoProjectGenerationRequest(
+        source_shell_root=Path("/repo/projects/vivado-shell"),
+        work_root=Path("/repo/dau-build/outputs/vivado"),
         dau_core_root=Path("/repo/dau-core"),
         dau_driver_root=Path("/repo/dau-driver"),
         dau_utils_root=Path("/repo/dau-utils"),
         dau_build_manifest_path=Path("/repo/dau-build/outputs/dau-identity/dau-identity.manifest"),
         dau_top_sv_path=Path("/repo/dau-build/outputs/dau-identity/generated/dau_identity_top.sv"),
         artifact_stem="dau-ci",
-        platform="nitefury",
+        platform="vivado-xdma",
         shell="seeded-xdma",
         operator_set=("identity", "sum_i64"),
         register_map_version="0.1",
@@ -184,14 +328,14 @@ def test_structured_nitefury_project_generation_request_records_workdir_inputs()
         vivado_executable="vivado2025.1",
     )
 
-    artifacts = generate_nitefury_project_generation_artifacts(request)
+    artifacts = generate_vivado_project_generation_artifacts(request)
 
     manifest = dict(line.split("=", 1) for line in artifacts.project_manifest_text.splitlines())
-    assert artifacts.project_manifest_path == Path("/repo/dau-build/outputs/nitefury/dau-ci.project")
-    assert artifacts.backend_artifacts.manifest_path == Path("/repo/dau-build/outputs/nitefury/dau-ci.manifest")
-    assert manifest["project_generator"] == "dau_build.vivado_backend.nitefury_project"
-    assert manifest["source_nite_root"] == "/repo/projects/nite"
-    assert manifest["work_nite_root"] == "/repo/dau-build/outputs/nitefury"
+    assert artifacts.project_manifest_path == Path("/repo/dau-build/outputs/vivado/dau-ci.project")
+    assert artifacts.backend_artifacts.manifest_path == Path("/repo/dau-build/outputs/vivado/dau-ci.manifest")
+    assert manifest["project_generator"] == "dau_build.vivado_backend.vivado_project"
+    assert manifest["source_shell_root"] == "/repo/projects/vivado-shell"
+    assert manifest["work_root"] == "/repo/dau-build/outputs/vivado"
     assert manifest["dau_core_root"] == "/repo/dau-core"
     assert manifest["dau_core_hdl_root"] == "/repo/dau-core/dau_core/hdl"
     assert manifest["dau_driver_root"] == "/repo/dau-driver"
@@ -204,20 +348,39 @@ def test_structured_nitefury_project_generation_request_records_workdir_inputs()
     assert manifest["build_tcl"] == "scripts/dau_build.tcl"
     assert manifest["bitstream"] == "artifacts/dau-ci.bit"
     assert manifest["xdma_module"] == "sw/xdma/xdma.ko"
+    assert manifest["vivado_invocation"] == "standard"
     assert "stage-vivado-overlay" in manifest["stage_command"]
-    assert "--source-nite-root /repo/projects/nite" in manifest["stage_command"]
+    assert "--source-shell-root /repo/projects/vivado-shell" in manifest["stage_command"]
     assert "local-build-and-program" in manifest["build_command"]
     assert "validate-bitstream" in manifest["validate_command"]
     assert "--dau-utils-root /repo/dau-utils" in manifest["validate_command"]
 
 
+def test_structured_vivado_project_generation_records_source_only_vivado_wrapper() -> None:
+    request = VivadoProjectGenerationRequest(
+        source_shell_root=Path("/repo/projects/vivado-shell"),
+        work_root=Path("/repo/dau-build/outputs/vivado"),
+        dau_core_root=Path("/repo/dau-core"),
+        dau_driver_root=Path("/repo/dau-driver"),
+        artifact_stem="dau-ci",
+        vivado_invocation="source-only",
+    )
+
+    artifacts = generate_vivado_project_generation_artifacts(request)
+
+    manifest = dict(line.split("=", 1) for line in artifacts.project_manifest_text.splitlines())
+    assert manifest["vivado_invocation"] == "source-only"
+    assert "--vivado-invocation source-only" in manifest["stage_command"]
+    assert "--vivado-invocation source-only" in manifest["build_command"]
+
+
 def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
-        NiteFuryBackendRequest(
+        VivadoBackendRequest(
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
             artifact_stem="dau-ci",
-            platform="nitefury",
+            platform="vivado-xdma",
             shell="seeded-xdma",
             operator_set=("identity", "sum_i64"),
             overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
@@ -227,7 +390,7 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
         )
     )
 
-    validation = validate_nitefury_backend_artifact_bundle(
+    validation = validate_vivado_backend_artifact_bundle(
         tmp_path,
         manifest_path=Path("dau-ci.manifest"),
         command_plan_path=Path("dau-ci.plan"),
@@ -239,21 +402,21 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
     assert validation.overlay_tcl_path == artifacts.overlay_tcl_path
     assert validation.command_plan_path == artifacts.command_plan_path
     assert validation.bitstream_path == artifacts.bitstream_path
-    assert manifest["platform"] == "nitefury"
+    assert manifest["platform"] == "vivado-xdma"
     assert manifest["shell"] == "seeded-xdma"
     assert manifest["operator_set"] == "identity,sum_i64"
 
 
 def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tmp_path: Path) -> None:
     artifacts = _write_project_artifacts(
-        NiteFuryProjectGenerationRequest(
-            source_nite_root=Path("/repo/projects/nite"),
-            work_nite_root=tmp_path,
+        VivadoProjectGenerationRequest(
+            source_shell_root=Path("/repo/projects/vivado-shell"),
+            work_root=tmp_path,
             dau_core_root=Path("/repo/dau-core"),
             dau_driver_root=Path("/repo/dau-driver"),
             dau_utils_root=Path("/repo/dau-utils"),
             artifact_stem="dau-ci",
-            platform="nitefury",
+            platform="vivado-xdma",
             shell="seeded-xdma",
             operator_set=("identity", "sum_i64"),
             overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
@@ -263,7 +426,7 @@ def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tm
         )
     )
 
-    validation = validate_nitefury_project_artifact_bundle(
+    validation = validate_vivado_project_artifact_bundle(
         tmp_path,
         project_manifest_path=Path("dau-ci.project"),
         manifest_path=Path("dau-ci.manifest"),
@@ -279,9 +442,9 @@ def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tm
 
 def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mismatch(tmp_path: Path) -> None:
     artifacts = _write_project_artifacts(
-        NiteFuryProjectGenerationRequest(
-            source_nite_root=Path("/repo/projects/nite"),
-            work_nite_root=tmp_path,
+        VivadoProjectGenerationRequest(
+            source_shell_root=Path("/repo/projects/vivado-shell"),
+            work_root=tmp_path,
             dau_core_root=Path("/repo/dau-core"),
             dau_driver_root=Path("/repo/dau-driver"),
             artifact_stem="dau-ci",
@@ -291,7 +454,7 @@ def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mi
         artifacts.project_manifest_text.replace("backend_manifest=dau-ci.manifest", "backend_manifest=wrong.manifest"), encoding="utf-8"
     )
 
-    validation = validate_nitefury_project_artifact_bundle(
+    validation = validate_vivado_project_artifact_bundle(
         tmp_path,
         project_manifest_path=Path("dau-ci.project"),
         manifest_path=Path("dau-ci.manifest"),
@@ -304,7 +467,7 @@ def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mi
 
 def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
-        NiteFuryBackendRequest(
+        VivadoBackendRequest(
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
             artifact_stem="dau-ci",
@@ -313,7 +476,7 @@ def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp
     )
     artifacts.overlay_tcl_path.unlink()
 
-    validation = validate_nitefury_backend_artifact_bundle(
+    validation = validate_vivado_backend_artifact_bundle(
         tmp_path,
         manifest_path=Path("dau-ci.manifest"),
         command_plan_path=Path("dau-ci.plan"),
@@ -324,40 +487,40 @@ def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp
 
 
 def test_backend_build_tcl_guards_legacy_xdma_lane_cells() -> None:
-    build_tcl = vivado_backend.nitefury_build_tcl()
+    build_tcl = vivado_backend.vivado_build_tcl()
 
     assert "get_cells -quiet $cell_path" in build_tcl
     assert "skipping missing PCIe lane cell" in build_tcl
     assert "reset_property LOC [get_cells" not in build_tcl
 
 
-def test_nitefury_toolchain_defaults_point_at_existing_scratch_project_layout() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"))
+def test_hardware_toolchain_defaults_point_at_existing_vivado_project_layout() -> None:
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
 
-    assert config.project_tcl == Path("/repo/projects/nite/project.tcl")
-    assert config.bitstream == Path("/repo/projects/nite/project.runs/impl_1/Top_wrapper.bit")
+    assert config.project_tcl == Path("/repo/projects/vivado-shell/project.tcl")
+    assert config.bitstream == Path("/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit")
 
 
-def test_stage_nitefury_shell_plan_copies_seed_to_generated_workdir() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/dau-build/outputs/nitefury"))
+def test_stage_shell_plan_copies_seed_to_generated_workdir() -> None:
+    config = HardwareToolchainConfig(work_root=Path("/repo/dau-build/outputs/vivado"))
 
-    steps = stage_nitefury_shell_plan(
+    steps = stage_shell_plan(
         config,
-        source_nite_root=Path("/repo/reference/nitefury-shell"),
+        source_shell_root=Path("/repo/reference/vivado-shell"),
     )
 
-    assert [step.name for step in steps] == ["stage-nitefury-shell"]
+    assert [step.name for step in steps] == ["stage-shell"]
     assert steps[0].argv[0:2] == ("sh", "-c")
     assert "mkdir -p /repo/dau-build/outputs" in steps[0].argv[2]
     assert "rsync -a --delete --delete-excluded" in steps[0].argv[2]
     assert "--exclude .Xil" in steps[0].argv[2]
     assert "--exclude project.gen" in steps[0].argv[2]
     assert "--exclude project.runs" in steps[0].argv[2]
-    assert "/repo/reference/nitefury-shell/ /repo/dau-build/outputs/nitefury/" in steps[0].argv[2]
+    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in steps[0].argv[2]
 
 
 def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"))
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
 
     steps = recovery_plan(config)
 
@@ -367,7 +530,7 @@ def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -
         "-c",
         "test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove",
     )
-    assert steps[2].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/nite/project.runs/impl_1/Top_wrapper.bit")
+    assert steps[2].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit")
     assert steps[3].argv == ("sh", "-c", EXPECTED_PCI_RESCAN_SCRIPT)
     assert steps[4].argv[0:2] == ("sh", "-c")
     assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in steps[4].argv[2]
@@ -376,7 +539,7 @@ def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -
 
 
 def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado2025.1")
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado2025.1")
 
     steps = build_and_program_plan(config)
 
@@ -400,13 +563,13 @@ def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
         "--pattern",
         "Xilinx",
     )
-    assert steps[1].argv == ("vivado2025.1", "-mode", "batch", "-source", "/repo/projects/nite/project.tcl")
+    assert steps[1].argv == ("vivado2025.1", "-mode", "batch", "-source", "/repo/projects/vivado-shell/project.tcl")
     assert steps[2].argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
-    assert steps[3].command_line == "openFPGALoader -c digilent_hs2 /repo/projects/nite/project.runs/impl_1/Top_wrapper.bit"
+    assert steps[3].command_line == "openFPGALoader -c digilent_hs2 /repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit"
 
 
 def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"))
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
 
     hold_step = thunderbolt_hold_plan(config)[0]
     release_step = thunderbolt_release_plan(config)[0]
@@ -440,14 +603,14 @@ def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
 
 
 def test_cli_prints_recovery_plan_without_running_privileged_commands(capsys) -> None:
-    exit_code = main(["recovery", "--nite-root", "/repo/projects/nite"])
+    exit_code = main(["recovery", "--work-root", "/repo/projects/vivado-shell"])
 
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "thunderbolt-hold\tdau-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
     assert lines[1:4] == [
         "remove-endpoint\tsh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
-        "program-volatile\topenFPGALoader -c digilent_hs2 /repo/projects/nite/project.runs/impl_1/Top_wrapper.bit",
+        "program-volatile\topenFPGALoader -c digilent_hs2 /repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
         f"pci-rescan\tsh -c '{EXPECTED_PCI_RESCAN_SCRIPT}'",
     ]
     assert lines[4].startswith("lspci-endpoint\tsh -c ")
@@ -455,7 +618,7 @@ def test_cli_prints_recovery_plan_without_running_privileged_commands(capsys) ->
 
 
 def test_cli_prints_thunderbolt_release_plan(capsys) -> None:
-    exit_code = main(["thunderbolt-release", "--nite-root", "/repo/projects/nite"])
+    exit_code = main(["thunderbolt-release", "--work-root", "/repo/projects/vivado-shell"])
 
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
@@ -464,59 +627,19 @@ def test_cli_prints_thunderbolt_release_plan(capsys) -> None:
 
 
 def test_module_entrypoint_prints_plan_for_uninstalled_checkout(capsys, monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["nitefury", "thunderbolt-release", "--nite-root", "/repo/projects/nite"])
-    monkeypatch.delitem(sys.modules, "dau_build.nitefury", raising=False)
+    monkeypatch.setattr(sys, "argv", ["vivado-xdma", "thunderbolt-release", "--work-root", "/repo/projects/vivado-shell"])
+    monkeypatch.delitem(sys.modules, "dau_build.hardware_plan", raising=False)
 
     with pytest.raises(SystemExit) as exc_info:
-        runpy.run_module("dau_build.nitefury", run_name="__main__")
+        runpy.run_module("dau_build.hardware_plan", run_name="__main__")
 
     assert exc_info.value.code == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines == ["thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"]
 
 
-def test_remote_build_plan_wraps_hold_vivado_and_release_over_ssh() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
-
-    steps = remote_build_plan(
-        config,
-        remote_host="root@linux-hw-host",
-        remote_nite_root=Path("/srv/dau/projects/nite"),
-    )
-
-    assert [step.name for step in steps] == ["remote-thunderbolt-hold", "remote-vivado-build", "remote-thunderbolt-release"]
-    assert steps[0].argv[0:2] == ("ssh", "root@linux-hw-host")
-    assert "dau-pci-runtime-pm hold" in steps[0].argv[2]
-    assert steps[1].argv[0:2] == ("ssh", "root@linux-hw-host")
-    assert "cd /srv/dau/projects/nite" in steps[1].argv[2]
-    assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
-    assert "vivado -mode batch -source project.tcl" in steps[1].argv[2]
-    assert "dau-pci-runtime-pm release" in steps[2].argv[2]
-
-
-def test_cli_prints_remote_build_plan(capsys) -> None:
-    exit_code = main(
-        [
-            "remote-build",
-            "--nite-root",
-            "/repo/projects/nite",
-            "--remote-host",
-            "root@linux-hw-host",
-            "--remote-nite-root",
-            "/srv/dau/projects/nite",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 3
-    assert lines[0].startswith("remote-thunderbolt-hold\tssh root@linux-hw-host ")
-    assert lines[1].startswith("remote-vivado-build\tssh root@linux-hw-host ")
-    assert lines[2].startswith("remote-thunderbolt-release\tssh root@linux-hw-host ")
-
-
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_smoke() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(
         config,
@@ -537,10 +660,10 @@ def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_
         "driver-hardware-smoke",
         "thunderbolt-release",
     ]
-    assert "base64 -d > /repo/projects/nite/scripts/dau_overlay.tcl" in steps[1].argv[2]
-    assert "base64 -d > /repo/projects/nite/scripts/dau_build.tcl" in steps[2].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/scripts/dau_overlay.tcl" in steps[1].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/scripts/dau_build.tcl" in steps[2].argv[2]
     assert steps[3].argv[0:2] == ("bash", "-lc")
-    assert "cd /repo/projects/nite" in steps[3].argv[2]
+    assert "cd /repo/projects/vivado-shell" in steps[3].argv[2]
     assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[3].argv[2]
     assert "vivado -mode batch -source project.tcl" not in steps[3].argv[2]
     assert "vivado -mode batch -source scripts/dau_overlay.tcl" in steps[3].argv[2]
@@ -556,31 +679,31 @@ def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_
 
 
 def test_local_build_and_program_plan_can_stage_shell_seed_before_overlay() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/dau-build/outputs/nitefury"), vivado_executable="vivado")
+    config = HardwareToolchainConfig(work_root=Path("/repo/dau-build/outputs/vivado"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(
         config,
-        source_nite_root=Path("/repo/reference/nitefury-shell"),
+        source_shell_root=Path("/repo/reference/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
         dau_driver_root=Path("/repo/dau-driver"),
     )
 
     assert [step.name for step in steps][0:5] == [
-        "stage-nitefury-shell",
+        "stage-shell",
         "thunderbolt-hold",
         "write-dau-overlay",
         "write-vivado-build-script",
         "vivado-overlay-build",
     ]
-    assert "/repo/reference/nitefury-shell/ /repo/dau-build/outputs/nitefury/" in steps[0].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_overlay.tcl" in steps[2].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_build.tcl" in steps[3].argv[2]
-    assert "cd /repo/dau-build/outputs/nitefury" in steps[4].argv[2]
+    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in steps[0].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_overlay.tcl" in steps[2].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_build.tcl" in steps[3].argv[2]
+    assert "cd /repo/dau-build/outputs/vivado" in steps[4].argv[2]
 
 
 def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() -> None:
-    config = NiteFuryToolchainConfig(
-        nite_root=Path("/repo/projects/nite"),
+    config = HardwareToolchainConfig(
+        work_root=Path("/repo/projects/vivado-shell"),
         bitstream_path=Path("artifacts/candidate.bit"),
         vivado_executable="vivado",
     )
@@ -601,13 +724,14 @@ def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() ->
         "driver-hardware-smoke",
         "thunderbolt-release",
     ]
-    assert steps[3].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/nite/artifacts/candidate.bit")
-    assert all("vivado" not in step.command_line.lower() for step in steps)
+    assert steps[3].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/vivado-shell/artifacts/candidate.bit")
+    assert all(step.name != "vivado-overlay-build" for step in steps)
+    assert all(step.argv[0] != "vivado" for step in steps)
     assert all("dau_overlay" not in step.command_line for step in steps)
 
 
 def test_stage_vivado_overlay_plan_writes_backend_artifacts_without_running_vivado() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = stage_vivado_overlay_plan(
         config,
@@ -616,36 +740,36 @@ def test_stage_vivado_overlay_plan_writes_backend_artifacts_without_running_viva
 
     assert [step.name for step in steps] == ["write-dau-overlay", "write-dau-manifest", "write-vivado-build-script", "write-vivado-command-plan"]
     assert steps[0].argv[0:2] == ("sh", "-c")
-    assert "base64 -d > /repo/projects/nite/scripts/dau_overlay.tcl" in steps[0].argv[2]
-    assert "base64 -d > /repo/projects/nite/dau-nitefury.manifest" in steps[1].argv[2]
-    assert "base64 -d > /repo/projects/nite/scripts/dau_build.tcl" in steps[2].argv[2]
-    assert "base64 -d > /repo/projects/nite/dau-nitefury.plan" in steps[3].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/scripts/dau_overlay.tcl" in steps[0].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/dau-vivado.manifest" in steps[1].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/scripts/dau_build.tcl" in steps[2].argv[2]
+    assert "base64 -d > /repo/projects/vivado-shell/dau-vivado.plan" in steps[3].argv[2]
     assert all(not step.name.startswith("vivado") for step in steps)
 
 
 def test_stage_vivado_overlay_plan_can_stage_shell_seed_into_workdir() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/dau-build/outputs/nitefury"), vivado_executable="vivado")
+    config = HardwareToolchainConfig(work_root=Path("/repo/dau-build/outputs/vivado"), vivado_executable="vivado")
 
     steps = stage_vivado_overlay_plan(
         config,
-        source_nite_root=Path("/repo/reference/nitefury-shell"),
+        source_shell_root=Path("/repo/reference/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
     )
 
     assert [step.name for step in steps] == [
-        "stage-nitefury-shell",
+        "stage-shell",
         "write-dau-overlay",
         "write-dau-manifest",
         "write-vivado-build-script",
         "write-vivado-command-plan",
     ]
-    assert "/repo/reference/nitefury-shell/ /repo/dau-build/outputs/nitefury/" in steps[0].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_overlay.tcl" in steps[1].argv[2]
+    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in steps[0].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_overlay.tcl" in steps[1].argv[2]
 
 
 def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
-    config = NiteFuryToolchainConfig(
-        nite_root=Path("/repo/dau-build/outputs/nitefury"),
+    config = HardwareToolchainConfig(
+        work_root=Path("/repo/dau-build/outputs/vivado"),
         bitstream_path=Path("artifacts/dau-ci.bit"),
         vivado_executable="vivado2025.1",
     )
@@ -654,7 +778,7 @@ def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
         config,
         dau_core_root=Path("/repo/dau-core"),
         artifact_stem="dau-ci",
-        platform="nitefury",
+        platform="vivado-xdma",
         shell="seeded-xdma",
         operator_set=("identity", "sum_i64"),
         stream_protocol_version="0.2",
@@ -662,11 +786,11 @@ def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
     )
 
     assert [step.name for step in steps] == ["write-dau-overlay", "write-dau-manifest", "write-vivado-build-script", "write-vivado-command-plan"]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/dau-ci.manifest" in steps[1].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_build.tcl" in steps[2].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/dau-ci.plan" in steps[3].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/dau-ci.manifest" in steps[1].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_build.tcl" in steps[2].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/dau-ci.plan" in steps[3].argv[2]
     manifest = dict(line.split("=", 1) for line in _decode_write_text_step_source(steps[1]).splitlines())
-    assert manifest["platform"] == "nitefury"
+    assert manifest["platform"] == "vivado-xdma"
     assert manifest["shell"] == "seeded-xdma"
     assert manifest["operator_set"] == "identity,sum_i64"
     assert manifest["stream_protocol_version"] == "0.2"
@@ -677,27 +801,27 @@ def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
     build_tcl = _decode_write_text_step_source(steps[2])
     assert "skipping missing PCIe lane cell" in build_tcl
     command_plan = _decode_write_text_step_source(steps[3])
-    assert "cd /repo/dau-build/outputs/nitefury" in command_plan
+    assert "cd /repo/dau-build/outputs/vivado" in command_plan
     assert "vivado2025.1 -mode batch -source scripts/dau_overlay.tcl" in command_plan
     assert "vivado2025.1 -mode batch -source scripts/dau_build.tcl" in command_plan
     assert "scripts/build.tcl" not in command_plan
 
 
-def test_stage_nitefury_project_plan_writes_project_and_backend_artifacts_without_vivado() -> None:
-    config = NiteFuryToolchainConfig(
-        nite_root=Path("/repo/dau-build/outputs/nitefury"),
+def test_stage_vivado_project_plan_writes_project_and_backend_artifacts_without_vivado() -> None:
+    config = HardwareToolchainConfig(
+        work_root=Path("/repo/dau-build/outputs/vivado"),
         bitstream_path=Path("artifacts/dau-ci.bit"),
         vivado_executable="vivado2025.1",
     )
 
-    steps = stage_nitefury_project_plan(
+    steps = stage_vivado_project_plan(
         config,
-        source_nite_root=Path("/repo/projects/nite"),
+        source_shell_root=Path("/repo/projects/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
         dau_driver_root=Path("/repo/dau-driver"),
         dau_utils_root=Path("/repo/dau-utils"),
         artifact_stem="dau-ci",
-        platform="nitefury",
+        platform="vivado-xdma",
         shell="seeded-xdma",
         operator_set=("identity", "sum_i64"),
         stream_protocol_version="0.2",
@@ -706,22 +830,22 @@ def test_stage_nitefury_project_plan_writes_project_and_backend_artifacts_withou
     )
 
     assert [step.name for step in steps] == [
-        "stage-nitefury-shell",
-        "write-nitefury-project-manifest",
+        "stage-shell",
+        "write-vivado-project-manifest",
         "write-dau-overlay",
         "write-dau-manifest",
         "write-vivado-build-script",
         "write-vivado-command-plan",
     ]
-    assert "/repo/projects/nite/ /repo/dau-build/outputs/nitefury/" in steps[0].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/dau-ci.project" in steps[1].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_ci_overlay.tcl" in steps[2].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/dau-ci.manifest" in steps[3].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/scripts/dau_build.tcl" in steps[4].argv[2]
-    assert "base64 -d > /repo/dau-build/outputs/nitefury/dau-ci.plan" in steps[5].argv[2]
+    assert "/repo/projects/vivado-shell/ /repo/dau-build/outputs/vivado/" in steps[0].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/dau-ci.project" in steps[1].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_ci_overlay.tcl" in steps[2].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/dau-ci.manifest" in steps[3].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/scripts/dau_build.tcl" in steps[4].argv[2]
+    assert "base64 -d > /repo/dau-build/outputs/vivado/dau-ci.plan" in steps[5].argv[2]
     project_manifest = dict(line.split("=", 1) for line in _decode_write_text_step_source(steps[1]).splitlines())
-    assert project_manifest["source_nite_root"] == "/repo/projects/nite"
-    assert project_manifest["work_nite_root"] == "/repo/dau-build/outputs/nitefury"
+    assert project_manifest["source_shell_root"] == "/repo/projects/vivado-shell"
+    assert project_manifest["work_root"] == "/repo/dau-build/outputs/vivado"
     assert project_manifest["backend_manifest"] == "dau-ci.manifest"
     assert project_manifest["backend_command_plan"] == "dau-ci.plan"
     assert "stage-vivado-overlay" in project_manifest["stage_command"]
@@ -732,8 +856,8 @@ def test_stage_nitefury_project_plan_writes_project_and_backend_artifacts_withou
 def test_dau_overlay_manifest_records_backend_contract() -> None:
     manifest = dict(dau_overlay_manifest(Path("/repo/dau-core/dau_core/hdl")))
 
-    assert manifest == {
-        "backend": "dau_build.vivado_backend.nitefury_overlay",
+    assert {
+        "backend": "dau_build.vivado_backend.vivado_overlay",
         "dau_identity_registers_sv": "/repo/dau-core/dau_core/hdl/dau_identity_registers.sv",
         "dau_identity_axil_v": "/repo/dau-core/dau_core/hdl/dau_identity_axil.v",
         "dau_identity_axil_sv_legacy": "/repo/dau-core/dau_core/hdl/dau_identity_axil.sv",
@@ -742,18 +866,22 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
         "register_window_offset": "0x00001000",
         "overlay": "scripts/dau_overlay.tcl",
         "bitstream": "project.runs/impl_1/Top_wrapper.bit",
-    }
-    assert dau_overlay_manifest_text(Path("/repo/dau-core/dau_core/hdl")).splitlines()[0] == "backend=dau_build.vivado_backend.nitefury_overlay"
+    }.items() <= manifest.items()
+    assert manifest["job_control_offset"] == "0x00000050"
+    assert manifest["job_status_offset"] == "0x00000054"
+    assert manifest["input_buffer_address"] == "0x0000000000000000"
+    assert manifest["output_buffer_address"] == "0x0000000000100000"
+    assert dau_overlay_manifest_text(Path("/repo/dau-core/dau_core/hdl")).splitlines()[0] == "backend=dau_build.vivado_backend.vivado_overlay"
 
 
 def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = flash_plan(config)
 
     assert [step.name for step in steps] == ["thunderbolt-hold", "flash", "thunderbolt-release"]
     assert steps[1].argv[0:2] == ("bash", "-lc")
-    assert "cd /repo/projects/nite" in steps[1].argv[2]
+    assert "cd /repo/projects/vivado-shell" in steps[1].argv[2]
     assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
     assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
 
@@ -762,8 +890,8 @@ def test_cli_prints_stage_vivado_overlay_plan_without_vivado_execution(capsys) -
     exit_code = main(
         [
             "stage-vivado-overlay",
-            "--nite-root",
-            "/repo/projects/nite",
+            "--work-root",
+            "/repo/projects/vivado-shell",
             "--dau-core-root",
             "/repo/dau-core",
         ]
@@ -780,7 +908,7 @@ def test_cli_prints_stage_vivado_overlay_plan_without_vivado_execution(capsys) -
 
 def test_cli_validates_structured_backend_artifact_bundle(tmp_path: Path, capsys) -> None:
     _write_backend_artifacts(
-        NiteFuryBackendRequest(
+        VivadoBackendRequest(
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
             artifact_stem="dau-ci",
@@ -792,7 +920,7 @@ def test_cli_validates_structured_backend_artifact_bundle(tmp_path: Path, capsys
     exit_code = main(
         [
             "validate-vivado-artifacts",
-            "--nite-root",
+            "--work-root",
             str(tmp_path),
             "--manifest-path",
             "dau-ci.manifest",
@@ -810,9 +938,9 @@ def test_cli_validates_structured_backend_artifact_bundle(tmp_path: Path, capsys
 
 def test_cli_validates_structured_project_artifact_bundle(tmp_path: Path, capsys) -> None:
     _write_project_artifacts(
-        NiteFuryProjectGenerationRequest(
-            source_nite_root=Path("/repo/projects/nite"),
-            work_nite_root=tmp_path,
+        VivadoProjectGenerationRequest(
+            source_shell_root=Path("/repo/projects/vivado-shell"),
+            work_root=tmp_path,
             dau_core_root=Path("/repo/dau-core"),
             dau_driver_root=Path("/repo/dau-driver"),
             artifact_stem="dau-ci",
@@ -824,7 +952,7 @@ def test_cli_validates_structured_project_artifact_bundle(tmp_path: Path, capsys
     exit_code = main(
         [
             "validate-vivado-artifacts",
-            "--nite-root",
+            "--work-root",
             str(tmp_path),
             "--project-manifest-path",
             "dau-ci.project",
@@ -845,29 +973,29 @@ def test_cli_validates_structured_project_artifact_bundle(tmp_path: Path, capsys
 def test_cli_prints_stage_shell_plan_for_generated_workdir(capsys) -> None:
     exit_code = main(
         [
-            "stage-nitefury-shell",
-            "--source-nite-root",
-            "/repo/reference/nitefury-shell",
-            "--nite-root",
-            "/repo/dau-build/outputs/nitefury",
+            "stage-shell",
+            "--source-shell-root",
+            "/repo/reference/vivado-shell",
+            "--work-root",
+            "/repo/dau-build/outputs/vivado",
         ]
     )
 
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 1
-    assert lines[0].startswith("stage-nitefury-shell\tsh -c ")
-    assert "/repo/reference/nitefury-shell/ /repo/dau-build/outputs/nitefury/" in lines[0]
+    assert lines[0].startswith("stage-shell\tsh -c ")
+    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in lines[0]
 
 
-def test_cli_prints_stage_nitefury_project_plan(capsys) -> None:
+def test_cli_prints_stage_vivado_project_plan(capsys) -> None:
     exit_code = main(
         [
-            "stage-nitefury-project",
-            "--source-nite-root",
-            "/repo/projects/nite",
-            "--nite-root",
-            "/repo/dau-build/outputs/nitefury",
+            "stage-vivado-project",
+            "--source-shell-root",
+            "/repo/projects/vivado-shell",
+            "--work-root",
+            "/repo/dau-build/outputs/vivado",
             "--dau-core-root",
             "/repo/dau-core",
             "--dau-driver-root",
@@ -882,8 +1010,8 @@ def test_cli_prints_stage_nitefury_project_plan(capsys) -> None:
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 6
-    assert lines[0].startswith("stage-nitefury-shell\tsh -c ")
-    assert lines[1].startswith("write-nitefury-project-manifest\tsh -c ")
+    assert lines[0].startswith("stage-shell\tsh -c ")
+    assert lines[1].startswith("write-vivado-project-manifest\tsh -c ")
     assert "dau-ci.project" in lines[1]
     assert lines[2].startswith("write-dau-overlay\tsh -c ")
     assert lines[5].startswith("write-vivado-command-plan\tsh -c ")
@@ -893,10 +1021,10 @@ def test_cli_local_build_can_stage_shell_before_overlay(capsys) -> None:
     exit_code = main(
         [
             "local-build-and-program",
-            "--source-nite-root",
-            "/repo/reference/nitefury-shell",
-            "--nite-root",
-            "/repo/dau-build/outputs/nitefury",
+            "--source-shell-root",
+            "/repo/reference/vivado-shell",
+            "--work-root",
+            "/repo/dau-build/outputs/vivado",
             "--dau-core-root",
             "/repo/dau-core",
             "--dau-driver-root",
@@ -907,7 +1035,7 @@ def test_cli_local_build_can_stage_shell_before_overlay(capsys) -> None:
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 12
-    assert lines[0].startswith("stage-nitefury-shell\tsh -c ")
+    assert lines[0].startswith("stage-shell\tsh -c ")
     assert lines[2].startswith("write-dau-overlay\tsh -c ")
     assert lines[3].startswith("write-vivado-build-script\tsh -c ")
 
@@ -916,8 +1044,8 @@ def test_cli_prints_local_build_and_program_plan(capsys) -> None:
     exit_code = main(
         [
             "local-build-and-program",
-            "--nite-root",
-            "/repo/projects/nite",
+            "--work-root",
+            "/repo/projects/vivado-shell",
             "--dau-core-root",
             "/repo/dau-core",
             "--dau-driver-root",
@@ -940,8 +1068,8 @@ def test_cli_prints_validate_bitstream_plan_without_vivado(capsys) -> None:
     exit_code = main(
         [
             "validate-bitstream",
-            "--nite-root",
-            "/repo/projects/nite",
+            "--work-root",
+            "/repo/projects/vivado-shell",
             "--bitstream",
             "/tmp/candidate.bit",
             "--dau-core-root",
@@ -962,8 +1090,6 @@ def test_cli_prints_validate_bitstream_plan_without_vivado(capsys) -> None:
 
 
 def test_cli_execute_runs_plan_steps_in_order(monkeypatch) -> None:
-    import dau_build.nitefury as nitefury
-
     calls = []
 
     class Completed:
@@ -973,9 +1099,9 @@ def test_cli_execute_runs_plan_steps_in_order(monkeypatch) -> None:
         calls.append(tuple(argv))
         return Completed()
 
-    monkeypatch.setattr(nitefury.subprocess, "run", fake_run)
+    monkeypatch.setattr(hardware_plan.subprocess, "run", fake_run)
 
-    exit_code = main(["thunderbolt-release", "--nite-root", "/repo/projects/nite", "--execute"])
+    exit_code = main(["thunderbolt-release", "--work-root", "/repo/projects/vivado-shell", "--execute"])
 
     assert exit_code == 0
     assert calls == [
@@ -995,8 +1121,6 @@ def test_cli_execute_runs_plan_steps_in_order(monkeypatch) -> None:
 
 
 def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatch) -> None:
-    import dau_build.nitefury as nitefury
-
     calls = []
     return_codes = [0, 23, 0]
 
@@ -1008,13 +1132,13 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
         calls.append(tuple(argv))
         return Completed(return_codes[len(calls) - 1])
 
-    monkeypatch.setattr(nitefury.subprocess, "run", fake_run)
+    monkeypatch.setattr(hardware_plan.subprocess, "run", fake_run)
 
     exit_code = main(
         [
             "local-build-and-program",
-            "--nite-root",
-            "/repo/projects/nite",
+            "--work-root",
+            "/repo/projects/vivado-shell",
             "--dau-core-root",
             "/repo/dau-core",
             "--dau-driver-root",
@@ -1089,218 +1213,3 @@ def test_dau_overlay_tcl_ties_off_upgraded_quad_spi_ss_input() -> None:
     assert "CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}" in source
     assert "connect_bd_net -net dau_spi_ss_i_tieoff_dout" in source
     assert 'puts $manifest_file "spi_ss_i_tieoff=dau_spi_ss_i_tieoff"' in source
-
-
-def test_remote_build_and_program_plan_stages_overlay_programs_and_runs_hardware_smoke() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
-
-    steps = remote_build_and_program_plan(
-        config,
-        remote_host="root@linux-hw-host",
-        remote_nite_root=Path("/srv/dau/projects/nite"),
-        remote_dau_core_root=Path("/srv/dau/dau-core"),
-        remote_dau_driver_root=Path("/srv/dau/dau-driver"),
-    )
-
-    assert [step.name for step in steps] == [
-        "remote-thunderbolt-hold",
-        "remote-write-dau-overlay",
-        "remote-write-vivado-build-script",
-        "remote-vivado-build",
-        "remote-jtag-detect",
-        "remote-remove-endpoint",
-        "remote-program-volatile",
-        "remote-pci-rescan",
-        "remote-lspci-endpoint",
-        "remote-driver-hardware-smoke",
-        "remote-thunderbolt-release",
-    ]
-    assert "base64 -d > /srv/dau/projects/nite/scripts/dau_overlay.tcl" in steps[1].argv[2]
-    assert "base64 -d > /srv/dau/projects/nite/scripts/dau_build.tcl" in steps[2].argv[2]
-    assert "vivado -mode batch -source project.tcl" not in steps[3].argv[2]
-    assert "vivado -mode batch -source scripts/dau_overlay.tcl" in steps[3].argv[2]
-    assert "rm -f Top.v" in steps[3].argv[2]
-    assert "vivado -mode batch -source scripts/dau_build.tcl" in steps[3].argv[2]
-    assert "scripts/build.tcl" not in steps[3].argv[2]
-    assert "openFPGALoader -c digilent_hs2 --detect" in steps[4].argv[2]
-    assert "openFPGALoader -c digilent_hs2 /srv/dau/projects/nite/project.runs/impl_1/Top_wrapper.bit" in steps[6].argv[2]
-    assert EXPECTED_PCI_RESCAN_SCRIPT in steps[7].argv[2]
-    assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in steps[8].argv[2]
-    assert "python3 -c" in steps[9].argv[2]
-    assert "discover_devices" in steps[9].argv[2]
-    assert "DAU_MAGIC_WORD" in steps[9].argv[2]
-    assert "pytest" not in steps[9].argv[2]
-
-
-def test_remote_build_and_program_plan_can_stage_shell_seed_into_remote_workdir() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/local-placeholder"), vivado_executable="vivado")
-
-    steps = remote_build_and_program_plan(
-        config,
-        remote_host="root@linux-hw-host",
-        remote_source_nite_root=Path("/srv/dau/projects/nite"),
-        remote_nite_root=Path("/srv/dau/dau-build/outputs/nitefury"),
-        remote_dau_core_root=Path("/srv/dau/dau-core"),
-        remote_dau_driver_root=Path("/srv/dau/dau-driver"),
-    )
-
-    assert [step.name for step in steps][0:5] == [
-        "remote-stage-nitefury-shell",
-        "remote-thunderbolt-hold",
-        "remote-write-dau-overlay",
-        "remote-write-vivado-build-script",
-        "remote-vivado-build",
-    ]
-    assert "rsync -a --delete --delete-excluded" in steps[0].argv[2]
-    assert "--exclude project.gen" in steps[0].argv[2]
-    assert "/srv/dau/projects/nite/" in steps[0].argv[2]
-    assert "/srv/dau/dau-build/outputs/nitefury/" in steps[0].argv[2]
-    assert "base64 -d > /srv/dau/dau-build/outputs/nitefury/scripts/dau_overlay.tcl" in steps[2].argv[2]
-    assert "base64 -d > /srv/dau/dau-build/outputs/nitefury/scripts/dau_build.tcl" in steps[3].argv[2]
-    assert "cd /srv/dau/dau-build/outputs/nitefury" in steps[4].argv[2]
-    assert "openFPGALoader -c digilent_hs2 /srv/dau/dau-build/outputs/nitefury/project.runs/impl_1/Top_wrapper.bit" in steps[7].argv[2]
-
-
-def test_cli_prints_remote_build_and_program_plan(capsys) -> None:
-    exit_code = main(
-        [
-            "remote-build-and-program",
-            "--nite-root",
-            "/repo/projects/nite",
-            "--remote-host",
-            "root@linux-hw-host",
-            "--remote-nite-root",
-            "/srv/dau/projects/nite",
-            "--remote-dau-core-root",
-            "/srv/dau/dau-core",
-            "--remote-dau-driver-root",
-            "/srv/dau/dau-driver",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 11
-    assert lines[0].startswith("remote-thunderbolt-hold\tssh root@linux-hw-host ")
-    assert lines[1].startswith("remote-write-dau-overlay\tssh root@linux-hw-host ")
-    assert lines[2].startswith("remote-write-vivado-build-script\tssh root@linux-hw-host ")
-    assert lines[10].startswith("remote-thunderbolt-release\tssh root@linux-hw-host ")
-
-
-def test_cli_prints_remote_build_and_program_plan_with_remote_shell_seed(capsys) -> None:
-    exit_code = main(
-        [
-            "remote-build-and-program",
-            "--nite-root",
-            "/repo/local-placeholder",
-            "--remote-host",
-            "root@linux-hw-host",
-            "--remote-source-nite-root",
-            "/srv/dau/projects/nite",
-            "--remote-nite-root",
-            "/srv/dau/dau-build/outputs/nitefury",
-            "--remote-dau-core-root",
-            "/srv/dau/dau-core",
-            "--remote-dau-driver-root",
-            "/srv/dau/dau-driver",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 12
-    assert lines[0].startswith("remote-stage-nitefury-shell\tssh root@linux-hw-host ")
-    assert lines[2].startswith("remote-write-dau-overlay\tssh root@linux-hw-host ")
-    assert lines[3].startswith("remote-write-vivado-build-script\tssh root@linux-hw-host ")
-    assert "dau-build/outputs/nitefury" in lines[4]
-
-
-def test_remote_xdma_rebuild_and_load_plans_are_separate_remote_steps() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"))
-    remote_xdma_root = Path("/srv/dau/projects/nite/sw/xdma")
-
-    rebuild_steps = remote_xdma_rebuild_plan(config, remote_host="root@linux-hw-host", remote_xdma_root=remote_xdma_root)
-    load_steps = remote_xdma_load_plan(config, remote_host="root@linux-hw-host", remote_xdma_root=remote_xdma_root)
-
-    assert [step.name for step in rebuild_steps] == ["remote-xdma-rebuild"]
-    assert rebuild_steps[0].argv == ("ssh", "root@linux-hw-host", "cd /srv/dau/projects/nite/sw/xdma && make clean && make")
-    assert [step.name for step in load_steps] == ["remote-thunderbolt-hold", "remote-xdma-unload", "remote-xdma-load", "remote-thunderbolt-release"]
-    assert load_steps[1].argv == ("ssh", "root@linux-hw-host", "modprobe -r xdma || true")
-    assert load_steps[2].argv == ("ssh", "root@linux-hw-host", "cd /srv/dau/projects/nite/sw/xdma && insmod ./xdma.ko")
-
-
-def test_remote_runtime_pm_can_use_uninstalled_dau_utils_checkout() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"))
-
-    steps = remote_flash_plan(
-        config,
-        remote_host="root@linux-hw-host",
-        remote_nite_root=Path("/srv/dau/projects/nite"),
-        remote_dau_utils_root=Path("/srv/dau/dau-utils"),
-    )
-
-    assert (
-        steps[0]
-        .argv[2]
-        .startswith("PYTHONPATH=/srv/dau/dau-utils python3 -c 'from dau_utils.pci_runtime_pm import main; raise SystemExit(main())' hold")
-    )
-    assert (
-        steps[2]
-        .argv[2]
-        .startswith("PYTHONPATH=/srv/dau/dau-utils python3 -c 'from dau_utils.pci_runtime_pm import main; raise SystemExit(main())' release")
-    )
-
-
-def test_remote_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -> None:
-    config = NiteFuryToolchainConfig(nite_root=Path("/repo/projects/nite"), vivado_executable="vivado")
-
-    steps = remote_flash_plan(
-        config,
-        remote_host="root@linux-hw-host",
-        remote_nite_root=Path("/srv/dau/projects/nite"),
-    )
-
-    assert [step.name for step in steps] == ["remote-thunderbolt-hold", "remote-flash", "remote-thunderbolt-release"]
-    assert "cd /srv/dau/projects/nite" in steps[1].argv[2]
-    assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
-    assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
-
-
-def test_cli_prints_remote_xdma_and_flash_plans(capsys) -> None:
-    assert (
-        main(
-            [
-                "remote-xdma-rebuild",
-                "--nite-root",
-                "/repo/projects/nite",
-                "--remote-host",
-                "root@linux-hw-host",
-                "--remote-xdma-root",
-                "/srv/dau/projects/nite/sw/xdma",
-            ]
-        )
-        == 0
-    )
-    rebuild_lines = capsys.readouterr().out.splitlines()
-    assert len(rebuild_lines) == 1
-    assert rebuild_lines[0].startswith("remote-xdma-rebuild\tssh root@linux-hw-host ")
-
-    assert (
-        main(
-            [
-                "remote-flash",
-                "--nite-root",
-                "/repo/projects/nite",
-                "--remote-host",
-                "root@linux-hw-host",
-                "--remote-nite-root",
-                "/srv/dau/projects/nite",
-            ]
-        )
-        == 0
-    )
-    flash_lines = capsys.readouterr().out.splitlines()
-    assert len(flash_lines) == 3
-    assert flash_lines[0].startswith("remote-thunderbolt-hold\tssh root@linux-hw-host ")
-    assert flash_lines[1].startswith("remote-flash\tssh root@linux-hw-host ")
-    assert flash_lines[2].startswith("remote-thunderbolt-release\tssh root@linux-hw-host ")

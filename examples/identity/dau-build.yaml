@@ -1,0 +1,16 @@
+name: identity-pipeline
+top_name: dau_identity_top
+platform: vivado-xdma
+shell: xdma-ddr
+artifact_stem: dau-identity
+register_map_version: "0.1"
+stream_protocol_version: "0.1"
+clock: clk
+reset: reset
+operators:
+  - identity
+artifact_manifests:
+  - package.artifacts.yaml
+modules:
+  - identity
+backend: vivado

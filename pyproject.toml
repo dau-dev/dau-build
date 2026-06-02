@@ -31,17 +31,19 @@ classifiers = [
 
 dependencies = [
     "amaranth",
+    "artlink",
+    "ccflow>=0.8.3",
+    "dau-core",
     "dau-utils",
     "hydra-core",
     "pydantic",
     "pyslang",
-    "toml",
+    "pyyaml",
     "typing_extensions",
 ]
 
 [project.optional-dependencies]
 develop = [
-    "amaranth-boards@git+https://github.com/amaranth-lang/amaranth-boards.git",
     "build",
     "bump-my-version",
     "check-dist",
@@ -58,11 +60,14 @@ develop = [
     "uv",
     "wheel",
     "verilator",
+    # tests
+    "dau-core",
 ]
 
 [project.scripts]
 dau-build = "dau_build.build_spec:main"
-dau-nitefury-plan = "dau_build.nitefury:main"
+dau-build-steps = "dau_build.build_spec:main_callable_steps"
+dau-hardware-plan = "dau_build.hardware_plan:main"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
@@ -98,10 +103,6 @@ exclude_also = [
 ignore_errors = true
 fail_under = 50
 
-[tool.hatch.metadata]
-# TODO remove when cocotb is released
-allow-direct-references = true
-
 [tool.hatch.build]
 artifacts = []
 
@@ -111,13 +112,11 @@ src = "/"
 [tool.hatch.build.targets.sdist]
 packages = [
     "dau_build",
-    "hydra_plugins",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = [
     "dau_build",
-    "hydra_plugins",
 ]
 
 [tool.hatch.build.targets.wheel.shared-data]

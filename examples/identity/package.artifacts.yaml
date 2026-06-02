@@ -1,0 +1,25 @@
+schema: artlink.manifest/v0
+name: identity-package
+artifacts:
+  - path: rtl/identity.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+    provides:
+      - kind: hdl-module
+        name: identity
+  - path: python/model.py
+    kind: source
+    role: python-source
+    language: python
+    provides:
+      - kind: python-symbol
+        name: IdentityReference
+  - path: constraints/identity.xdc
+    kind: metadata
+    role: constraints
+    format: xdc
+  - path: bitstreams/seed.bit
+    kind: binary
+    role: bitstream
+    format: xilinx-bitstream
