@@ -24,18 +24,20 @@ async def simple_test(dut):
         expected_val += 1
 
 
-@pytest.mark.skipif(which("verilator") is None, reason="vivado not found")
-def test_counter():
+@pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
+def test_counter(tmp_path: Path):
     proj_path = Path(__file__).resolve().parent / "sv"
     sources = [proj_path / "counter.sv"]
     runner = get_runner("verilator")
+    build_dir = tmp_path / "sim_build"
     runner.build(
         sources=sources,
         hdl_toplevel="counter",
         always=True,
+        build_dir=build_dir,
     )
 
-    runner.test(hdl_toplevel="counter", test_module="dau_build.tests.test_counter,")
+    runner.test(hdl_toplevel="counter", test_module="dau_build.tests.test_counter,", build_dir=build_dir)
 
 
 if __name__ == "__main__":

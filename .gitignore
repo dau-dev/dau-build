@@ -147,6 +147,14 @@ target
 outputs/
 multirun/
 
+# Local hardware/simulation build byproducts
+/logs/
+/obj_dir/
+/sim_build/
+/tmp*.py
+/tmp*.log
+/vbuild.sh
+
 # AI
 ROADMAP.md
 AGENTS.md

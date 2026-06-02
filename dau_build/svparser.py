@@ -6,27 +6,51 @@ from typing import Literal, Optional
 from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
 from pydantic import BaseModel, Field, model_validator
-from pyslang import (
-    ContinuousAssignSyntax,
-    DataDeclarationSyntax,
-    HierarchyInstantiationSyntax,
-    IdentifierNameSyntax,
-    ImplicitAnsiPortSyntax,
-    ImplicitTypeSyntax,
-    InterfacePortHeaderSyntax,
-    ModportDeclarationSyntax,
-    ModportNamedPortSyntax,
-    ModportSimplePortListSyntax,
-    NamedPortConnectionSyntax,
-    OrderedPortConnectionSyntax,
-    ProceduralBlockSyntax,
-    ScopedNameSyntax,
-    SyntaxKind,
-    SyntaxNode,
-    SyntaxTree,
-    TokenKind,
-    WildcardPortConnectionSyntax,
-)
+
+try:
+    from pyslang import (
+        ContinuousAssignSyntax,
+        DataDeclarationSyntax,
+        HierarchyInstantiationSyntax,
+        IdentifierNameSyntax,
+        ImplicitAnsiPortSyntax,
+        ImplicitTypeSyntax,
+        InterfacePortHeaderSyntax,
+        ModportDeclarationSyntax,
+        ModportNamedPortSyntax,
+        ModportSimplePortListSyntax,
+        NamedPortConnectionSyntax,
+        OrderedPortConnectionSyntax,
+        ProceduralBlockSyntax,
+        ScopedNameSyntax,
+        SyntaxKind,
+        SyntaxNode,
+        SyntaxTree,
+        TokenKind,
+        WildcardPortConnectionSyntax,
+    )
+except ImportError:
+    from pyslang.parsing import TokenKind
+    from pyslang.syntax import (
+        ContinuousAssignSyntax,
+        DataDeclarationSyntax,
+        HierarchyInstantiationSyntax,
+        IdentifierNameSyntax,
+        ImplicitAnsiPortSyntax,
+        ImplicitTypeSyntax,
+        InterfacePortHeaderSyntax,
+        ModportDeclarationSyntax,
+        ModportNamedPortSyntax,
+        ModportSimplePortListSyntax,
+        NamedPortConnectionSyntax,
+        OrderedPortConnectionSyntax,
+        ProceduralBlockSyntax,
+        ScopedNameSyntax,
+        SyntaxKind,
+        SyntaxNode,
+        SyntaxTree,
+        WildcardPortConnectionSyntax,
+    )
 from typing_extensions import Self
 
 __all__ = (
@@ -357,20 +381,31 @@ class Module(_Base):
         return self
 
     def _parse_params(self):
-        for paramlist in self.node.header.parameters or []:
-            if isinstance(paramlist, SyntaxNode):
-                for param in paramlist:
-                    if param.kind == TokenKind.Comma:
-                        # Comma
-                        continue
-                    for declaration in param.declarators:
-                        self.parameters.append(
-                            Parameter(
-                                name=declaration.name.value,
-                                value=declaration.initializer[1].literal.value,
-                                node=declaration,
-                            )
-                        )
+        for param in self._syntax_declaration_items(self.node.header.parameters or []):
+            for declaration in param.declarators:
+                self.parameters.append(
+                    Parameter(
+                        name=declaration.name.value,
+                        value=declaration.initializer[1].literal.value,
+                        node=declaration,
+                    )
+                )
+
+    @staticmethod
+    def _syntax_declaration_items(items):
+        for item in items:
+            if getattr(item, "kind", None) == TokenKind.Comma:
+                continue
+            if hasattr(item, "declarators"):
+                yield item
+                continue
+            if not isinstance(item, SyntaxNode):
+                continue
+            for child in item:
+                if getattr(child, "kind", None) == TokenKind.Comma:
+                    continue
+                if hasattr(child, "declarators"):
+                    yield child
 
     def _eval_dim_expr(self, expr) -> int:
         """Evaluate a dimension expression using known parameters."""
@@ -399,8 +434,11 @@ class Module(_Base):
         return mapping.get(kind, "wire")
 
     def _parse_ports(self):
-        if len(self.node.header.ports) == 3:
-            for port in self.node.header.ports[1]:
+        port_items = self.node.header.ports
+        if len(port_items) == 3 and not any(isinstance(port, ImplicitAnsiPortSyntax) for port in port_items):
+            port_items = port_items[1]
+        if port_items:
+            for port in port_items:
                 if isinstance(port, ImplicitAnsiPortSyntax):
                     if isinstance(port.header, InterfacePortHeaderSyntax):
                         # TODO
@@ -444,6 +482,8 @@ class Module(_Base):
                             # TODO: ref ports, etc.
                             assert False
                 elif port.kind == TokenKind.Comma:
+                    continue
+                elif port.kind in (TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
                     continue
                 else:
                     assert False
@@ -627,7 +667,10 @@ class Module(_Base):
             if isinstance(member, ModportDeclarationSyntax):
                 name = member.items[0].name.valueText
                 mp = Modport(name=name)
-                for in_out in member.items[0].ports[1]:
+                port_items = member.items[0].ports
+                if len(port_items) == 3 and not any(isinstance(port, ModportSimplePortListSyntax) for port in port_items):
+                    port_items = port_items[1]
+                for in_out in port_items:
                     if isinstance(in_out, ModportSimplePortListSyntax):
                         direction = in_out.direction.valueText
                         for port in in_out.ports:
@@ -700,11 +743,8 @@ class Design(BaseModel):
         """Parse specific SV files."""
         design = cls()
         for f in paths:
-            try:
-                mod = Module.from_file(f)
-                design.modules[mod.name] = mod
-            except Exception:
-                pass
+            mod = Module.from_file(f)
+            design.modules[mod.name] = mod
         return design
 
     def resolve(self) -> "Design":
@@ -785,8 +825,305 @@ class Design(BaseModel):
         lines.append("")
         return "\n".join(lines)
 
+    def generate_dau_top_sv(
+        self,
+        name: str,
+        module_names: list[str],
+        *,
+        clk: str,
+        reset: str,
+        register_map_version: int,
+        stream_protocol_version: int,
+        operator_bitmap: int,
+        input_buffer_address: int,
+        input_buffer_bytes: int,
+        output_buffer_address: int,
+        output_buffer_bytes: int,
+        result_bytes: int,
+    ) -> str:
+        selected = {module_name: self.modules[module_name] for module_name in module_names if module_name in self.modules}
+        stream_module_name = next((module_name for module_name, module in selected.items() if _is_dau_stream_module(module)), None)
+
+        lines = ["`timescale 1ns/1ns", "", f"module {name} ("]
+        port_lines = [
+            f"  input wire logic {clk}",
+            f"  input wire logic {reset}",
+            "  input wire logic register_read_enable",
+            "  input wire logic register_write_enable",
+            "  input wire logic [15:0] register_address",
+            "  input wire logic [31:0] register_write_data",
+            "  output logic [31:0] register_read_data",
+            "  output logic register_ready",
+            "  input wire logic stream_input_valid",
+            "  output logic stream_input_ready",
+            "  input wire logic [63:0] stream_input_data",
+            "  input wire logic stream_input_last",
+            "  output logic stream_output_valid",
+            "  input wire logic stream_output_ready",
+            "  output logic [63:0] stream_output_data",
+            "  output logic stream_output_last",
+            "  output logic stream_status_valid",
+            "  input wire logic stream_status_ready",
+            "  output logic stream_status_error",
+            "  output logic [7:0] stream_status_error_code",
+            "  output logic [63:0] dma_input_address",
+            "  output logic [31:0] dma_input_length",
+            "  output logic [63:0] dma_output_address",
+            "  output logic [31:0] dma_output_length",
+            "  output logic dma_start",
+            "  input wire logic dma_done",
+            "  input wire logic dma_error",
+            "  output logic [31:0] capability_magic",
+            "  output logic [31:0] capability_register_map_version",
+            "  output logic [31:0] capability_stream_protocol_version",
+            "  output logic [31:0] capability_operator_bitmap",
+        ]
+
+        for module_name, module in selected.items():
+            is_stream_module = module_name == stream_module_name
+            for input_port in module.inputs:
+                if _dau_input_connection(input_port.name, module_name, clk=clk, reset=reset, is_stream_module=is_stream_module) is not None:
+                    continue
+                port_lines.append(_top_port_declaration("input", module_name, input_port))
+            for output_port in module.outputs:
+                if _dau_output_connection(output_port.name, module_name, is_stream_module=is_stream_module) is not None:
+                    continue
+                port_lines.append(_top_port_declaration("output", module_name, output_port))
+
+        lines.append(",\n".join(port_lines))
+        lines.append(");")
+        lines.append("")
+        lines.extend(
+            (
+                "  localparam logic [31:0] DAU_MAGIC = 32'h44415531;",
+                f"  localparam logic [31:0] DAU_REGISTER_MAP_VERSION = 32'h{register_map_version:08x};",
+                f"  localparam logic [31:0] DAU_STREAM_PROTOCOL_VERSION = 32'h{stream_protocol_version:08x};",
+                f"  localparam logic [31:0] DAU_OPERATOR_BITMAP = 32'h{operator_bitmap:08x};",
+                "  localparam logic [15:0] DAU_REGISTER_MAGIC_OFFSET = 16'h0000;",
+                "  localparam logic [15:0] DAU_REGISTER_MAP_VERSION_OFFSET = 16'h0004;",
+                "  localparam logic [15:0] DAU_STREAM_PROTOCOL_VERSION_OFFSET = 16'h0008;",
+                "  localparam logic [15:0] DAU_REGISTER_OPERATOR_BITMAP_OFFSET = 16'h0028;",
+                "  localparam logic [15:0] DAU_REGISTER_LAST_ERROR_OFFSET = 16'h002c;",
+                "  localparam logic [15:0] DAU_REGISTER_JOB_CONTROL_OFFSET = 16'h0050;",
+                "  localparam logic [15:0] DAU_REGISTER_JOB_STATUS_OFFSET = 16'h0054;",
+                "  localparam logic [15:0] DAU_REGISTER_INPUT_ADDRESS_LOW_OFFSET = 16'h0058;",
+                "  localparam logic [15:0] DAU_REGISTER_INPUT_ADDRESS_HIGH_OFFSET = 16'h005c;",
+                "  localparam logic [15:0] DAU_REGISTER_INPUT_LENGTH_LOW_OFFSET = 16'h0060;",
+                "  localparam logic [15:0] DAU_REGISTER_INPUT_LENGTH_HIGH_OFFSET = 16'h0064;",
+                "  localparam logic [15:0] DAU_REGISTER_OUTPUT_ADDRESS_LOW_OFFSET = 16'h0068;",
+                "  localparam logic [15:0] DAU_REGISTER_OUTPUT_ADDRESS_HIGH_OFFSET = 16'h006c;",
+                "  localparam logic [15:0] DAU_REGISTER_OUTPUT_LENGTH_LOW_OFFSET = 16'h0070;",
+                "  localparam logic [15:0] DAU_REGISTER_OUTPUT_LENGTH_HIGH_OFFSET = 16'h0074;",
+                "  localparam logic [15:0] DAU_REGISTER_OPERATION_OFFSET = 16'h0078;",
+                "  localparam logic [15:0] DAU_REGISTER_RESULT_LENGTH_LOW_OFFSET = 16'h007c;",
+                "  localparam logic [15:0] DAU_REGISTER_RESULT_LENGTH_HIGH_OFFSET = 16'h0080;",
+                f"  localparam logic [63:0] DAU_DEFAULT_INPUT_ADDRESS = 64'h{input_buffer_address:016x};",
+                f"  localparam logic [63:0] DAU_DEFAULT_INPUT_LENGTH = 64'h{input_buffer_bytes:016x};",
+                f"  localparam logic [63:0] DAU_DEFAULT_OUTPUT_ADDRESS = 64'h{output_buffer_address:016x};",
+                f"  localparam logic [63:0] DAU_DEFAULT_OUTPUT_LENGTH = 64'h{output_buffer_bytes:016x};",
+                f"  localparam logic [63:0] DAU_DEFAULT_RESULT_BYTES = 64'h{result_bytes:016x};",
+                "",
+                "  logic [63:0] job_input_address;",
+                "  logic [63:0] job_input_length;",
+                "  logic [63:0] job_output_address;",
+                "  logic [63:0] job_output_length;",
+                "  logic [63:0] job_result_length;",
+                "  logic [31:0] job_operation;",
+                "  logic [31:0] job_last_error;",
+                "  logic job_busy;",
+                "  logic job_done;",
+                "  logic job_error;",
+                "  logic stream_job_start_pulse;",
+                "  logic [31:0] job_status_value;",
+                "",
+                "  assign register_ready = register_read_enable || register_write_enable;",
+                "  assign stream_job_start_pulse = register_write_enable && (register_address == DAU_REGISTER_JOB_CONTROL_OFFSET) && register_write_data[0];",
+                "  assign job_status_value = {28'd0, job_error, job_done, job_busy, !job_busy};",
+                "  assign dma_input_address = job_input_address;",
+                "  assign dma_input_length = job_input_length[31:0];",
+                "  assign dma_output_address = job_output_address;",
+                "  assign dma_output_length = job_output_length[31:0];",
+                "  assign dma_start = stream_job_start_pulse;",
+                "  assign capability_magic = 32'h44415531;",
+                "  assign capability_register_map_version = DAU_REGISTER_MAP_VERSION;",
+                "  assign capability_stream_protocol_version = DAU_STREAM_PROTOCOL_VERSION;",
+                "  assign capability_operator_bitmap = DAU_OPERATOR_BITMAP;",
+                "",
+            )
+        )
+        if stream_module_name is None:
+            lines.extend(
+                (
+                    "  assign stream_input_ready = 1'b0;",
+                    "  assign stream_output_valid = 1'b0;",
+                    "  assign stream_output_data = 64'd0;",
+                    "  assign stream_output_last = 1'b0;",
+                    "  assign stream_status_valid = 1'b0;",
+                    "  assign stream_status_error = 1'b0;",
+                    "  assign stream_status_error_code = 8'd0;",
+                    "",
+                )
+            )
+
+        lines.extend(
+            (
+                "  always_ff @(posedge " + clk + ") begin",
+                f"    if ({reset}) begin",
+                "      job_input_address <= DAU_DEFAULT_INPUT_ADDRESS;",
+                "      job_input_length <= DAU_DEFAULT_INPUT_LENGTH;",
+                "      job_output_address <= DAU_DEFAULT_OUTPUT_ADDRESS;",
+                "      job_output_length <= DAU_DEFAULT_OUTPUT_LENGTH;",
+                "      job_result_length <= 64'd0;",
+                "      job_operation <= 32'd0;",
+                "      job_last_error <= 32'd0;",
+                "      job_busy <= 1'b0;",
+                "      job_done <= 1'b0;",
+                "      job_error <= 1'b0;",
+                "    end else begin",
+                "      if (register_write_enable) begin",
+                "        unique case (register_address)",
+                "          DAU_REGISTER_INPUT_ADDRESS_LOW_OFFSET: job_input_address[31:0] <= register_write_data;",
+                "          DAU_REGISTER_INPUT_ADDRESS_HIGH_OFFSET: job_input_address[63:32] <= register_write_data;",
+                "          DAU_REGISTER_INPUT_LENGTH_LOW_OFFSET: job_input_length[31:0] <= register_write_data;",
+                "          DAU_REGISTER_INPUT_LENGTH_HIGH_OFFSET: job_input_length[63:32] <= register_write_data;",
+                "          DAU_REGISTER_OUTPUT_ADDRESS_LOW_OFFSET: job_output_address[31:0] <= register_write_data;",
+                "          DAU_REGISTER_OUTPUT_ADDRESS_HIGH_OFFSET: job_output_address[63:32] <= register_write_data;",
+                "          DAU_REGISTER_OUTPUT_LENGTH_LOW_OFFSET: job_output_length[31:0] <= register_write_data;",
+                "          DAU_REGISTER_OUTPUT_LENGTH_HIGH_OFFSET: job_output_length[63:32] <= register_write_data;",
+                "          DAU_REGISTER_OPERATION_OFFSET: job_operation <= register_write_data;",
+                "          default: begin end",
+                "        endcase",
+                "      end",
+                "      if (stream_job_start_pulse) begin",
+                "        job_busy <= 1'b1;",
+                "        job_done <= 1'b0;",
+                "        job_error <= 1'b0;",
+                "        job_last_error <= 32'd0;",
+                "        job_result_length <= 64'd0;",
+                "      end",
+                "      if (stream_status_valid && stream_status_ready) begin",
+                "        job_busy <= 1'b0;",
+                "        job_done <= !stream_status_error;",
+                "        job_error <= stream_status_error;",
+                "        job_last_error <= {24'd0, stream_status_error_code};",
+                "        job_result_length <= stream_status_error ? 64'd0 : DAU_DEFAULT_RESULT_BYTES;",
+                "      end else if (dma_error) begin",
+                "        job_busy <= 1'b0;",
+                "        job_done <= 1'b0;",
+                "        job_error <= 1'b1;",
+                "        job_last_error <= 32'h0000_0003;",
+                "        job_result_length <= 64'd0;",
+                "      end else if (dma_done && job_busy) begin",
+                "        job_busy <= 1'b0;",
+                "        job_done <= 1'b1;",
+                "        job_error <= 1'b0;",
+                "        job_result_length <= DAU_DEFAULT_RESULT_BYTES;",
+                "      end",
+                "    end",
+                "  end",
+                "",
+                "  always_comb begin",
+                "    unique case (register_address)",
+                "      DAU_REGISTER_MAGIC_OFFSET: register_read_data = DAU_MAGIC;",
+                "      DAU_REGISTER_MAP_VERSION_OFFSET: register_read_data = DAU_REGISTER_MAP_VERSION;",
+                "      DAU_STREAM_PROTOCOL_VERSION_OFFSET: register_read_data = DAU_STREAM_PROTOCOL_VERSION;",
+                "      DAU_REGISTER_OPERATOR_BITMAP_OFFSET: register_read_data = DAU_OPERATOR_BITMAP;",
+                "      DAU_REGISTER_LAST_ERROR_OFFSET: register_read_data = job_last_error;",
+                "      DAU_REGISTER_JOB_CONTROL_OFFSET: register_read_data = 32'd0;",
+                "      DAU_REGISTER_JOB_STATUS_OFFSET: register_read_data = job_status_value;",
+                "      DAU_REGISTER_INPUT_ADDRESS_LOW_OFFSET: register_read_data = job_input_address[31:0];",
+                "      DAU_REGISTER_INPUT_ADDRESS_HIGH_OFFSET: register_read_data = job_input_address[63:32];",
+                "      DAU_REGISTER_INPUT_LENGTH_LOW_OFFSET: register_read_data = job_input_length[31:0];",
+                "      DAU_REGISTER_INPUT_LENGTH_HIGH_OFFSET: register_read_data = job_input_length[63:32];",
+                "      DAU_REGISTER_OUTPUT_ADDRESS_LOW_OFFSET: register_read_data = job_output_address[31:0];",
+                "      DAU_REGISTER_OUTPUT_ADDRESS_HIGH_OFFSET: register_read_data = job_output_address[63:32];",
+                "      DAU_REGISTER_OUTPUT_LENGTH_LOW_OFFSET: register_read_data = job_output_length[31:0];",
+                "      DAU_REGISTER_OUTPUT_LENGTH_HIGH_OFFSET: register_read_data = job_output_length[63:32];",
+                "      DAU_REGISTER_OPERATION_OFFSET: register_read_data = job_operation;",
+                "      DAU_REGISTER_RESULT_LENGTH_LOW_OFFSET: register_read_data = job_result_length[31:0];",
+                "      DAU_REGISTER_RESULT_LENGTH_HIGH_OFFSET: register_read_data = job_result_length[63:32];",
+                "      default: register_read_data = 32'hffff_ffff;",
+                "    endcase",
+                "  end",
+                "",
+            )
+        )
+
+        for module_name, module in selected.items():
+            params_str = ""
+            if module.parameters:
+                param_parts = [f".{parameter.name}({parameter.value})" for parameter in module.parameters]
+                params_str = f" #({', '.join(param_parts)})"
+            lines.append(f"  {module_name}{params_str} {module_name}_inst (")
+            connection_lines = []
+            is_stream_module = module_name == stream_module_name
+            for input_port in module.inputs:
+                connection = _dau_input_connection(input_port.name, module_name, clk=clk, reset=reset, is_stream_module=is_stream_module)
+                connection_lines.append(f"    .{input_port.name}({connection or _top_port_name(module_name, input_port.name)})")
+            for output_port in module.outputs:
+                connection = _dau_output_connection(output_port.name, module_name, is_stream_module=is_stream_module)
+                connection_lines.append(f"    .{output_port.name}({connection or _top_port_name(module_name, output_port.name)})")
+            lines.append(",\n".join(connection_lines))
+            lines.append("  );")
+            lines.append("")
+
+        lines.append("endmodule")
+        lines.append("")
+        return "\n".join(lines)
+
     def __str__(self):
         parts = [f"Design({len(self.modules)} modules):"]
         for name, mod in self.modules.items():
             parts.append(f"  {mod.to_string('  ')}")
         return "\n".join(parts)
+
+
+_DAU_STREAM_INPUT_CONNECTIONS = {
+    "input_valid": "stream_input_valid",
+    "input_data": "stream_input_data",
+    "input_last": "stream_input_last",
+    "output_ready": "stream_output_ready",
+    "status_ready": "stream_status_ready",
+}
+
+_DAU_STREAM_OUTPUT_CONNECTIONS = {
+    "input_ready": "stream_input_ready",
+    "output_valid": "stream_output_valid",
+    "output_data": "stream_output_data",
+    "output_last": "stream_output_last",
+    "status_valid": "stream_status_valid",
+    "status_error": "stream_status_error",
+    "status_error_code": "stream_status_error_code",
+}
+
+
+def _is_dau_stream_module(module: Module) -> bool:
+    input_names = {input_port.name for input_port in module.inputs}
+    output_names = {output_port.name for output_port in module.outputs}
+    return set(_DAU_STREAM_INPUT_CONNECTIONS).issubset(input_names) and set(_DAU_STREAM_OUTPUT_CONNECTIONS).issubset(output_names)
+
+
+def _dau_input_connection(port_name: str, module_name: str, *, clk: str, reset: str, is_stream_module: bool) -> str | None:
+    if port_name == clk:
+        return clk
+    if port_name == reset:
+        return reset
+    if is_stream_module:
+        return _DAU_STREAM_INPUT_CONNECTIONS.get(port_name)
+    return None
+
+
+def _dau_output_connection(port_name: str, module_name: str, *, is_stream_module: bool) -> str | None:
+    if is_stream_module:
+        return _DAU_STREAM_OUTPUT_CONNECTIONS.get(port_name)
+    return None
+
+
+def _top_port_name(module_name: str, port_name: str) -> str:
+    return f"{module_name}_{port_name}"
+
+
+def _top_port_declaration(direction: str, module_name: str, port: Port) -> str:
+    dimension = port.dimensions.to_sv()
+    space = f" {dimension} " if dimension else " "
+    return f"  {direction} {port.keyword}{space}{_top_port_name(module_name, port.name)}"

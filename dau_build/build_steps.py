@@ -1,0 +1,575 @@
+import shlex
+from collections.abc import Iterable, Mapping
+from importlib.resources import files
+from pathlib import Path
+from types import MappingProxyType
+from typing import ClassVar, Literal, TypeVar
+
+from ccflow import CallableModel, Flow, NullContext, ResultBase
+from pydantic import Field, ValidationError
+
+from dau_build.build_config import resolve_build_config
+from dau_build.build_spec import dau_build_spec_summary, generate_dau_build_artifacts, load_dau_build_spec, write_dau_build_artifacts
+from dau_build.vivado_backend import VivadoBackendArtifacts, VivadoBackendRequest, generate_vivado_backend_artifacts
+
+
+class BuildStepError(ValueError):
+    pass
+
+
+class BuildStepResult(ResultBase):
+    step: str
+    message: str
+
+
+BuildCallableModelType = TypeVar("BuildCallableModelType", bound="BuildCallableModel")
+
+
+class BuildCallableModel(CallableModel):
+    _STRINGIFY_SEPARATOR: ClassVar[str] = ","
+
+    def override_mapping(self) -> dict[str, str]:
+        raw = self.model_dump(mode="python", by_alias=True, exclude_none=True, exclude={"meta", "type_"})
+        raw.pop("_target_", None)
+        return {key: self._stringify_override_value(value) for key, value in raw.items()}
+
+    @classmethod
+    def _stringify_override_value(cls, value) -> str:
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, tuple | list):
+            return cls._STRINGIFY_SEPARATOR.join(str(item) for item in value)
+        return str(value)
+
+
+class ConfigOverrideModel(BuildCallableModel):
+    board_name: str | None = Field(default=None, alias="board.name")
+    board_platform: str | None = Field(default=None, alias="board.platform")
+    board_shell: str | None = Field(default=None, alias="board.shell")
+    backend_name: str | None = Field(default=None, alias="backend.name")
+    backend_invocation: str | None = Field(default=None, alias="backend.invocation")
+    driver_os: str | None = Field(default=None, alias="driver.os")
+    driver_transport: str | None = Field(default=None, alias="driver.transport")
+    operator_set: str | None = Field(default=None, alias="operator.set")
+    memory_host_staging_bytes: int | None = Field(default=None, alias="memory.host_staging_bytes")
+    memory_device_staging_bytes: int | None = Field(default=None, alias="memory.device_staging_bytes")
+
+    def config_overrides(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in self.override_mapping().items()
+            if key
+            in {
+                "board.name",
+                "board.platform",
+                "board.shell",
+                "backend.name",
+                "backend.invocation",
+                "driver.os",
+                "driver.transport",
+                "operator.set",
+                "memory.host_staging_bytes",
+                "memory.device_staging_bytes",
+            }
+        }
+
+
+class SpecPathModel(ConfigOverrideModel):
+    spec_path: Path
+
+    def load_spec(self):
+        return load_dau_build_spec(self.spec_path)
+
+
+class ModuleSelectionModel(SpecPathModel):
+    module: str
+
+    def load_spec_and_validate_module(self):
+        spec = self.load_spec()
+        provided_modules = (spec.top_name, *spec.modules)
+        if self.module not in provided_modules:
+            expected = ", ".join(provided_modules)
+            raise BuildStepError(f"module {self.module!r} is not provided by spec {self.spec_path}; expected one of: {expected}")
+        return spec
+
+
+class InspectStep(SpecPathModel):
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        return BuildStepResult(step="inspect", message=dau_build_spec_summary(self.load_spec()))
+
+
+class ValidateStep(SpecPathModel):
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        self.load_spec()
+        return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_path}")
+
+
+class GenerateStep(SpecPathModel):
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        artifacts = generate_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
+        return BuildStepResult(
+            step="generate",
+            message=f"dau-build-artifacts-generated\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}",
+        )
+
+
+class WriteStep(SpecPathModel):
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        artifacts = write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
+        return BuildStepResult(step="write", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
+
+
+class ResolvedConfigStep(SpecPathModel):
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        resolved = resolve_build_config(self.load_spec(), self.override_mapping())
+        return BuildStepResult(step="resolved-config", message=resolved.to_text())
+
+
+class SimulateStep(SpecPathModel):
+    output_root: Path | None = None
+    simulate_engine: Literal["svparser", "verilator"] = Field(default="svparser", alias="simulate.engine")
+    simulate_profile: str | None = Field(default=None, alias="simulate.profile")
+    simulate_testbench_path: Path | None = Field(default=None, alias="simulate.testbench_path")
+    simulate_top_module: str | None = Field(default=None, alias="simulate.top_module")
+    simulate_expect_stdout: str | None = Field(default=None, alias="simulate.expect_stdout")
+    simulate_verilator: str = Field(default="verilator", alias="simulate.verilator")
+    simulate_extra_args: str = Field(default="", alias="simulate.extra_args")
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec()
+        resolve_build_config(spec, self.override_mapping())
+        generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_path.parent / ".dau-build-sim")
+        if self.simulate_engine == "verilator":
+            return self._run_verilator(spec)
+        return BuildStepResult(
+            step="simulate",
+            message=(
+                f"dau-build-simulate\tspec={self.spec_path} top={spec.top_name} modules={','.join(spec.modules)} "
+                f"sources={len(spec.sources)} engine=svparser status=validated"
+            ),
+        )
+
+    def _run_verilator(self, spec) -> BuildStepResult:
+        try:
+            from dau_sim.integrations.verilator import VerilatorExecutionError, VerilatorUnavailableError, run_verilator_testbench
+            from dau_sim.integrations.verilator_profiles import resolve_verilator_profile
+        except ModuleNotFoundError as exc:
+            raise BuildStepError("simulate.engine=verilator requires dau-sim to be importable") from exc
+
+        profile = None
+        if self.simulate_profile:
+            try:
+                profile = resolve_verilator_profile(self.simulate_profile)
+            except KeyError as exc:
+                raise BuildStepError(str(exc)) from exc
+
+        if profile is not None:
+            testbench_path = None
+            top_module = profile.top_module
+            expected_stdout = self.simulate_expect_stdout or profile.expect_stdout
+            extra_sources = profile.sources
+        else:
+            if self.simulate_testbench_path is None:
+                raise BuildStepError("missing required override: simulate.testbench_path")
+            if not self.simulate_top_module:
+                raise BuildStepError("missing required override: simulate.top_module")
+            testbench_path = self.simulate_testbench_path
+            top_module = self.simulate_top_module
+            expected_stdout = self.simulate_expect_stdout
+            extra_sources = (testbench_path,)
+
+        work_dir = self.output_root or self.spec_path.parent / ".dau-build-sim" / "verilator"
+        extra_args = tuple(shlex.split(self.simulate_extra_args))
+        all_sources = _unique_paths((*spec.sources, *extra_sources))
+        try:
+            result = run_verilator_testbench(
+                sources=all_sources,
+                top_module=top_module,
+                work_dir=work_dir,
+                verilator=self.simulate_verilator,
+                extra_args=extra_args,
+            )
+        except (FileNotFoundError, ValueError, VerilatorExecutionError, VerilatorUnavailableError) as exc:
+            raise BuildStepError(str(exc)) from exc
+
+        if expected_stdout and expected_stdout not in result.stdout:
+            raise BuildStepError(f"verilator stdout did not contain expected text {expected_stdout!r}")
+
+        mode_segment = f"profile={self.simulate_profile} " if self.simulate_profile else f"testbench={testbench_path} "
+        return BuildStepResult(
+            step="simulate",
+            message=(
+                f"dau-build-simulate\tspec={self.spec_path} top={spec.top_name} modules={','.join(spec.modules)} sources={len(spec.sources)} "
+                f"engine=verilator {mode_segment}testbench_top={top_module} work_dir={work_dir} status=passed"
+            ),
+        )
+
+
+class SynthesisStep(SpecPathModel):
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec()
+        resolved = resolve_build_config(spec, self.override_mapping())
+        artifacts = write_dau_build_artifacts(spec, output_root=self.output_root)
+        return BuildStepResult(
+            step="synthesis",
+            message=(
+                f"dau-build-synthesis\tbackend={resolved.backend.name} platform={resolved.board.platform} shell={resolved.board.shell} "
+                f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} vivado=not-invoked"
+            ),
+        )
+
+
+class ExplainStep(SpecPathModel):
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec()
+        resolved = resolve_build_config(spec, self.override_mapping())
+        return BuildStepResult(
+            step="explain",
+            message="\n".join(
+                (
+                    "dau-build-explain",
+                    f"spec\tpath={self.spec_path} name={spec.name} top={spec.top_name}",
+                    f"board\tname={resolved.board.name} platform={resolved.board.platform} shell={resolved.board.shell}",
+                    "actions\tvalidate=local simulate=local synthesis=local-handoff artifacts=generate-or-write",
+                )
+            ),
+        )
+
+
+class SimulateTask(ModuleSelectionModel):
+    simulator: Literal["cocotb", "svparser", "verilator"] = "svparser"
+    output_root: Path | None = None
+    profile: str | None = None
+    testbench_path: Path | None = None
+    top_module: str | None = None
+    expect_stdout: str | None = None
+    verilator: str = "verilator"
+    extra_args: str = ""
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec_and_validate_module()
+        output_root = self.output_root or self.spec_path.parent / ".dau-build-sim"
+        if self.simulator in {"svparser", "cocotb"}:
+            resolve_build_config(spec, self.override_mapping())
+            generate_dau_build_artifacts(spec, output_root=output_root)
+            return BuildStepResult(
+                step="simulate",
+                message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_path} status=validated",
+            )
+        step_data = self.config_overrides()
+        step_data.update(
+            {
+                "spec_path": str(self.spec_path),
+                "output_root": str(output_root),
+                "simulate.engine": "verilator",
+                "simulate.verilator": self.verilator,
+                "simulate.extra_args": self.extra_args,
+            }
+        )
+        if self.profile:
+            step_data["simulate.profile"] = self.profile
+        if self.testbench_path:
+            step_data["simulate.testbench_path"] = str(self.testbench_path)
+        if self.top_module:
+            step_data["simulate.top_module"] = self.top_module
+        if self.expect_stdout:
+            step_data["simulate.expect_stdout"] = self.expect_stdout
+        result = _execute_callable_model(SimulateStep, step_data, request_kind="step", request_name="simulate")
+        return BuildStepResult(step="simulate", message=f"{result.message} task=simulate simulator=verilator module={self.module}")
+
+
+class SynthesizeTask(ModuleSelectionModel):
+    engine: Literal["vivado"]
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec_and_validate_module()
+        task_overrides = self.override_mapping()
+        task_overrides["backend.name"] = self.engine
+        resolved = resolve_build_config(spec, task_overrides)
+        artifacts = write_dau_build_artifacts(spec, output_root=self.output_root)
+        backend_artifacts = _write_vivado_backend_handoff(
+            spec,
+            selected_module=self.module,
+            output_root=self.output_root,
+            dau_artifact_bundle_path=artifacts.artifact_manifest_path,
+            platform=resolved.board.platform,
+            shell=resolved.board.shell,
+            operator_set=resolved.operators.names,
+        )
+        return BuildStepResult(
+            step="synthesize",
+            message=(
+                f"dau-build-synthesize\ttask=synthesize engine={self.engine} module={self.module} spec={self.spec_path} "
+                f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} "
+                f"backend_manifest={backend_artifacts.manifest_path} command_plan={backend_artifacts.command_plan_path} status=handoff-written"
+            ),
+        )
+
+
+class FlashTask(BuildCallableModel):
+    tool: str = "openFPGAloader"
+    bitstream: Path | None = None
+    manifest_path: Path | None = None
+    mode: Literal["volatile", "persistent"] = "volatile"
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        if self.tool.lower() != "openfpgaloader":
+            raise BuildStepError(f"unknown flash tool {self.tool!r}; expected openFPGAloader")
+        bitstream = self.bitstream
+        manifest_segment = ""
+        if self.manifest_path is not None:
+            manifest = _read_key_value_manifest(self.manifest_path)
+            bitstream = bitstream or _manifest_path(self.manifest_path.parent, manifest, "bitstream")
+            manifest_segment = f" manifest={self.manifest_path}"
+        if bitstream is None:
+            raise BuildStepError("flash requires bitstream or manifest_path")
+        if not bitstream.is_file():
+            raise BuildStepError(f"bitstream does not exist: {bitstream}")
+        return BuildStepResult(
+            step="flash",
+            message=f"dau-build-flash\ttask=flash tool={self.tool} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
+        )
+
+
+class SmokeTestTask(BuildCallableModel):
+    test: Literal["identity", "dma-loopback", "aggregation"]
+    manifest_path: Path | None = None
+    device: str | None = None
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        device_segment = f" device={self.device}" if self.device else ""
+        manifest_segment = ""
+        if self.manifest_path is not None:
+            manifest = _read_key_value_manifest(self.manifest_path)
+            manifest_segment = (
+                f" manifest={self.manifest_path}"
+                f" register_window_offset={_manifest_required(manifest, 'register_window_offset')}"
+                f" input_buffer={_manifest_required(manifest, 'input_buffer_address')}"
+                f" output_buffer={_manifest_required(manifest, 'output_buffer_address')}"
+            )
+        return BuildStepResult(
+            step="smoke-test",
+            message=f"dau-build-smoke-test\ttask=smoke-test test={self.test}{device_segment}{manifest_segment} status=planned",
+        )
+
+
+STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
+    {
+        "explain": ExplainStep,
+        "generate": GenerateStep,
+        "inspect": InspectStep,
+        "resolved-config": ResolvedConfigStep,
+        "simulate": SimulateStep,
+        "synthesis": SynthesisStep,
+        "validate": ValidateStep,
+        "write": WriteStep,
+    }
+)
+
+TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
+    {
+        "flash": FlashTask,
+        "simulate": SimulateTask,
+        "smoke-test": SmokeTestTask,
+        "synthesize": SynthesizeTask,
+    }
+)
+
+
+def available_step_names() -> tuple[str, ...]:
+    return tuple(sorted(STEP_MODEL_TYPES))
+
+
+def available_task_names() -> tuple[str, ...]:
+    return tuple(sorted(TASK_MODEL_TYPES))
+
+
+def parse_override_dict(arguments: Iterable[str]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for argument in arguments:
+        normalized_argument = argument[1:] if argument.startswith("+") else argument
+        if "=" not in normalized_argument:
+            raise BuildStepError(f"expected key=value override, got {argument!r}")
+        key, value = normalized_argument.split("=", 1)
+        if not key:
+            raise BuildStepError(f"expected non-empty override key, got {argument!r}")
+        if key in overrides:
+            raise BuildStepError(f"duplicate override {key!r}")
+        overrides[key] = value
+    return overrides
+
+
+def execute_override_step(arguments: Iterable[str]) -> BuildStepResult:
+    overrides = parse_override_dict(arguments)
+    step_name = overrides.pop("step", None)
+    if not step_name:
+        raise BuildStepError("missing required override: step")
+    return _execute_named_callable(STEP_MODEL_TYPES, step_name, overrides, request_kind="step")
+
+
+def execute_override_task(arguments: Iterable[str]) -> BuildStepResult:
+    overrides = parse_override_dict(arguments)
+    task_name = overrides.pop("task", None)
+    if not task_name:
+        raise BuildStepError("missing required override: task")
+    if "step" in overrides:
+        raise BuildStepError("task requests cannot also provide step")
+    return _execute_named_callable(TASK_MODEL_TYPES, task_name, overrides, request_kind="task")
+
+
+def execute_override_request(arguments: Iterable[str]) -> BuildStepResult:
+    overrides = parse_override_dict(arguments)
+    task_name = overrides.pop("task", None)
+    step_name = overrides.pop("step", None)
+    if task_name and step_name:
+        raise BuildStepError("provide either task or step, not both")
+    if task_name:
+        return _execute_named_callable(TASK_MODEL_TYPES, task_name, overrides, request_kind="task")
+    if step_name:
+        return _execute_named_callable(STEP_MODEL_TYPES, step_name, overrides, request_kind="step")
+    raise BuildStepError("missing required override: task")
+
+
+def _execute_named_callable(
+    model_types: Mapping[str, type[BuildCallableModel]], request_name: str, overrides: Mapping[str, str], *, request_kind: str
+) -> BuildStepResult:
+    try:
+        model_type = model_types[request_name]
+    except KeyError as exc:
+        known_names = ", ".join(sorted(model_types))
+        raise BuildStepError(f"unknown build {request_kind} {request_name!r}; expected one of: {known_names}") from exc
+    return _execute_callable_model(model_type, overrides, request_kind=request_kind, request_name=request_name)
+
+
+def _execute_callable_model(
+    model_type: type[BuildCallableModel], overrides: Mapping[str, str], *, request_kind: str, request_name: str
+) -> BuildStepResult:
+    try:
+        model = model_type.model_validate(dict(overrides))
+    except ValidationError as exc:
+        raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
+    return model(NullContext())
+
+
+def _validation_error_message(request_kind: str, request_name: str, exc: ValidationError) -> str:
+    errors = exc.errors()
+    missing = tuple(_error_location(error) for error in errors if error.get("type") == "missing")
+    if missing:
+        return f"missing required override(s) for {request_kind}={request_name}: {', '.join(missing)}"
+    details = "; ".join(f"{_error_location(error)}: {error.get('msg', 'invalid value')}" for error in errors)
+    return f"invalid override(s) for {request_kind}={request_name}: {details}"
+
+
+def _error_location(error: Mapping[str, object]) -> str:
+    loc = error.get("loc", ())
+    if not isinstance(loc, tuple):
+        return str(loc)
+    return ".".join(str(part) for part in loc)
+
+
+def _unique_paths(paths: Iterable[Path | str]) -> tuple[Path, ...]:
+    unique: dict[Path, None] = {}
+    for path in paths:
+        unique[Path(path)] = None
+    return tuple(unique.keys())
+
+
+def _write_vivado_backend_handoff(
+    spec,
+    *,
+    selected_module: str,
+    output_root: Path,
+    dau_artifact_bundle_path: Path,
+    platform: str,
+    shell: str,
+    operator_set: tuple[str, ...],
+) -> VivadoBackendArtifacts:
+    try:
+        backend_artifacts = generate_vivado_backend_artifacts(
+            VivadoBackendRequest(
+                dau_core_hdl_root=_dau_core_hdl_root(),
+                build_root=output_root / "vivado",
+                dau_artifact_bundle_path=dau_artifact_bundle_path.resolve(),
+                artifact_stem=spec.artifact_stem,
+                platform=platform,
+                shell=shell,
+                operator_set=operator_set,
+                selected_module=selected_module,
+                register_map_version=spec.register_map_version,
+                stream_protocol_version=spec.stream_protocol_version,
+            )
+        )
+    except ValueError as exc:
+        raise BuildStepError(str(exc)) from exc
+    _write_vivado_backend_artifacts(backend_artifacts)
+    return backend_artifacts
+
+
+def _write_vivado_backend_artifacts(artifacts: VivadoBackendArtifacts) -> None:
+    outputs: list[tuple[Path, str | None]] = [
+        (artifacts.overlay_tcl_path, artifacts.overlay_tcl_text),
+        (artifacts.build_tcl_path, artifacts.build_tcl_text),
+        (artifacts.manifest_path, artifacts.manifest_text),
+        (artifacts.command_plan_path, artifacts.command_plan_text),
+        (artifacts.overlay_driver_tcl_path, artifacts.overlay_driver_tcl_text),
+        (artifacts.build_driver_tcl_path, artifacts.build_driver_tcl_text),
+    ]
+    for path, text in outputs:
+        if path is None or text is None:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def _dau_core_hdl_root() -> Path:
+    return Path(str(files("dau_core.hdl")))
+
+
+def _read_key_value_manifest(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        raise BuildStepError(f"manifest does not exist: {path}")
+    manifest: dict[str, str] = {}
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise BuildStepError(f"manifest line {line_number} is missing '=': {path}")
+        key, value = line.split("=", 1)
+        if not key:
+            raise BuildStepError(f"manifest line {line_number} has an empty key: {path}")
+        manifest[key] = value
+    return manifest
+
+
+def _manifest_required(manifest: Mapping[str, str], key: str) -> str:
+    value = manifest.get(key)
+    if not value:
+        raise BuildStepError(f"manifest missing required key: {key}")
+    return value
+
+
+def _manifest_path(root: Path, manifest: Mapping[str, str], key: str) -> Path:
+    value = Path(_manifest_required(manifest, key))
+    if value.is_absolute():
+        return value
+    return root / value

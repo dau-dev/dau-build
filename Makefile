@@ -7,9 +7,8 @@ develop:  ## install dependencies and build library
 	uv pip install -e .[develop]
 
 requirements:  ## install prerequisite python build requirements
-	python -m pip install --upgrade pip toml
-	python -m pip install `python -c 'import toml; c = toml.load("pyproject.toml"); print("\n".join(c["build-system"]["requires"]))'`
-	python -m pip install `python -c 'import toml; c = toml.load("pyproject.toml"); print(" ".join(c["project"]["optional-dependencies"]["develop"]))'`
+	python -m pip install --upgrade pip
+	python -m pip install -e ".[develop]"
 
 build:  ## build the python library
 	python -m build -n
@@ -27,16 +26,16 @@ lint-py:  ## lint python with ruff
 	python -m ruff format --check dau_build
 
 lint-docs:  ## lint docs with mdformat and codespell
-	python -m mdformat --check README.md 
-	python -m codespell_lib README.md 
+	python -m mdformat --check README.md
+	python -m codespell_lib README.md
 
 fix-py:  ## autoformat python code with ruff
 	python -m ruff check --fix dau_build
 	python -m ruff format dau_build
 
 fix-docs:  ## autoformat docs with mdformat and codespell
-	python -m mdformat README.md 
-	python -m codespell_lib --write README.md 
+	python -m mdformat README.md
+	python -m codespell_lib --write README.md
 
 lint: lint-py lint-docs  ## run all linters
 lints: lint
