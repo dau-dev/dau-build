@@ -91,7 +91,7 @@ class VivadoProjectGenerationRequest:
     vivado_executable: str = "vivado"
     vivado_invocation: str = "standard"
     vivado_mount_root: Path | None = None
-    plan_executable: str = "dau-hardware-plan"
+    plan_executable: str = "dau-build"
 
     def __post_init__(self) -> None:
         if self.vivado_invocation not in SUPPORTED_VIVADO_INVOCATIONS:
@@ -432,92 +432,66 @@ def vivado_project_generation_manifest_text(request: VivadoProjectGenerationRequ
 
 
 def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str:
-    argv = [
-        request.plan_executable,
-        "stage-vivado-overlay",
-        "--source-shell-root",
-        str(request.source_shell_root),
-        "--work-root",
-        str(request.work_root),
-        "--dau-core-root",
-        str(request.dau_core_root),
-        "--artifact-stem",
-        request.artifact_stem,
-        "--backend-platform",
-        request.platform,
-        "--backend-shell",
-        request.shell,
-        "--register-map-version",
-        request.register_map_version,
-        "--stream-protocol-version",
-        request.stream_protocol_version,
-        "--overlay-tcl",
-        str(request.overlay_tcl),
-        "--manifest-path",
-        str(request.backend_request.resolved_manifest_path),
-        "--command-plan-path",
-        str(request.backend_request.resolved_command_plan_path),
-        "--vivado-settings",
-        str(request.vivado_settings),
-        "--vivado",
-        request.vivado_executable,
+    overrides = [
+        ("source_shell_root", request.source_shell_root),
+        ("work_root", request.work_root),
+        ("dau_core_root", request.dau_core_root),
+        ("artifact_stem", request.artifact_stem),
+        ("backend_platform", request.platform),
+        ("backend_shell", request.shell),
+        ("register_map_version", request.register_map_version),
+        ("stream_protocol_version", request.stream_protocol_version),
+        ("overlay_tcl", request.overlay_tcl),
+        ("manifest_path", request.backend_request.resolved_manifest_path),
+        ("command_plan_path", request.backend_request.resolved_command_plan_path),
+        ("vivado_settings", request.vivado_settings),
+        ("vivado", request.vivado_executable),
     ]
     if request.vivado_invocation != "standard":
-        argv.extend(("--vivado-invocation", request.vivado_invocation))
+        overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
-        argv.extend(("--vivado-mount-root", str(request.vivado_mount_root.resolve(strict=False))))
+        overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
     if request.dau_artifact_bundle_path is not None:
-        argv.extend(("--dau-artifact-bundle", str(request.dau_artifact_bundle_path)))
-    for operator in request.operator_set:
-        argv.extend(("--operator", operator))
-    return shlex.join(argv)
+        overrides.append(("dau_artifact_bundle", request.dau_artifact_bundle_path))
+    overrides.append(("operator", ",".join(request.operator_set)))
+    return _hardware_plan_task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
 
 
 def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str:
-    argv = [
-        request.plan_executable,
-        "local-build-and-program",
-        "--source-shell-root",
-        str(request.source_shell_root),
-        "--work-root",
-        str(request.work_root),
-        "--dau-core-root",
-        str(request.dau_core_root),
-        "--dau-driver-root",
-        str(request.dau_driver_root),
-        "--overlay-tcl",
-        str(request.overlay_tcl),
-        "--bitstream",
-        str(request.bitstream_path),
-        "--vivado-settings",
-        str(request.vivado_settings),
-        "--vivado",
-        request.vivado_executable,
+    overrides = [
+        ("source_shell_root", request.source_shell_root),
+        ("work_root", request.work_root),
+        ("dau_core_root", request.dau_core_root),
+        ("dau_driver_root", request.dau_driver_root),
+        ("overlay_tcl", request.overlay_tcl),
+        ("bitstream", request.bitstream_path),
+        ("vivado_settings", request.vivado_settings),
+        ("vivado", request.vivado_executable),
     ]
     if request.vivado_invocation != "standard":
-        argv.extend(("--vivado-invocation", request.vivado_invocation))
+        overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
-        argv.extend(("--vivado-mount-root", str(request.vivado_mount_root.resolve(strict=False))))
+        overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
     if request.dau_utils_root is not None:
-        argv.extend(("--dau-utils-root", str(request.dau_utils_root)))
-    return shlex.join(argv)
+        overrides.append(("dau_utils_root", request.dau_utils_root))
+    return _hardware_plan_task_command(request.plan_executable, "local-build-and-program", tuple(overrides))
 
 
 def vivado_project_validate_command(request: VivadoProjectGenerationRequest) -> str:
-    argv = [
-        request.plan_executable,
-        "validate-bitstream",
-        "--work-root",
-        str(request.work_root),
-        "--bitstream",
-        str(request.bitstream_path),
-        "--dau-core-root",
-        str(request.dau_core_root),
-        "--dau-driver-root",
-        str(request.dau_driver_root),
+    overrides = [
+        ("work_root", request.work_root),
+        ("bitstream", request.bitstream_path),
+        ("dau_core_root", request.dau_core_root),
+        ("dau_driver_root", request.dau_driver_root),
     ]
     if request.dau_utils_root is not None:
-        argv.extend(("--dau-utils-root", str(request.dau_utils_root)))
+        overrides.append(("dau_utils_root", request.dau_utils_root))
+    return _hardware_plan_task_command(request.plan_executable, "validate-bitstream", tuple(overrides))
+
+
+def _hardware_plan_task_command(executable: str, plan: str, overrides: tuple[tuple[str, object], ...]) -> str:
+    argv = [executable, "task=hardware-plan", f"plan={plan}"]
+    argv.extend(f"{key}={value}" for key, value in overrides)
     return shlex.join(argv)
 
 
@@ -811,16 +785,33 @@ def _validate_project_command(
         return (f"project {label} cannot be parsed: {exc}",)
 
     errors: list[str] = []
-    if len(tokens) < 2 or tokens[1] != expected_plan:
+    hydra_overrides = _command_hydra_overrides(tokens)
+    if hydra_overrides:
+        actual_plan = hydra_overrides.get("plan", "")
+    else:
         actual_plan = tokens[1] if len(tokens) > 1 else ""
+    if actual_plan != expected_plan:
         errors.append(f"project {label} plan mismatch: {actual_plan} != {expected_plan}")
     for option, expected_value in required_options:
-        actual_value = _command_option_value(tokens, option)
+        actual_value = hydra_overrides.get(_hydra_option_key(option)) if hydra_overrides else _command_option_value(tokens, option)
         if actual_value is None:
             errors.append(f"project {label} missing option: {option}")
         elif expected_value and actual_value != expected_value:
             errors.append(f"project {label} option {option} mismatch: {actual_value} != {expected_value}")
     return tuple(errors)
+
+
+def _command_hydra_overrides(tokens: list[str]) -> dict[str, str]:
+    if len(tokens) < 2:
+        return {}
+    overrides = dict(token.split("=", 1) for token in tokens[1:] if "=" in token)
+    if overrides.get("task") != "hardware-plan":
+        return {}
+    return overrides
+
+
+def _hydra_option_key(option: str) -> str:
+    return option.removeprefix("--").replace("-", "_")
 
 
 def _command_option_value(tokens: list[str], option: str) -> str | None:

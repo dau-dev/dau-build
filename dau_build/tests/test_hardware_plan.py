@@ -349,11 +349,12 @@ def test_structured_vivado_project_generation_request_records_workdir_inputs() -
     assert manifest["bitstream"] == "artifacts/dau-ci.bit"
     assert manifest["xdma_module"] == "sw/xdma/xdma.ko"
     assert manifest["vivado_invocation"] == "standard"
-    assert "stage-vivado-overlay" in manifest["stage_command"]
-    assert "--source-shell-root /repo/projects/vivado-shell" in manifest["stage_command"]
-    assert "local-build-and-program" in manifest["build_command"]
-    assert "validate-bitstream" in manifest["validate_command"]
-    assert "--dau-utils-root /repo/dau-utils" in manifest["validate_command"]
+    assert manifest["stage_command"].startswith("dau-build task=hardware-plan plan=stage-vivado-overlay ")
+    assert "source_shell_root=/repo/projects/vivado-shell" in manifest["stage_command"]
+    assert "--source-shell-root" not in manifest["stage_command"]
+    assert manifest["build_command"].startswith("dau-build task=hardware-plan plan=local-build-and-program ")
+    assert manifest["validate_command"].startswith("dau-build task=hardware-plan plan=validate-bitstream ")
+    assert "dau_utils_root=/repo/dau-utils" in manifest["validate_command"]
 
 
 def test_structured_vivado_project_generation_records_source_only_vivado_wrapper() -> None:
@@ -370,8 +371,8 @@ def test_structured_vivado_project_generation_records_source_only_vivado_wrapper
 
     manifest = dict(line.split("=", 1) for line in artifacts.project_manifest_text.splitlines())
     assert manifest["vivado_invocation"] == "source-only"
-    assert "--vivado-invocation source-only" in manifest["stage_command"]
-    assert "--vivado-invocation source-only" in manifest["build_command"]
+    assert "vivado_invocation=source-only" in manifest["stage_command"]
+    assert "vivado_invocation=source-only" in manifest["build_command"]
 
 
 def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tmp_path: Path) -> None:
