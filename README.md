@@ -33,13 +33,24 @@ dau-build task=flash tool=openFPGAloader bitstream=outputs/vivado/project.runs/i
 dau-build task=smoke-test test=identity
 ```
 
-The `simulate` task validates the selected module against the DAU build spec for `simulator=cocotb` and `simulator=svparser`. Pass `simulator=verilator` with either a named DAU-owned `profile` or raw `testbench_path=...` and `top_module=...`, plus an optional `expect_stdout=...` marker, to compile and run a Verilator testbench through the generic `dau-sim` Verilator adapter.
+The `simulate` task validates the selected module against the DAU build spec for `simulator=cocotb` and `simulator=svparser`. Pass `simulator=verilator` with either a named DAU-owned `profile` or raw `testbench_path=...` and `top_module=...`, plus an optional `expect_stdout=...` marker, to compile and run a Verilator testbench through the generic `dau-sim` Verilator adapter. Simulation profiles are carried as `artlink.manifest/v0` metadata artifacts with role `simulation-profile`; pass `profile_manifest=...` or `simulate.profile_manifest=...` to add project-local profile manifests.
+
+The packaged Hydra/ccflow workflow configs live in `dau_build/config`, following the `ccflow-etl` model:
+
+- `base.yaml` selects a workflow and sets `callable: /model`.
+- `workflow/task/*.yaml` constructs the public task `ccflow.CallableModel`s.
+- `workflow/step/*.yaml` constructs the lower-level step `ccflow.CallableModel`s.
+- `callable/callable.yaml` is the small ccflow registry pointer.
+
+Select workflows directly with overrides such as `workflow=task/simulate`, `workflow=task/synthesize`, or `workflow=step/validate`, then override `model.*` fields. The public `dau-build task=...` and `dau-build-steps step=...` dispatchers also compose these packaged workflow configs before running the selected `ccflow.CallableModel`. These configs only instantiate the classes registered in `TASK_MODEL_TYPES` and `STEP_MODEL_TYPES`; artifact/profile data stays in `dau_build/profiles` as artlink manifests rather than being duplicated into workflow configs.
 
 The `synthesize` task writes the local DAU generated top, DAU manifest, `artlink.manifest/v0` artifact bundle, and `vivado/<artifact-stem>.manifest` backend handoff. The backend manifest records the selected module, generated top, HDL source set, command plan, expected bitstream path, register/status contract, staging buffers, and operator metadata. It still does not invoke Vivado directly. `task=flash` can consume that manifest after the bitstream exists, and `task=smoke-test test=aggregation` can consume the same manifest to plan the register/DMA-facing aggregation smoke. The `flash` and `smoke-test` tasks currently produce safe plans and validation output rather than touching hardware by default.
 
 For lower-level development, `dau-build-steps step=...` exposes artifact operations such as `inspect`, `validate`, `generate`, `write`, `resolved-config`, and `explain`. Those operations are also `ccflow.CallableModel`s; user-facing workflows should use `dau-build task=...`.
 
-Currently available DAU Verilator profiles are owned by `dau-build` and reference DAU HDL benches from `dau-core`:
+The packaged DAU Verilator profile manifest is `dau_build/profiles/dau-core-verilator-profiles.artifacts.yaml`. It references DAU HDL benches from `dau-core` while keeping the workflow as a typed `ccflow.CallableModel` request.
+
+Currently available packaged DAU Verilator profiles are:
 
 - `dau-int32-aggregation-tile`
 - `dau-int32-arrow-lite-stream-aggregation`
@@ -111,7 +122,7 @@ The shell staging path is `stage-shell`. It copies a read-only Vivado shell seed
 
 The hardware-session path that does not invoke Vivado is `validate-bitstream`. It detects the JTAG chain, removes any stale endpoint, programs the selected volatile bitstream, performs the ordered bridge/global PCIe rescan, retries the endpoint check with additional ordered rescans when needed, runs the dependency-free hardware identity smoke through `dau-driver`, and releases runtime PM. The XDMA kernel module must already be loaded; for the Vivado shell checkout that module lives under `sw/xdma/xdma.ko` in either the read-only seed or generated work directory.
 
-The backend dry-run path is `stage-vivado-overlay`. It can first stage the shell seed into the generated work directory, then writes the generated overlay Tcl, guarded build Tcl, structured backend manifest preview, and Vivado command plan there without invoking Vivado or touching hardware. The manifest is produced from a typed backend request that records the platform, shell, artifact stem, register map version, stream protocol version, operator set, DAU HDL root, final manifest/plan/bitstream paths, and Vivado command settings. Use `validate-vivado-artifacts` immediately after staging to check that the manifest, overlay Tcl, build Tcl, command plan, and final bitstream path agree without requiring Xilinx tools.
+The backend dry-run path is `stage-vivado-overlay`. It can first stage the shell seed into the generated work directory, then writes the generated overlay Tcl, guarded build Tcl, structured backend manifest preview, and Vivado command plan there without invoking Vivado or touching hardware. The manifest is produced from a typed backend request that records the platform, shell, artifact stem, register map version, stream protocol version, operator set, DAU HDL root, final manifest/plan/bitstream paths, resource/timing report paths, Vivado log path, and Vivado command settings. Use `validate-vivado-artifacts` immediately after staging to check that the manifest, overlay Tcl, build Tcl, command plan, and planned output paths agree without requiring Xilinx tools. After the generated build Tcl runs, it appends `build_status=built` and the bitstream/report/log paths; validation then requires those files to exist.
 
 For DAU-native backend handoff, pass `dau_artifact_bundle=...` to `plan=stage-vivado-overlay` or `plan=stage-vivado-project`. The Vivado backend loads and validates the YAML bundle, records the generated top and HDL source set in the backend manifest, and adds those HDL sources to the generated overlay Tcl before the shell-specific bridge is applied. This is the first handoff step from DAU build artifacts into the Vivado/XDMA adapter.
 

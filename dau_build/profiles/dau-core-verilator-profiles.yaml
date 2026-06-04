@@ -1,0 +1,21 @@
+schema: dau.simulation-profile/v0
+profiles:
+  - name: dau-int32-aggregation-tile
+    simulator: verilator
+    top_module: dau_int32_aggregation_tile_tb
+    expect_stdout: DAU_INT32_AGGREGATION_TILE_TB_OK
+    sources:
+      - artifact: dau-int32-aggregation-tile-tb
+  - name: dau-int32-stream-aggregation
+    simulator: verilator
+    top_module: dau_int32_stream_aggregation_tb
+    expect_stdout: DAU_INT32_STREAM_AGGREGATION_TB_OK
+    sources:
+      - artifact: dau-int32-aggregation-tile-source
+      - artifact: dau-int32-stream-aggregation-tb
+  - name: dau-int32-arrow-lite-stream-aggregation
+    simulator: verilator
+    top_module: dau_int32_arrow_lite_stream_aggregation_tb
+    expect_stdout: DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_TB_OK
+    sources:
+      - artifact: dau-int32-arrow-lite-stream-aggregation-tb

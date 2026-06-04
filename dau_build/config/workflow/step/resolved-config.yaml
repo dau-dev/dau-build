@@ -1,0 +1,4 @@
+# @package model
+
+_target_: dau_build.build_steps.ResolvedConfigStep
+spec_path: ???

@@ -1,0 +1,5 @@
+# @package model
+
+_target_: dau_build.build_steps.GenerateStep
+spec_path: ???
+output_root: ???

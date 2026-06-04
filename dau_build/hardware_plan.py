@@ -158,6 +158,9 @@ def stage_vivado_overlay_plan(
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl"),
     manifest_path: Path | None = None,
     command_plan_path: Path | None = None,
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
+    vivado_log_path: Path = Path("vivado.log"),
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_backend_artifacts(
@@ -175,6 +178,9 @@ def stage_vivado_overlay_plan(
             manifest_path=manifest_path,
             command_plan_path=command_plan_path,
             bitstream_path=config.bitstream_path or Path("project.runs/impl_1/Top_wrapper.bit"),
+            resource_summary_path=resource_summary_path,
+            timing_summary_path=timing_summary_path,
+            vivado_log_path=vivado_log_path,
             vivado_settings=vivado_settings,
             vivado_executable=config.vivado_executable,
             vivado_invocation=config.vivado_invocation,
@@ -210,6 +216,9 @@ def stage_vivado_project_plan(
     manifest_path: Path | None = None,
     command_plan_path: Path | None = None,
     project_manifest_path: Path | None = None,
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
+    vivado_log_path: Path = Path("vivado.log"),
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_project_generation_artifacts(
@@ -231,6 +240,9 @@ def stage_vivado_project_plan(
             command_plan_path=command_plan_path,
             project_manifest_path=project_manifest_path,
             bitstream_path=config.bitstream_path or Path("project.runs/impl_1/Top_wrapper.bit"),
+            resource_summary_path=resource_summary_path,
+            timing_summary_path=timing_summary_path,
+            vivado_log_path=vivado_log_path,
             vivado_settings=vivado_settings,
             vivado_executable=config.vivado_executable,
             vivado_invocation=config.vivado_invocation,
@@ -571,6 +583,10 @@ def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
 def _print_vivado_artifact_validation(validation: VivadoBackendArtifactValidation | VivadoProjectArtifactValidation) -> None:
     project = f"project={validation.project_manifest_path} " if isinstance(validation, VivadoProjectArtifactValidation) else ""
     if validation.ok:
+        build_status = f" build_status={validation.build_status}" if validation.build_status else ""
+        resource_summary = f" resource_summary={validation.resource_summary_path}" if validation.resource_summary_path else ""
+        timing_summary = f" timing_summary={validation.timing_summary_path}" if validation.timing_summary_path else ""
+        vivado_log = f" vivado_log={validation.vivado_log_path}" if validation.vivado_log_path else ""
         print(
             "vivado-artifacts-valid\t"
             f"{project}"
@@ -578,6 +594,10 @@ def _print_vivado_artifact_validation(validation: VivadoBackendArtifactValidatio
             f"overlay={validation.overlay_tcl_path} "
             f"command_plan={validation.command_plan_path} "
             f"bitstream={validation.bitstream_path}"
+            f"{build_status}"
+            f"{resource_summary}"
+            f"{timing_summary}"
+            f"{vivado_log}"
         )
         return
     print(f"vivado-artifacts-invalid\t{project}manifest={validation.manifest_path} command_plan={validation.command_plan_path}")
@@ -646,6 +666,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Structured project manifest path relative to the local Vivado root; defaults to <artifact-stem>.project",
     )
+    parser.add_argument("--resource-summary-path", default=Path("reports/dau_utilization.rpt"), type=Path, help="Resource summary report path")
+    parser.add_argument("--timing-summary-path", default=Path("reports/dau_timing_summary.rpt"), type=Path, help="Timing summary report path")
+    parser.add_argument("--vivado-log-path", default=Path("vivado.log"), type=Path, help="Vivado log path recorded in generated manifests")
     parser.add_argument("--python", default="python3", help="Local Python executable for hardware smoke tests and source-checkout runtime PM")
     parser.add_argument("--vivado-settings", default=Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"), type=Path, help="Remote Vivado settings script")
     parser.add_argument("--execute", action="store_true", help="Execute the selected plan instead of printing it")
@@ -719,6 +742,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest_path=args.manifest_path,
             command_plan_path=args.command_plan_path,
             project_manifest_path=args.project_manifest_path,
+            resource_summary_path=args.resource_summary_path,
+            timing_summary_path=args.timing_summary_path,
+            vivado_log_path=args.vivado_log_path,
             vivado_settings=args.vivado_settings,
         )
     elif args.plan == "stage-vivado-overlay":
@@ -738,6 +764,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             overlay_tcl=args.overlay_tcl,
             manifest_path=args.manifest_path,
             command_plan_path=args.command_plan_path,
+            resource_summary_path=args.resource_summary_path,
+            timing_summary_path=args.timing_summary_path,
+            vivado_log_path=args.vivado_log_path,
             vivado_settings=args.vivado_settings,
         )
     elif args.plan == "flash":

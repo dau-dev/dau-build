@@ -1,0 +1,33 @@
+# @package model
+
+_target_: dau_build.build_steps.HardwarePlanTask
+plan: ???
+work_root: ???
+source_shell_root: null
+bitstream: null
+vivado: vivado
+vivado_invocation: standard
+vivado_mount_root: null
+openfpgaloader: openFPGALoader
+jtag_cable: digilent_hs2
+endpoint_bdf: "0000:04:00.0"
+dau_core_root: null
+dau_driver_root: null
+dau_utils_root: null
+dau_artifact_bundle: null
+overlay_tcl: scripts/dau_overlay.tcl
+artifact_stem: dau-vivado
+backend_platform: vivado-xdma
+backend_shell: xdma-shell
+operator: null
+register_map_version: "0.1"
+stream_protocol_version: "0.1"
+manifest_path: null
+command_plan_path: null
+project_manifest_path: null
+resource_summary_path: reports/dau_utilization.rpt
+timing_summary_path: reports/dau_timing_summary.rpt
+vivado_log_path: vivado.log
+python: python3
+vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+execute: false

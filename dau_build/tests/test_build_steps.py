@@ -185,6 +185,35 @@ def test_simulate_step_can_run_verilator_profile(tmp_path: Path) -> None:
     assert (work_dir / "obj_dir" / "Vdau_int32_aggregation_tile_tb").is_file()
 
 
+@pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
+def test_simulate_step_can_run_verilator_profile_from_artlink_manifest(tmp_path: Path) -> None:
+    pytest.importorskip("dau_sim.integrations.verilator")
+    spec_path = _write_counter_spec(tmp_path)
+    testbench_path = _write_counter_testbench(tmp_path)
+    profile_manifest_path = _write_counter_profile_manifest(tmp_path, testbench_path)
+    work_dir = tmp_path / "verilator-artlink-profile-work"
+
+    result = execute_override_step(
+        (
+            "step=simulate",
+            f"spec_path={spec_path}",
+            "simulate.engine=verilator",
+            "simulate.profile=counter-profile",
+            f"simulate.profile_manifest={profile_manifest_path}",
+            f"output_root={work_dir}",
+        )
+    )
+
+    assert result == BuildStepResult(
+        step="simulate",
+        message=(
+            f"dau-build-simulate\tspec={spec_path} top=counter_top modules=counter sources=1 engine=verilator "
+            f"profile=counter-profile testbench_top=counter_tb work_dir={work_dir} status=passed"
+        ),
+    )
+    assert (work_dir / "obj_dir" / "Vcounter_tb").is_file()
+
+
 def test_synthesis_step_writes_local_artifacts_for_backend_handoff(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"
@@ -329,6 +358,52 @@ def _write_counter_testbench(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return testbench_path
+
+
+def _write_counter_profile_manifest(tmp_path: Path, testbench_path: Path) -> Path:
+    profile_path = tmp_path / "counter-profiles.yaml"
+    profile_path.write_text(
+        "\n".join(
+            (
+                "schema: dau.simulation-profile/v0",
+                "profiles:",
+                "  - name: counter-profile",
+                "    simulator: verilator",
+                "    top_module: counter_tb",
+                "    expect_stdout: DAU_BUILD_COUNTER_TB_OK",
+                "    sources:",
+                "      - artifact: counter-tb",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "counter-profiles.artifacts.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            (
+                "schema: artlink.manifest/v0",
+                "name: counter-profiles",
+                "artifacts:",
+                "  - id: counter-profile-metadata",
+                f"    path: {profile_path.name}",
+                "    kind: metadata",
+                "    role: simulation-profile",
+                "    format: dau.simulation-profile/v0",
+                "    provides:",
+                "      - kind: simulation-profile",
+                "        name: counter-profile",
+                "  - id: counter-tb",
+                f"    path: {testbench_path.name}",
+                "    kind: source",
+                "    role: testbench-source",
+                "    language: systemverilog",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
 
 
 def _write_aggregation_tile_spec(tmp_path: Path) -> Path:
