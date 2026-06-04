@@ -160,7 +160,7 @@ def test_simulate_step_can_run_verilator_testbench(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
 def test_simulate_step_can_run_verilator_profile(tmp_path: Path) -> None:
-    pytest.importorskip("dau_sim.integrations.verilator_profiles")
+    pytest.importorskip("dau_sim.integrations.verilator")
     spec_path = _write_aggregation_tile_spec(tmp_path)
     work_dir = tmp_path / "verilator-profile-work"
 

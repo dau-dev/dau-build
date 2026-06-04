@@ -184,9 +184,10 @@ class SimulateStep(SpecPathModel):
     def _run_verilator(self, spec) -> BuildStepResult:
         try:
             from dau_sim.integrations.verilator import VerilatorExecutionError, VerilatorUnavailableError, run_verilator_testbench
-            from dau_sim.integrations.verilator_profiles import resolve_verilator_profile
         except ModuleNotFoundError as exc:
             raise BuildStepError("simulate.engine=verilator requires dau-sim to be importable") from exc
+
+        from dau_build.simulation_profiles import resolve_verilator_profile
 
         profile = None
         if self.simulate_profile:
