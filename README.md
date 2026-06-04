@@ -33,13 +33,13 @@ dau-build task=flash tool=openFPGAloader bitstream=outputs/vivado/project.runs/i
 dau-build task=smoke-test test=identity
 ```
 
-The `simulate` task validates the selected module against the DAU build spec for `simulator=cocotb` and `simulator=svparser`. Pass `simulator=verilator` with either a named `profile` (for built-in DAU aggregator benches) or raw `testbench_path=...` and `top_module=...`, plus an optional `expect_stdout=...` marker, to compile and run a Verilator testbench through the `dau-sim` Verilator adapter.
+The `simulate` task validates the selected module against the DAU build spec for `simulator=cocotb` and `simulator=svparser`. Pass `simulator=verilator` with either a named DAU-owned `profile` or raw `testbench_path=...` and `top_module=...`, plus an optional `expect_stdout=...` marker, to compile and run a Verilator testbench through the generic `dau-sim` Verilator adapter.
 
 The `synthesize` task writes the local DAU generated top, DAU manifest, `artlink.manifest/v0` artifact bundle, and `vivado/<artifact-stem>.manifest` backend handoff. The backend manifest records the selected module, generated top, HDL source set, command plan, expected bitstream path, register/status contract, staging buffers, and operator metadata. It still does not invoke Vivado directly. `task=flash` can consume that manifest after the bitstream exists, and `task=smoke-test test=aggregation` can consume the same manifest to plan the register/DMA-facing aggregation smoke. The `flash` and `smoke-test` tasks currently produce safe plans and validation output rather than touching hardware by default.
 
 For lower-level development, `dau-build-steps step=...` exposes artifact operations such as `inspect`, `validate`, `generate`, `write`, `resolved-config`, and `explain`. Those operations are also `ccflow.CallableModel`s; user-facing workflows should use `dau-build task=...`.
 
-Currently available DAU Verilator profiles are:
+Currently available DAU Verilator profiles are owned by `dau-build` and reference DAU HDL benches from `dau-core`:
 
 - `dau-int32-aggregation-tile`
 - `dau-int32-arrow-lite-stream-aggregation`
