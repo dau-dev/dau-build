@@ -1,0 +1,13 @@
+# @package model
+
+_target_: dau_build.build_steps.SimulateStep
+spec_path: ???
+output_root: null
+simulate_engine: svparser
+simulate_profile: null
+simulate_profile_manifest: []
+simulate_testbench_path: null
+simulate_top_module: null
+simulate_expect_stdout: null
+simulate_verilator: verilator
+simulate_extra_args: ""

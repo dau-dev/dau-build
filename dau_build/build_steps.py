@@ -3,10 +3,10 @@ from collections.abc import Iterable, Mapping
 from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
-from typing import ClassVar, Literal, TypeVar
+from typing import Any, ClassVar, Literal, TypeVar
 
 from ccflow import CallableModel, Flow, NullContext, ResultBase
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from dau_build.build_config import resolve_build_config
 from dau_build.build_spec import dau_build_spec_summary, generate_dau_build_artifacts, load_dau_build_spec, write_dau_build_artifacts
@@ -160,11 +160,17 @@ class SimulateStep(SpecPathModel):
     output_root: Path | None = None
     simulate_engine: Literal["svparser", "verilator"] = Field(default="svparser", alias="simulate.engine")
     simulate_profile: str | None = Field(default=None, alias="simulate.profile")
+    simulate_profile_manifest: tuple[Path, ...] = Field(default=(), alias="simulate.profile_manifest")
     simulate_testbench_path: Path | None = Field(default=None, alias="simulate.testbench_path")
     simulate_top_module: str | None = Field(default=None, alias="simulate.top_module")
     simulate_expect_stdout: str | None = Field(default=None, alias="simulate.expect_stdout")
     simulate_verilator: str = Field(default="verilator", alias="simulate.verilator")
     simulate_extra_args: str = Field(default="", alias="simulate.extra_args")
+
+    @field_validator("simulate_profile_manifest", mode="before")
+    @classmethod
+    def _split_profile_manifest_paths(cls, value):
+        return _split_path_tuple(value)
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
@@ -187,13 +193,13 @@ class SimulateStep(SpecPathModel):
         except ModuleNotFoundError as exc:
             raise BuildStepError("simulate.engine=verilator requires dau-sim to be importable") from exc
 
-        from dau_build.simulation_profiles import resolve_verilator_profile
+        from dau_build.simulation_profiles import SimulationProfileError, resolve_verilator_profile
 
         profile = None
         if self.simulate_profile:
             try:
-                profile = resolve_verilator_profile(self.simulate_profile)
-            except KeyError as exc:
+                profile = resolve_verilator_profile(self.simulate_profile, profile_manifests=self.simulate_profile_manifest)
+            except SimulationProfileError as exc:
                 raise BuildStepError(str(exc)) from exc
 
         if profile is not None:
@@ -277,11 +283,17 @@ class SimulateTask(ModuleSelectionModel):
     simulator: Literal["cocotb", "svparser", "verilator"] = "svparser"
     output_root: Path | None = None
     profile: str | None = None
+    profile_manifest: tuple[Path, ...] = ()
     testbench_path: Path | None = None
     top_module: str | None = None
     expect_stdout: str | None = None
     verilator: str = "verilator"
     extra_args: str = ""
+
+    @field_validator("profile_manifest", mode="before")
+    @classmethod
+    def _split_profile_manifest_paths(cls, value):
+        return _split_path_tuple(value)
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
@@ -306,6 +318,8 @@ class SimulateTask(ModuleSelectionModel):
         )
         if self.profile:
             step_data["simulate.profile"] = self.profile
+        if self.profile_manifest:
+            step_data["simulate.profile_manifest"] = self._stringify_override_value(self.profile_manifest)
         if self.testbench_path:
             step_data["simulate.testbench_path"] = str(self.testbench_path)
         if self.top_module:
@@ -432,6 +446,9 @@ class HardwarePlanTask(BuildCallableModel):
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
     project_manifest_path: Path | None = None
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt")
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
+    vivado_log_path: Path = Path("vivado.log")
     python: str = "python3"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     execute: bool = False
@@ -513,6 +530,9 @@ class HardwarePlanTask(BuildCallableModel):
                 manifest_path=self.manifest_path,
                 command_plan_path=self.command_plan_path,
                 project_manifest_path=self.project_manifest_path,
+                resource_summary_path=self.resource_summary_path,
+                timing_summary_path=self.timing_summary_path,
+                vivado_log_path=self.vivado_log_path,
                 vivado_settings=self.vivado_settings,
             )
         if self.plan == "stage-vivado-overlay":
@@ -530,6 +550,9 @@ class HardwarePlanTask(BuildCallableModel):
                 overlay_tcl=self.overlay_tcl,
                 manifest_path=self.manifest_path,
                 command_plan_path=self.command_plan_path,
+                resource_summary_path=self.resource_summary_path,
+                timing_summary_path=self.timing_summary_path,
+                vivado_log_path=self.vivado_log_path,
                 vivado_settings=self.vivado_settings,
             )
         if self.plan == "flash":
@@ -638,7 +661,17 @@ def _execute_named_callable(
     except KeyError as exc:
         known_names = ", ".join(sorted(model_types))
         raise BuildStepError(f"unknown build {request_kind} {request_name!r}; expected one of: {known_names}") from exc
-    return _execute_callable_model(model_type, overrides, request_kind=request_kind, request_name=request_name)
+    try:
+        model = model_type.model_validate(dict(overrides))
+    except ValidationError as exc:
+        raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
+
+    from dau_build.config import run_workflow_config
+
+    result = run_workflow_config(f"{request_kind}/{request_name}", model_values=_model_config_values(model))
+    if not isinstance(result, BuildStepResult):
+        raise BuildStepError(f"build {request_kind} {request_name!r} returned unsupported result {type(result).__name__}")
+    return result
 
 
 def _execute_callable_model(
@@ -649,6 +682,21 @@ def _execute_callable_model(
     except ValidationError as exc:
         raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
     return model(NullContext())
+
+
+def _model_config_values(model: BuildCallableModel) -> dict[str, Any]:
+    raw = model.model_dump(mode="python", by_alias=False, exclude={"meta", "type_"})
+    return {key: _workflow_config_value(value) for key, value in raw.items()}
+
+
+def _workflow_config_value(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, tuple | list):
+        return [_workflow_config_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _workflow_config_value(item) for key, item in value.items()}
+    return value
 
 
 def _validation_error_message(request_kind: str, request_name: str, exc: ValidationError) -> str:
@@ -674,9 +722,25 @@ def _unique_paths(paths: Iterable[Path | str]) -> tuple[Path, ...]:
     return tuple(unique.keys())
 
 
+def _split_path_tuple(value) -> tuple[Path, ...]:
+    if value in (None, ""):
+        return ()
+    if isinstance(value, Path):
+        return (value,)
+    if isinstance(value, str):
+        return tuple(Path(item) for item in value.split(",") if item)
+    if isinstance(value, Iterable):
+        return tuple(Path(item) for item in value)
+    return value
+
+
 def _vivado_artifact_validation_message(validation: VivadoBackendArtifactValidation | VivadoProjectArtifactValidation) -> str:
     project = f"project={validation.project_manifest_path} " if isinstance(validation, VivadoProjectArtifactValidation) else ""
     if validation.ok:
+        build_status = f" build_status={validation.build_status}" if validation.build_status else ""
+        resource_summary = f" resource_summary={validation.resource_summary_path}" if validation.resource_summary_path else ""
+        timing_summary = f" timing_summary={validation.timing_summary_path}" if validation.timing_summary_path else ""
+        vivado_log = f" vivado_log={validation.vivado_log_path}" if validation.vivado_log_path else ""
         return (
             "vivado-artifacts-valid\t"
             f"{project}"
@@ -684,6 +748,10 @@ def _vivado_artifact_validation_message(validation: VivadoBackendArtifactValidat
             f"overlay={validation.overlay_tcl_path} "
             f"command_plan={validation.command_plan_path} "
             f"bitstream={validation.bitstream_path}"
+            f"{build_status}"
+            f"{resource_summary}"
+            f"{timing_summary}"
+            f"{vivado_log}"
         )
     return "\n".join(
         (

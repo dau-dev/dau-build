@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - workflow: task/simulate
+  - callable: callable
+
+context: {}
+
+cli:
+  model:
+    _target_: ccflow.FlowOptions
+    cacheable: false

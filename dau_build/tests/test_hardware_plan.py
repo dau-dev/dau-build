@@ -408,6 +408,65 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
     assert manifest["operator_set"] == "identity,sum_i64"
 
 
+def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_path: Path) -> None:
+    artifacts = _write_backend_artifacts(
+        VivadoBackendRequest(
+            dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+            build_root=tmp_path,
+            artifact_stem="dau-ci",
+            overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
+            bitstream_path=Path("artifacts/dau-ci.bit"),
+        )
+    )
+    for path in (artifacts.bitstream_path, artifacts.resource_summary_path, artifacts.timing_summary_path, artifacts.vivado_log_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("built\n", encoding="utf-8")
+    artifacts.manifest_path.write_text(
+        artifacts.manifest_text.replace("build_status=planned", "build_status=built"),
+        encoding="utf-8",
+    )
+
+    validation = validate_vivado_backend_artifact_bundle(
+        tmp_path,
+        manifest_path=Path("dau-ci.manifest"),
+        command_plan_path=Path("dau-ci.plan"),
+    )
+
+    assert validation.ok
+    assert validation.build_status == "built"
+    assert validation.resource_summary_path == artifacts.resource_summary_path
+    assert validation.timing_summary_path == artifacts.timing_summary_path
+    assert validation.vivado_log_path == artifacts.vivado_log_path
+
+
+def test_validate_structured_backend_artifact_bundle_rejects_built_status_without_reports(tmp_path: Path) -> None:
+    artifacts = _write_backend_artifacts(
+        VivadoBackendRequest(
+            dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+            build_root=tmp_path,
+            artifact_stem="dau-ci",
+            overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
+            bitstream_path=Path("artifacts/dau-ci.bit"),
+        )
+    )
+    artifacts.manifest_path.write_text(
+        artifacts.manifest_text.replace("build_status=planned", "build_status=built"),
+        encoding="utf-8",
+    )
+
+    validation = validate_vivado_backend_artifact_bundle(
+        tmp_path,
+        manifest_path=Path("dau-ci.manifest"),
+        command_plan_path=Path("dau-ci.plan"),
+    )
+
+    assert not validation.ok
+    assert f"build_status=built but missing bitstream: {artifacts.bitstream_path}" in validation.errors
+    assert f"build_status=built but missing resource_summary: {artifacts.resource_summary_path}" in validation.errors
+    assert f"build_status=built but missing timing_summary: {artifacts.timing_summary_path}" in validation.errors
+    assert f"build_status=built but missing vivado_log: {artifacts.vivado_log_path}" in validation.errors
+
+
 def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tmp_path: Path) -> None:
     artifacts = _write_project_artifacts(
         VivadoProjectGenerationRequest(
@@ -801,6 +860,10 @@ def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
     assert manifest["build_tcl"] == "scripts/dau_build.tcl"
     build_tcl = _decode_write_text_step_source(steps[2])
     assert "skipping missing PCIe lane cell" in build_tcl
+    assert "file copy -force $default_bitstream_path $expected_bitstream_path" in build_tcl
+    assert 'report_utilization -file "reports/dau_utilization.rpt"' in build_tcl
+    assert 'report_timing_summary -file "reports/dau_timing_summary.rpt"' in build_tcl
+    assert 'puts $manifest_file "build_status=built"' in build_tcl
     command_plan = _decode_write_text_step_source(steps[3])
     assert "cd /repo/dau-build/outputs/vivado" in command_plan
     assert "vivado2025.1 -mode batch -source scripts/dau_overlay.tcl" in command_plan
@@ -933,7 +996,12 @@ def test_cli_validates_structured_backend_artifact_bundle(tmp_path: Path, capsys
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines == [
-        f"vivado-artifacts-valid\tmanifest={tmp_path / 'dau-ci.manifest'} overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} command_plan={tmp_path / 'dau-ci.plan'} bitstream={tmp_path / 'artifacts/dau-ci.bit'}"
+        (
+            f"vivado-artifacts-valid\tmanifest={tmp_path / 'dau-ci.manifest'} overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} "
+            f"command_plan={tmp_path / 'dau-ci.plan'} bitstream={tmp_path / 'artifacts/dau-ci.bit'} build_status=planned "
+            f"resource_summary={tmp_path / 'reports/dau_utilization.rpt'} timing_summary={tmp_path / 'reports/dau_timing_summary.rpt'} "
+            f"vivado_log={tmp_path / 'vivado.log'}"
+        )
     ]
 
 
@@ -967,7 +1035,13 @@ def test_cli_validates_structured_project_artifact_bundle(tmp_path: Path, capsys
     assert exit_code == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines == [
-        f"vivado-artifacts-valid\tproject={tmp_path / 'dau-ci.project'} manifest={tmp_path / 'dau-ci.manifest'} overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} command_plan={tmp_path / 'dau-ci.plan'} bitstream={tmp_path / 'artifacts/dau-ci.bit'}"
+        (
+            f"vivado-artifacts-valid\tproject={tmp_path / 'dau-ci.project'} manifest={tmp_path / 'dau-ci.manifest'} "
+            f"overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} command_plan={tmp_path / 'dau-ci.plan'} "
+            f"bitstream={tmp_path / 'artifacts/dau-ci.bit'} build_status=planned "
+            f"resource_summary={tmp_path / 'reports/dau_utilization.rpt'} timing_summary={tmp_path / 'reports/dau_timing_summary.rpt'} "
+            f"vivado_log={tmp_path / 'vivado.log'}"
+        )
     ]
 
 

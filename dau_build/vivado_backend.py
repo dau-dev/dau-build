@@ -29,6 +29,9 @@ class VivadoBackendRequest:
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
     bitstream_path: Path = Path("project.runs/impl_1/Top_wrapper.bit")
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt")
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
+    vivado_log_path: Path = Path("vivado.log")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     vivado_executable: str = "vivado"
     vivado_invocation: str = "standard"
@@ -86,6 +89,9 @@ class VivadoProjectGenerationRequest:
     command_plan_path: Path | None = None
     project_manifest_path: Path | None = None
     bitstream_path: Path = Path("project.runs/impl_1/Top_wrapper.bit")
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt")
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
+    vivado_log_path: Path = Path("vivado.log")
     xdma_module_path: Path = Path("sw/xdma/xdma.ko")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     vivado_executable: str = "vivado"
@@ -123,6 +129,9 @@ class VivadoProjectGenerationRequest:
             manifest_path=self.manifest_path,
             command_plan_path=self.command_plan_path,
             bitstream_path=self.bitstream_path,
+            resource_summary_path=self.resource_summary_path,
+            timing_summary_path=self.timing_summary_path,
+            vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
             vivado_executable=self.vivado_executable,
             vivado_invocation=self.vivado_invocation,
@@ -137,6 +146,9 @@ class VivadoBackendArtifacts:
     command_plan_path: Path
     build_tcl_path: Path
     bitstream_path: Path
+    resource_summary_path: Path
+    timing_summary_path: Path
+    vivado_log_path: Path
     overlay_driver_tcl_path: Path | None
     build_driver_tcl_path: Path | None
     overlay_tcl_text: str
@@ -160,6 +172,10 @@ class VivadoBackendArtifactValidation:
     command_plan_path: Path
     overlay_tcl_path: Path | None
     bitstream_path: Path | None
+    resource_summary_path: Path | None
+    timing_summary_path: Path | None
+    vivado_log_path: Path | None
+    build_status: str | None
     manifest_items: tuple[tuple[str, str], ...]
     errors: tuple[str, ...]
 
@@ -195,6 +211,22 @@ class VivadoProjectArtifactValidation:
     def bitstream_path(self) -> Path | None:
         return self.backend_validation.bitstream_path
 
+    @property
+    def resource_summary_path(self) -> Path | None:
+        return self.backend_validation.resource_summary_path
+
+    @property
+    def timing_summary_path(self) -> Path | None:
+        return self.backend_validation.timing_summary_path
+
+    @property
+    def vivado_log_path(self) -> Path | None:
+        return self.backend_validation.vivado_log_path
+
+    @property
+    def build_status(self) -> str | None:
+        return self.backend_validation.build_status
+
 
 def generate_vivado_backend_artifacts(request: VivadoBackendRequest) -> VivadoBackendArtifacts:
     manifest_path = request.resolved_manifest_path
@@ -209,6 +241,9 @@ def generate_vivado_backend_artifacts(request: VivadoBackendRequest) -> VivadoBa
         command_plan_path=_build_artifact_path(request.build_root, command_plan_path),
         build_tcl_path=_build_artifact_path(request.build_root, request.build_tcl),
         bitstream_path=_build_artifact_path(request.build_root, request.bitstream_path),
+        resource_summary_path=_build_artifact_path(request.build_root, request.resource_summary_path),
+        timing_summary_path=_build_artifact_path(request.build_root, request.timing_summary_path),
+        vivado_log_path=_build_artifact_path(request.build_root, request.vivado_log_path),
         overlay_driver_tcl_path=None if overlay_driver_tcl is None else _build_artifact_path(request.build_root, overlay_driver_tcl),
         build_driver_tcl_path=None if build_driver_tcl is None else _build_artifact_path(request.build_root, build_driver_tcl),
         overlay_tcl_text=dau_overlay_tcl(
@@ -216,13 +251,22 @@ def generate_vivado_backend_artifacts(request: VivadoBackendRequest) -> VivadoBa
             manifest_path=manifest_path,
             overlay_tcl=request.overlay_tcl,
             bitstream_path=request.bitstream_path,
+            resource_summary_path=request.resource_summary_path,
+            timing_summary_path=request.timing_summary_path,
+            vivado_log_path=request.vivado_log_path,
             dau_artifact_bundle_path=request.resolved_dau_artifact_bundle_path,
             dau_generated_top=_bundle_generated_top_path(artifact_bundle),
             dau_bundle_hdl_sources=_bundle_hdl_source_paths(artifact_bundle),
             selected_module=request.selected_module,
             vivado_path_base=vivado_path_base,
         ),
-        build_tcl_text=vivado_build_tcl(),
+        build_tcl_text=vivado_build_tcl(
+            manifest_path=manifest_path,
+            bitstream_path=request.bitstream_path,
+            resource_summary_path=request.resource_summary_path,
+            timing_summary_path=request.timing_summary_path,
+            vivado_log_path=request.vivado_log_path,
+        ),
         overlay_driver_tcl_text=None
         if overlay_driver_tcl is None
         else source_only_vivado_driver_tcl(
@@ -270,6 +314,10 @@ def validate_vivado_backend_artifact_bundle(
     manifest_items: tuple[tuple[str, str], ...] = ()
     overlay_tcl_path: Path | None = None
     bitstream_path: Path | None = None
+    resource_summary_path: Path | None = None
+    timing_summary_path: Path | None = None
+    vivado_log_path: Path | None = None
+    build_status: str | None = None
 
     if not resolved_manifest_path.is_file():
         errors.append(f"missing manifest: {resolved_manifest_path}")
@@ -284,6 +332,10 @@ def validate_vivado_backend_artifact_bundle(
         )
         overlay_tcl_path = _build_artifact_path(build_root, Path(manifest["overlay"])) if "overlay" in manifest else None
         bitstream_path = _build_artifact_path(build_root, Path(manifest["bitstream"])) if "bitstream" in manifest else None
+        resource_summary_path = _build_artifact_path(build_root, Path(manifest["resource_summary"])) if "resource_summary" in manifest else None
+        timing_summary_path = _build_artifact_path(build_root, Path(manifest["timing_summary"])) if "timing_summary" in manifest else None
+        vivado_log_path = _build_artifact_path(build_root, Path(manifest["vivado_log"])) if "vivado_log" in manifest else None
+        build_status = manifest.get("build_status")
 
     if not resolved_command_plan_path.is_file():
         errors.append(f"missing command plan: {resolved_command_plan_path}")
@@ -306,6 +358,10 @@ def validate_vivado_backend_artifact_bundle(
         command_plan_path=resolved_command_plan_path,
         overlay_tcl_path=overlay_tcl_path,
         bitstream_path=bitstream_path,
+        resource_summary_path=resource_summary_path,
+        timing_summary_path=timing_summary_path,
+        vivado_log_path=vivado_log_path,
+        build_status=build_status,
         manifest_items=manifest_items,
         errors=tuple(errors),
     )
@@ -373,6 +429,10 @@ def vivado_backend_manifest(request: VivadoBackendRequest, *, artifact_bundle: A
         ("manifest", request.resolved_manifest_path.as_posix()),
         ("command_plan", request.resolved_command_plan_path.as_posix()),
         ("build_tcl", request.build_tcl.as_posix()),
+        ("resource_summary", request.resource_summary_path.as_posix()),
+        ("timing_summary", request.timing_summary_path.as_posix()),
+        ("vivado_log", request.vivado_log_path.as_posix()),
+        ("build_status", "planned"),
         ("selected_module", "" if request.selected_module is None else request.selected_module),
         ("register_map_version", request.register_map_version),
         ("stream_protocol_version", request.stream_protocol_version),
@@ -411,6 +471,10 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
         ("overlay_tcl", request.overlay_tcl.as_posix()),
         ("build_tcl", request.build_tcl.as_posix()),
         ("bitstream", request.bitstream_path.as_posix()),
+        ("resource_summary", request.resource_summary_path.as_posix()),
+        ("timing_summary", request.timing_summary_path.as_posix()),
+        ("vivado_log", request.vivado_log_path.as_posix()),
+        ("build_status", "planned"),
         ("xdma_module", request.xdma_module_path.as_posix()),
         ("register_map_version", request.register_map_version),
         ("stream_protocol_version", request.stream_protocol_version),
@@ -526,6 +590,10 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
         "build_tcl",
         "overlay",
         "bitstream",
+        "resource_summary",
+        "timing_summary",
+        "vivado_log",
+        "build_status",
         "register_map_version",
         "stream_protocol_version",
         "operator_set",
@@ -548,8 +616,25 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
         errors.append(f"manifest path mismatch: {manifest['manifest']} != {manifest_path.as_posix()}")
     if manifest.get("command_plan") and manifest["command_plan"] != command_plan_path.as_posix():
         errors.append(f"command plan path mismatch: {manifest['command_plan']} != {command_plan_path.as_posix()}")
+    build_status = manifest.get("build_status")
+    if build_status and build_status not in {"planned", "built"}:
+        errors.append(f"unsupported build status: {build_status}")
+    if build_status == "built":
+        errors.extend(_validate_built_output_paths(build_root=build_root, manifest=manifest))
     if manifest.get("dau_artifact_bundle"):
         errors.extend(_validate_dau_artifact_bundle_reference(build_root=build_root, manifest=manifest))
+    return tuple(errors)
+
+
+def _validate_built_output_paths(*, build_root: Path, manifest: dict[str, str]) -> tuple[str, ...]:
+    errors: list[str] = []
+    for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log"):
+        value = manifest.get(key, "")
+        if not value:
+            continue
+        path = _build_artifact_path(build_root, Path(value))
+        if not path.is_file():
+            errors.append(f"build_status=built but missing {key}: {path}")
     return tuple(errors)
 
 
@@ -602,6 +687,10 @@ def _validate_project_manifest_contract(
         "overlay_tcl",
         "build_tcl",
         "bitstream",
+        "resource_summary",
+        "timing_summary",
+        "vivado_log",
+        "build_status",
         "xdma_module",
         "register_map_version",
         "stream_protocol_version",
@@ -656,6 +745,9 @@ def _validate_project_backend_manifest_cross_refs(
         ("overlay_tcl", "overlay"),
         ("build_tcl", "build_tcl"),
         ("bitstream", "bitstream"),
+        ("resource_summary", "resource_summary"),
+        ("timing_summary", "timing_summary"),
+        ("vivado_log", "vivado_log"),
         ("register_map_version", "register_map_version"),
         ("stream_protocol_version", "stream_protocol_version"),
         ("operator_set", "operator_set"),
@@ -865,7 +957,7 @@ def _command_plan_sources_tcl(*, command_plan_text: str, vivado_executable: str,
 
 def _validate_overlay_tcl_contract(*, manifest: dict[str, str], overlay_tcl_text: str) -> tuple[str, ...]:
     errors: list[str] = []
-    for key in ("overlay", "bitstream"):
+    for key in ("overlay", "bitstream", "resource_summary", "timing_summary", "vivado_log"):
         value = manifest.get(key)
         if value is None:
             continue
@@ -1036,6 +1128,9 @@ def dau_overlay_manifest(
     *,
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl"),
     bitstream_path: Path = Path("project.runs/impl_1/Top_wrapper.bit"),
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
+    vivado_log_path: Path = Path("vivado.log"),
     dau_artifact_bundle_path: Path | None = None,
     artifact_bundle: ArtifactBundle | None = None,
     vivado_path_base: Path | None = None,
@@ -1055,6 +1150,10 @@ def dau_overlay_manifest(
         ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
         ("overlay", overlay_tcl.as_posix()),
         ("bitstream", bitstream_path.as_posix()),
+        ("resource_summary", resource_summary_path.as_posix()),
+        ("timing_summary", timing_summary_path.as_posix()),
+        ("vivado_log", vivado_log_path.as_posix()),
+        ("build_status", "planned"),
         *_stream_job_contract_manifest(),
         *_dau_artifact_bundle_manifest(
             dau_artifact_bundle_path=dau_artifact_bundle_path,
@@ -1080,6 +1179,9 @@ def dau_overlay_tcl(
     manifest_path: Path = Path("dau-vivado.manifest"),
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl"),
     bitstream_path: Path = Path("project.runs/impl_1/Top_wrapper.bit"),
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
+    vivado_log_path: Path = Path("vivado.log"),
     dau_artifact_bundle_path: Path | None = None,
     dau_generated_top: Path | None = None,
     dau_bundle_hdl_sources: tuple[Path, ...] = (),
@@ -1182,7 +1284,10 @@ set dau_identity_ooc_runs [get_runs -quiet *dau_identity_axil*]
 if {{[llength $dau_identity_ooc_runs] != 0}} {{
     reset_run $dau_identity_ooc_runs
 }}
-set manifest_file [open \"{manifest_path.as_posix()}\" w]
+# The Python staging step writes the full structured manifest before Vivado
+# runs. Append runtime-discovered fields here so executing the command plan
+# does not clobber the typed backend contract.
+set manifest_file [open \"{manifest_path.as_posix()}\" a]
 puts $manifest_file \"dau_identity_registers_sv=$dau_identity_registers_sv\"
 puts $manifest_file "dau_identity_axil_v=$dau_identity_axil_v"
 puts $manifest_file "dau_identity_axil_cell=dau_identity_axil_0"
@@ -1190,6 +1295,10 @@ puts $manifest_file "dau_identity_ooc_runs=$dau_identity_ooc_runs"
 puts $manifest_file "spi_ss_i_tieoff=dau_spi_ss_i_tieoff"
 puts $manifest_file "overlay={overlay_tcl.as_posix()}"
 puts $manifest_file "bitstream={bitstream_path.as_posix()}"
+puts $manifest_file "resource_summary={resource_summary_path.as_posix()}"
+puts $manifest_file "timing_summary={timing_summary_path.as_posix()}"
+puts $manifest_file "vivado_log={vivado_log_path.as_posix()}"
+puts $manifest_file "build_status=planned"
 {_stream_job_contract_puts_tcl()}
 {_selected_module_puts_tcl(selected_module)}
 {_bundle_manifest_puts_tcl(dau_artifact_bundle_path=rendered_bundle_path, dau_generated_top=rendered_generated_top, dau_bundle_hdl_sources=rendered_bundle_sources)}
@@ -1232,8 +1341,15 @@ def project_build_script(
     )
 
 
-def vivado_build_tcl() -> str:
-    return """# Generated by dau-build; source after scripts/dau_overlay.tcl.
+def vivado_build_tcl(
+    *,
+    manifest_path: Path = Path("dau-vivado.manifest"),
+    bitstream_path: Path = Path("project.runs/impl_1/Top_wrapper.bit"),
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
+    vivado_log_path: Path = Path("vivado.log"),
+) -> str:
+    script = """# Generated by dau-build; source after scripts/dau_overlay.tcl.
 open_project project.xpr
 reset_run synth_1
 launch_runs synth_1 -jobs 2
@@ -1259,12 +1375,44 @@ foreach lane [list \
 
 launch_runs impl_1 -jobs 6 -to_step write_bitstream
 wait_on_run impl_1
-write_cfgmem -format mcs -size 16 -interface SPIx4 -force -loadbit "up 0 ./project.runs/impl_1/Top_wrapper.bit" -file "./mcs/top.mcs"
-write_cfgmem -format bin -size 16 -interface SPIx4 -force -loadbit "up 0 ./project.runs/impl_1/Top_wrapper.bit" -file "./mcs/top.bin"
+open_run impl_1
+set default_bitstream_path [file normalize "project.runs/impl_1/Top_wrapper.bit"]
+set expected_bitstream_path [file normalize "__BITSTREAM_PATH__"]
+if {![file exists $default_bitstream_path]} {
+    error "Vivado implementation did not produce default bitstream: $default_bitstream_path"
+}
+file mkdir [file dirname $expected_bitstream_path]
+if {$expected_bitstream_path ne $default_bitstream_path} {
+    file copy -force $default_bitstream_path $expected_bitstream_path
+}
+file mkdir [file dirname "__RESOURCE_SUMMARY_PATH__"]
+file mkdir [file dirname "__TIMING_SUMMARY_PATH__"]
+report_utilization -file "__RESOURCE_SUMMARY_PATH__"
+report_timing_summary -file "__TIMING_SUMMARY_PATH__"
+if {![file exists $expected_bitstream_path]} {
+    error "expected Vivado bitstream was not produced: $expected_bitstream_path"
+}
+file mkdir mcs
+write_cfgmem -format mcs -size 16 -interface SPIx4 -force -loadbit "up 0 $expected_bitstream_path" -file "./mcs/top.mcs"
+write_cfgmem -format bin -size 16 -interface SPIx4 -force -loadbit "up 0 $expected_bitstream_path" -file "./mcs/top.bin"
 write_verilog -mode funcsim -force Top.v
+set manifest_file [open "__MANIFEST_PATH__" a]
+puts $manifest_file "bitstream=__BITSTREAM_PATH__"
+puts $manifest_file "resource_summary=__RESOURCE_SUMMARY_PATH__"
+puts $manifest_file "timing_summary=__TIMING_SUMMARY_PATH__"
+puts $manifest_file "vivado_log=__VIVADO_LOG_PATH__"
+puts $manifest_file "build_status=built"
+close $manifest_file
 close_design
 puts "Implementation done!"
 """
+    return (
+        script.replace("__MANIFEST_PATH__", manifest_path.as_posix())
+        .replace("__BITSTREAM_PATH__", bitstream_path.as_posix())
+        .replace("__RESOURCE_SUMMARY_PATH__", resource_summary_path.as_posix())
+        .replace("__TIMING_SUMMARY_PATH__", timing_summary_path.as_posix())
+        .replace("__VIVADO_LOG_PATH__", vivado_log_path.as_posix())
+    )
 
 
 def overlay_build_script(
