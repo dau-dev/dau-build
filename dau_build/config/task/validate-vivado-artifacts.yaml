@@ -1,0 +1,14 @@
+# @package model
+
+_target_: dau_build.build_steps.ValidateVivadoArtifactsTask
+backend: vivado
+work_root: ???
+bitstream: null
+vivado: vivado
+vivado_invocation: standard
+vivado_mount_root: null
+artifact_stem: dau-vivado
+manifest_path: null
+command_plan_path: null
+project_manifest_path: null
+execute: false

@@ -8,7 +8,7 @@ from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-__all__ = ("load_config", "run_workflow_config", "workflow_config")
+__all__ = ("load_config", "request_config", "run_request_config")
 
 
 def load_config(
@@ -28,8 +28,9 @@ def load_config(
     return registry
 
 
-def workflow_config(
-    workflow: str,
+def request_config(
+    request_kind: str,
+    request_name: str,
     *,
     model_values: Mapping[str, Any] | None = None,
     overrides: Sequence[str] | None = None,
@@ -37,7 +38,7 @@ def workflow_config(
     version_base: str | None = None,
 ) -> ConfigLoadResult:
     result = _load_base_config(
-        (f"workflow={workflow}", *(overrides or ())),
+        (f"{request_kind}={request_name}", *(overrides or ())),
         config_dir=config_dir,
         version_base=version_base,
     )
@@ -46,8 +47,9 @@ def workflow_config(
     return result
 
 
-def run_workflow_config(
-    workflow: str,
+def run_request_config(
+    request_kind: str,
+    request_name: str,
     *,
     model_values: Mapping[str, Any] | None = None,
     overrides: Sequence[str] | None = None,
@@ -55,8 +57,9 @@ def run_workflow_config(
     version_base: str | None = None,
 ):
     return cfg_run(
-        workflow_config(
-            workflow,
+        request_config(
+            request_kind,
+            request_name,
             model_values=model_values,
             overrides=overrides,
             config_dir=config_dir,
