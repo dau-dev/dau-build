@@ -352,9 +352,14 @@ def test_structured_vivado_project_generation_request_records_workdir_inputs() -
     assert manifest["stage_command"].startswith("dau-build task=hardware-plan plan=stage-vivado-overlay ")
     assert "source_shell_root=/repo/projects/vivado-shell" in manifest["stage_command"]
     assert "--source-shell-root" not in manifest["stage_command"]
-    assert manifest["build_command"].startswith("dau-build task=hardware-plan plan=local-build-and-program ")
-    assert manifest["validate_command"].startswith("dau-build task=hardware-plan plan=validate-bitstream ")
-    assert "dau_utils_root=/repo/dau-utils" in manifest["validate_command"]
+    assert manifest["build_command"].startswith("dau-build task=build-vivado-artifacts ")
+    assert "manifest_path=dau-ci.manifest" in manifest["build_command"]
+    assert "command_plan_path=dau-ci.plan" in manifest["build_command"]
+    assert "project_manifest_path=dau-ci.project" in manifest["build_command"]
+    assert manifest["validate_command"].startswith("dau-build task=validate-vivado-artifacts ")
+    assert "manifest_path=dau-ci.manifest" in manifest["validate_command"]
+    assert "command_plan_path=dau-ci.plan" in manifest["validate_command"]
+    assert "project_manifest_path=dau-ci.project" in manifest["validate_command"]
 
 
 def test_structured_vivado_project_generation_records_source_only_vivado_wrapper() -> None:
@@ -913,7 +918,8 @@ def test_stage_vivado_project_plan_writes_project_and_backend_artifacts_without_
     assert project_manifest["backend_manifest"] == "dau-ci.manifest"
     assert project_manifest["backend_command_plan"] == "dau-ci.plan"
     assert "stage-vivado-overlay" in project_manifest["stage_command"]
-    assert "validate-bitstream" in project_manifest["validate_command"]
+    assert "build-vivado-artifacts" in project_manifest["build_command"]
+    assert "validate-vivado-artifacts" in project_manifest["validate_command"]
     assert all(not step.name.startswith("vivado") for step in steps)
 
 
@@ -968,81 +974,6 @@ def test_cli_prints_stage_vivado_overlay_plan_without_vivado_execution(capsys) -
     assert lines[1].startswith("write-dau-manifest\tsh -c ")
     assert lines[2].startswith("write-vivado-build-script\tsh -c ")
     assert lines[3].startswith("write-vivado-command-plan\tsh -c ")
-
-
-def test_cli_validates_structured_backend_artifact_bundle(tmp_path: Path, capsys) -> None:
-    _write_backend_artifacts(
-        VivadoBackendRequest(
-            dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
-            build_root=tmp_path,
-            artifact_stem="dau-ci",
-            overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
-            bitstream_path=Path("artifacts/dau-ci.bit"),
-        )
-    )
-
-    exit_code = main(
-        [
-            "validate-vivado-artifacts",
-            "--work-root",
-            str(tmp_path),
-            "--manifest-path",
-            "dau-ci.manifest",
-            "--command-plan-path",
-            "dau-ci.plan",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert lines == [
-        (
-            f"vivado-artifacts-valid\tmanifest={tmp_path / 'dau-ci.manifest'} overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} "
-            f"command_plan={tmp_path / 'dau-ci.plan'} bitstream={tmp_path / 'artifacts/dau-ci.bit'} build_status=planned "
-            f"resource_summary={tmp_path / 'reports/dau_utilization.rpt'} timing_summary={tmp_path / 'reports/dau_timing_summary.rpt'} "
-            f"vivado_log={tmp_path / 'vivado.log'}"
-        )
-    ]
-
-
-def test_cli_validates_structured_project_artifact_bundle(tmp_path: Path, capsys) -> None:
-    _write_project_artifacts(
-        VivadoProjectGenerationRequest(
-            source_shell_root=Path("/repo/projects/vivado-shell"),
-            work_root=tmp_path,
-            dau_core_root=Path("/repo/dau-core"),
-            dau_driver_root=Path("/repo/dau-driver"),
-            artifact_stem="dau-ci",
-            overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
-            bitstream_path=Path("artifacts/dau-ci.bit"),
-        )
-    )
-
-    exit_code = main(
-        [
-            "validate-vivado-artifacts",
-            "--work-root",
-            str(tmp_path),
-            "--project-manifest-path",
-            "dau-ci.project",
-            "--manifest-path",
-            "dau-ci.manifest",
-            "--command-plan-path",
-            "dau-ci.plan",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert lines == [
-        (
-            f"vivado-artifacts-valid\tproject={tmp_path / 'dau-ci.project'} manifest={tmp_path / 'dau-ci.manifest'} "
-            f"overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} command_plan={tmp_path / 'dau-ci.plan'} "
-            f"bitstream={tmp_path / 'artifacts/dau-ci.bit'} build_status=planned "
-            f"resource_summary={tmp_path / 'reports/dau_utilization.rpt'} timing_summary={tmp_path / 'reports/dau_timing_summary.rpt'} "
-            f"vivado_log={tmp_path / 'vivado.log'}"
-        )
-    ]
 
 
 def test_cli_prints_stage_shell_plan_for_generated_workdir(capsys) -> None:

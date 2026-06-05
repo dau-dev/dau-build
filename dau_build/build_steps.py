@@ -25,6 +25,8 @@ from dau_build.hardware_plan import (
     thunderbolt_release_plan,
     validate_bitstream_plan,
     validate_vivado_artifacts,
+    validate_vivado_artifacts_step,
+    vivado_overlay_build_step,
 )
 from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
@@ -374,6 +376,7 @@ class FlashTask(BuildCallableModel):
         manifest_segment = ""
         if self.manifest_path is not None:
             manifest = _read_key_value_manifest(self.manifest_path)
+            _require_built_manifest(self.manifest_path, manifest)
             bitstream = bitstream or _manifest_path(self.manifest_path.parent, manifest, "bitstream")
             manifest_segment = f" manifest={self.manifest_path}"
         if bitstream is None:
@@ -397,6 +400,7 @@ class SmokeTestTask(BuildCallableModel):
         manifest_segment = ""
         if self.manifest_path is not None:
             manifest = _read_key_value_manifest(self.manifest_path)
+            _require_built_manifest(self.manifest_path, manifest)
             manifest_segment = (
                 f" manifest={self.manifest_path}"
                 f" register_window_offset={_manifest_required(manifest, 'register_window_offset')}"
@@ -406,6 +410,185 @@ class SmokeTestTask(BuildCallableModel):
         return BuildStepResult(
             step="smoke-test",
             message=f"dau-build-smoke-test\ttask=smoke-test test={self.test}{device_segment}{manifest_segment} status=planned",
+        )
+
+
+class OverlayBuildTask(BuildCallableModel):
+    backend: str
+    execute: bool = False
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        raise NotImplementedError("OverlayBuildTask subclasses must implement __call__")
+
+
+class VivadoOverlayBuildTask(OverlayBuildTask):
+    backend: Literal["vivado"] = "vivado"
+    work_root: Path
+    bitstream: Path | None = None
+    vivado: str = "vivado"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
+    vivado_mount_root: Path | None = None
+    overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
+    build_tcl: Path = Path("scripts/dau_build.tcl")
+    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        step = vivado_overlay_build_step(
+            self._toolchain_config(),
+            overlay_tcl=self.overlay_tcl,
+            build_tcl=self.build_tcl,
+            vivado_settings=self.vivado_settings,
+        )
+        if not self.execute:
+            return BuildStepResult(step="overlay-build", message=format_plan_steps((step,)))
+        return_code = execute_plan_steps((step,))
+        if return_code != 0:
+            raise BuildStepError(f"{self.backend} overlay build failed with exit code {return_code}")
+        return BuildStepResult(
+            step="overlay-build",
+            message=f"dau-build-overlay-build\ttask=overlay-build backend={self.backend} steps=1 status=executed",
+        )
+
+    def _toolchain_config(self) -> HardwareToolchainConfig:
+        return HardwareToolchainConfig(
+            work_root=self.work_root,
+            vivado_executable=self.vivado,
+            vivado_invocation=self.vivado_invocation,
+            vivado_mount_root=self.vivado_mount_root,
+            bitstream_path=self.bitstream,
+        )
+
+
+class OverlayArtifactValidationTask(BuildCallableModel):
+    backend: str
+    execute: bool = False
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        raise NotImplementedError("OverlayArtifactValidationTask subclasses must implement __call__")
+
+
+class ValidateVivadoArtifactsTask(OverlayArtifactValidationTask):
+    backend: Literal["vivado"] = "vivado"
+    work_root: Path
+    bitstream: Path | None = None
+    vivado: str = "vivado"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
+    vivado_mount_root: Path | None = None
+    artifact_stem: str = "dau-vivado"
+    manifest_path: Path | None = None
+    command_plan_path: Path | None = None
+    project_manifest_path: Path | None = None
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        manifest_path = self.manifest_path or Path(f"{self.artifact_stem}.manifest")
+        command_plan_path = self.command_plan_path or Path(f"{self.artifact_stem}.plan")
+        if not self.execute:
+            step = validate_vivado_artifacts_step(
+                self._toolchain_config(),
+                manifest_path=manifest_path,
+                command_plan_path=command_plan_path,
+                project_manifest_path=self.project_manifest_path,
+            )
+            return BuildStepResult(step="validate-vivado-artifacts", message=format_plan_steps((step,)))
+        validation = validate_vivado_artifacts(
+            self._toolchain_config(),
+            manifest_path=manifest_path,
+            command_plan_path=command_plan_path,
+            project_manifest_path=self.project_manifest_path,
+        )
+        if not validation.ok:
+            raise BuildStepError(_vivado_artifact_validation_message(validation))
+        return BuildStepResult(step="validate-vivado-artifacts", message=_vivado_artifact_validation_message(validation))
+
+    def _toolchain_config(self) -> HardwareToolchainConfig:
+        return HardwareToolchainConfig(
+            work_root=self.work_root,
+            vivado_executable=self.vivado,
+            vivado_invocation=self.vivado_invocation,
+            vivado_mount_root=self.vivado_mount_root,
+            bitstream_path=self.bitstream,
+        )
+
+
+class BuildOverlayArtifactsTask(BuildCallableModel):
+    backend: str
+
+    def overlay_build_model(self) -> OverlayBuildTask:
+        raise NotImplementedError("BuildOverlayArtifactsTask subclasses must provide an overlay build model")
+
+    def artifact_validation_model(self) -> OverlayArtifactValidationTask:
+        raise NotImplementedError("BuildOverlayArtifactsTask subclasses must provide an artifact validation model")
+
+    @Flow.deps
+    def __deps__(self, context: NullContext):
+        return [(self.overlay_build_model(), [context])]
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        build_result = self.overlay_build_model()(context)
+        validation_result = self.artifact_validation_model()(context)
+        if build_result.message:
+            message = f"{build_result.message}\n{validation_result.message}"
+        else:
+            message = validation_result.message
+        return BuildStepResult(step="build-overlay-artifacts", message=message)
+
+
+class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
+    backend: Literal["vivado"] = "vivado"
+    work_root: Path
+    bitstream: Path | None = None
+    vivado: str = "vivado"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
+    vivado_mount_root: Path | None = None
+    overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
+    build_tcl: Path = Path("scripts/dau_build.tcl")
+    artifact_stem: str = "dau-vivado"
+    manifest_path: Path | None = None
+    command_plan_path: Path | None = None
+    project_manifest_path: Path | None = None
+    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    execute: bool = False
+
+    def overlay_build_model(self) -> VivadoOverlayBuildTask:
+        return VivadoOverlayBuildTask(
+            work_root=self.work_root,
+            bitstream=self.bitstream,
+            vivado=self.vivado,
+            vivado_invocation=self.vivado_invocation,
+            vivado_mount_root=self.vivado_mount_root,
+            overlay_tcl=self.overlay_tcl,
+            build_tcl=self.build_tcl,
+            vivado_settings=self.vivado_settings,
+            execute=self.execute,
+        )
+
+    def artifact_validation_model(self) -> ValidateVivadoArtifactsTask:
+        return ValidateVivadoArtifactsTask(
+            work_root=self.work_root,
+            bitstream=self.bitstream,
+            vivado=self.vivado,
+            vivado_invocation=self.vivado_invocation,
+            vivado_mount_root=self.vivado_mount_root,
+            artifact_stem=self.artifact_stem,
+            manifest_path=self.manifest_path,
+            command_plan_path=self.command_plan_path,
+            project_manifest_path=self.project_manifest_path,
+            execute=self.execute,
+        )
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        result = super().__call__(context)
+        if not self.execute:
+            return BuildStepResult(step="build-vivado-artifacts", message=result.message)
+        return BuildStepResult(
+            step="build-vivado-artifacts",
+            message=(f"dau-build-artifacts\ttask=build-vivado-artifacts backend={self.backend} steps=2 status=executed\n{result.message}"),
         )
 
 
@@ -421,7 +604,6 @@ class HardwarePlanTask(BuildCallableModel):
         "thunderbolt-hold",
         "thunderbolt-release",
         "validate-bitstream",
-        "validate-vivado-artifacts",
     ]
     work_root: Path
     source_shell_root: Path | None = None
@@ -503,13 +685,6 @@ class HardwarePlanTask(BuildCallableModel):
                 dau_utils_root=self.dau_utils_root,
                 python=self.python,
             )
-        if self.plan == "validate-vivado-artifacts":
-            return validate_vivado_artifacts(
-                config,
-                manifest_path=self.manifest_path or Path("dau-vivado.manifest"),
-                command_plan_path=self.command_plan_path or Path("dau-vivado.plan"),
-                project_manifest_path=self.project_manifest_path,
-            )
         if self.plan == "stage-shell":
             return stage_shell_plan(config, source_shell_root=self._required_path("source_shell_root"))
         if self.plan == "stage-vivado-project":
@@ -590,11 +765,14 @@ STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
 
 TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
     {
+        "build-vivado-artifacts": BuildVivadoArtifactsTask,
         "flash": FlashTask,
         "hardware-plan": HardwarePlanTask,
+        "overlay-build": VivadoOverlayBuildTask,
         "simulate": SimulateTask,
         "smoke-test": SmokeTestTask,
         "synthesize": SynthesizeTask,
+        "validate-vivado-artifacts": ValidateVivadoArtifactsTask,
     }
 )
 
@@ -666,9 +844,9 @@ def _execute_named_callable(
     except ValidationError as exc:
         raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
 
-    from dau_build.config import run_workflow_config
+    from dau_build.config import run_request_config
 
-    result = run_workflow_config(f"{request_kind}/{request_name}", model_values=_model_config_values(model))
+    result = run_request_config(request_kind, request_name, model_values=_model_config_values(model))
     if not isinstance(result, BuildStepResult):
         raise BuildStepError(f"build {request_kind} {request_name!r} returned unsupported result {type(result).__name__}")
     return result
@@ -686,16 +864,16 @@ def _execute_callable_model(
 
 def _model_config_values(model: BuildCallableModel) -> dict[str, Any]:
     raw = model.model_dump(mode="python", by_alias=False, exclude={"meta", "type_"})
-    return {key: _workflow_config_value(value) for key, value in raw.items()}
+    return {key: _request_config_value(value) for key, value in raw.items()}
 
 
-def _workflow_config_value(value: Any) -> Any:
+def _request_config_value(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, tuple | list):
-        return [_workflow_config_value(item) for item in value]
+        return [_request_config_value(item) for item in value]
     if isinstance(value, Mapping):
-        return {str(key): _workflow_config_value(item) for key, item in value.items()}
+        return {str(key): _request_config_value(item) for key, item in value.items()}
     return value
 
 
@@ -841,3 +1019,21 @@ def _manifest_path(root: Path, manifest: Mapping[str, str], key: str) -> Path:
     if value.is_absolute():
         return value
     return root / value
+
+
+def _require_built_manifest(manifest_path: Path, manifest: Mapping[str, str]) -> None:
+    build_status = manifest.get("build_status") or "<missing>"
+    if build_status != "built":
+        raise BuildStepError(f"manifest {manifest_path} is not built: build_status={build_status}; expected built")
+
+    missing: list[str] = []
+    for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log"):
+        try:
+            artifact_path = _manifest_path(manifest_path.parent, manifest, key)
+        except BuildStepError as exc:
+            missing.append(str(exc))
+            continue
+        if not artifact_path.is_file():
+            missing.append(f"missing {key}: {artifact_path}")
+    if missing:
+        raise BuildStepError(f"manifest {manifest_path} is built but incomplete: {'; '.join(missing)}")

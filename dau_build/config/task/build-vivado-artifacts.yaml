@@ -1,0 +1,16 @@
+# @package model
+
+_target_: dau_build.build_steps.BuildVivadoArtifactsTask
+work_root: ???
+bitstream: null
+vivado: vivado
+vivado_invocation: standard
+vivado_mount_root: null
+overlay_tcl: scripts/dau_overlay.tcl
+build_tcl: scripts/dau_build.tcl
+artifact_stem: dau-vivado
+manifest_path: null
+command_plan_path: null
+project_manifest_path: null
+vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+execute: false

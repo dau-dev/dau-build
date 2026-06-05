@@ -13,28 +13,28 @@ _CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 
-def test_packaged_workflow_config_targets_follow_callable_registries() -> None:
-    assert _workflow_config_names("task") == tuple(sorted(TASK_MODEL_TYPES))
-    assert _workflow_config_names("step") == tuple(sorted(STEP_MODEL_TYPES))
+def test_packaged_task_and_step_config_targets_follow_callable_registries() -> None:
+    assert _config_group_names("task") == tuple(sorted(TASK_MODEL_TYPES))
+    assert _config_group_names("step") == tuple(sorted(STEP_MODEL_TYPES))
 
     for name, model_type in TASK_MODEL_TYPES.items():
-        cfg = OmegaConf.load(_CONFIG_DIR / "workflow" / "task" / f"{name}.yaml")
+        cfg = OmegaConf.load(_CONFIG_DIR / "task" / f"{name}.yaml")
         assert cfg["_target_"] == _target(model_type)
 
     for name, model_type in STEP_MODEL_TYPES.items():
-        cfg = OmegaConf.load(_CONFIG_DIR / "workflow" / "step" / f"{name}.yaml")
+        cfg = OmegaConf.load(_CONFIG_DIR / "step" / f"{name}.yaml")
         assert cfg["_target_"] == _target(model_type)
 
 
-def test_packaged_workflow_configs_instantiate_registered_callable_models(tmp_path: Path) -> None:
+def test_packaged_task_and_step_configs_instantiate_registered_callable_models(tmp_path: Path) -> None:
     for name, model_type in TASK_MODEL_TYPES.items():
-        registry = load_config([f"workflow=task/{name}", *_task_overrides(name, tmp_path)], overwrite=True)
+        registry = load_config([f"task={name}", *_task_overrides(name, tmp_path)], overwrite=True)
         model = registry["model"]
         assert isinstance(model, model_type)
         assert isinstance(model, CallableModel)
 
     for name, model_type in STEP_MODEL_TYPES.items():
-        registry = load_config([f"workflow=step/{name}", *_step_overrides(name, tmp_path)], overwrite=True)
+        registry = load_config([f"step={name}", *_step_overrides(name, tmp_path)], overwrite=True)
         model = registry["model"]
         assert isinstance(model, model_type)
         assert isinstance(model, CallableModel)
@@ -45,7 +45,7 @@ def test_packaged_base_config_runs_selected_callable_with_ccflow_cfg_run(tmp_pat
     result = base_load_config(
         root_config_dir=str(_CONFIG_DIR),
         root_config_name="base",
-        overrides=[f"model.spec_path={spec_path}", "model.module=dau_identity_top"],
+        overrides=["task=simulate", f"model.spec_path={spec_path}", "model.module=dau_identity_top"],
         basepath=str(_CONFIG_DIR),
         debug=False,
     )
@@ -58,16 +58,17 @@ def test_packaged_base_config_runs_selected_callable_with_ccflow_cfg_run(tmp_pat
     )
 
 
-def test_public_override_dispatch_runs_packaged_workflow_configs(monkeypatch) -> None:
+def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run_workflow_config(workflow: str, *, model_values, **kwargs):
-        captured["workflow"] = workflow
+    def fake_run_request_config(request_kind: str, request_name: str, *, model_values, **kwargs):
+        captured["request_kind"] = request_kind
+        captured["request_name"] = request_name
         captured["model_values"] = model_values
         captured["kwargs"] = kwargs
         return BuildStepResult(step="simulate", message="configured")
 
-    monkeypatch.setattr("dau_build.config.run_workflow_config", fake_run_workflow_config)
+    monkeypatch.setattr("dau_build.config.run_request_config", fake_run_request_config)
 
     result = execute_override_request(
         (
@@ -79,7 +80,8 @@ def test_public_override_dispatch_runs_packaged_workflow_configs(monkeypatch) ->
     )
 
     assert result == BuildStepResult(step="simulate", message="configured")
-    assert captured["workflow"] == "task/simulate"
+    assert captured["request_kind"] == "task"
+    assert captured["request_name"] == "simulate"
     assert captured["model_values"] == {
         "board_name": None,
         "board_platform": None,
@@ -105,8 +107,8 @@ def test_public_override_dispatch_runs_packaged_workflow_configs(monkeypatch) ->
     }
 
 
-def _workflow_config_names(kind: str) -> tuple[str, ...]:
-    return tuple(sorted(path.stem for path in (_CONFIG_DIR / "workflow" / kind).glob("*.yaml")))
+def _config_group_names(kind: str) -> tuple[str, ...]:
+    return tuple(sorted(path.stem for path in (_CONFIG_DIR / kind).glob("*.yaml")))
 
 
 def _target(model_type: type) -> str:
@@ -115,11 +117,14 @@ def _target(model_type: type) -> str:
 
 def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
     base = {
+        "build-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
         "flash": (),
         "hardware-plan": ("model.plan=thunderbolt-release", f"model.work_root={tmp_path / 'work'}"),
+        "overlay-build": (f"model.work_root={tmp_path / 'work'}",),
         "simulate": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top"),
         "smoke-test": ("model.test=identity",),
         "synthesize": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top", f"model.output_root={tmp_path / 'out'}"),
+        "validate-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
     }
     return base[name]
 

@@ -415,6 +415,27 @@ def vivado_overlay_build_step(
     return ToolStep("vivado-overlay-build", ("bash", "-lc", script))
 
 
+def validate_vivado_artifacts_step(
+    config: HardwareToolchainConfig,
+    *,
+    manifest_path: Path,
+    command_plan_path: Path,
+    project_manifest_path: Path | None = None,
+    executable: str | Sequence[str] = "dau-build",
+) -> ToolStep:
+    command_prefix = [executable] if isinstance(executable, str) else list(executable)
+    argv = [
+        *command_prefix,
+        "task=validate-vivado-artifacts",
+        f"work_root={config.work_root}",
+        f"manifest_path={manifest_path}",
+        f"command_plan_path={command_plan_path}",
+    ]
+    if project_manifest_path is not None:
+        argv.append(f"project_manifest_path={project_manifest_path}")
+    return ToolStep("validate-vivado-artifacts", tuple(argv))
+
+
 def driver_hardware_smoke_step(*, dau_core_root: Path, dau_driver_root: Path, python: str) -> ToolStep:
     pythonpath = f"{dau_core_root}:{dau_driver_root}"
     script = f"PYTHONPATH={shlex.quote(pythonpath)} {shlex.join((python, '-c', _driver_hardware_smoke_code()))}"
@@ -580,31 +601,6 @@ def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
     return 0
 
 
-def _print_vivado_artifact_validation(validation: VivadoBackendArtifactValidation | VivadoProjectArtifactValidation) -> None:
-    project = f"project={validation.project_manifest_path} " if isinstance(validation, VivadoProjectArtifactValidation) else ""
-    if validation.ok:
-        build_status = f" build_status={validation.build_status}" if validation.build_status else ""
-        resource_summary = f" resource_summary={validation.resource_summary_path}" if validation.resource_summary_path else ""
-        timing_summary = f" timing_summary={validation.timing_summary_path}" if validation.timing_summary_path else ""
-        vivado_log = f" vivado_log={validation.vivado_log_path}" if validation.vivado_log_path else ""
-        print(
-            "vivado-artifacts-valid\t"
-            f"{project}"
-            f"manifest={validation.manifest_path} "
-            f"overlay={validation.overlay_tcl_path} "
-            f"command_plan={validation.command_plan_path} "
-            f"bitstream={validation.bitstream_path}"
-            f"{build_status}"
-            f"{resource_summary}"
-            f"{timing_summary}"
-            f"{vivado_log}"
-        )
-        return
-    print(f"vivado-artifacts-invalid\t{project}manifest={validation.manifest_path} command_plan={validation.command_plan_path}")
-    for error in validation.errors:
-        print(f"error\t{error}")
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print Vivado build/program/recovery command plans")
     parser.add_argument(
@@ -620,7 +616,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "thunderbolt-hold",
             "thunderbolt-release",
             "validate-bitstream",
-            "validate-vivado-artifacts",
         ),
         help="Command plan to print",
     )
@@ -709,15 +704,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             dau_utils_root=args.dau_utils_root,
             python=args.python,
         )
-    elif args.plan == "validate-vivado-artifacts":
-        validation = validate_vivado_artifacts(
-            config,
-            manifest_path=args.manifest_path or Path("dau-vivado.manifest"),
-            command_plan_path=args.command_plan_path or Path("dau-vivado.plan"),
-            project_manifest_path=args.project_manifest_path,
-        )
-        _print_vivado_artifact_validation(validation)
-        return 0 if validation.ok else 1
     elif args.plan == "stage-shell":
         if args.source_shell_root is None:
             parser.error("stage-shell requires --source-shell-root")

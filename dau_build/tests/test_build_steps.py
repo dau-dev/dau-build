@@ -24,7 +24,16 @@ _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
     assert available_step_names() == ("explain", "generate", "inspect", "resolved-config", "simulate", "synthesis", "validate", "write")
-    assert available_task_names() == ("flash", "hardware-plan", "simulate", "smoke-test", "synthesize")
+    assert available_task_names() == (
+        "build-vivado-artifacts",
+        "flash",
+        "hardware-plan",
+        "overlay-build",
+        "simulate",
+        "smoke-test",
+        "synthesize",
+        "validate-vivado-artifacts",
+    )
     assert all(issubclass(model_type, CallableModel) for model_type in STEP_MODEL_TYPES.values())
     assert all(issubclass(model_type, CallableModel) for model_type in TASK_MODEL_TYPES.values())
 

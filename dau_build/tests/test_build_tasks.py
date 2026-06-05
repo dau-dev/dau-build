@@ -9,6 +9,7 @@ from dau_core.hdl import DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV
 
 from dau_build.build_spec import main
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
+from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
@@ -100,9 +101,7 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
     assert backend_manifest["input_buffer_address"] == "0x0000000000000000"
     assert backend_manifest["output_buffer_address"] == "0x0000000000100000"
 
-    bitstream = output_root / "vivado" / backend_manifest["bitstream"]
-    bitstream.parent.mkdir(parents=True)
-    bitstream.write_bytes(b"bit")
+    bitstream = _write_built_backend_outputs(output_root / "vivado", backend_manifest_path)
     flash_result = execute_override_task(("task=flash", f"manifest_path={backend_manifest_path}"))
     smoke_result = execute_override_task(("task=smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
 
@@ -117,6 +116,48 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
             "register_window_offset=0x00001000 input_buffer=0x0000000000000000 output_buffer=0x0000000000100000 status=planned"
         ),
     )
+
+
+def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) -> None:
+    spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
+    output_root = tmp_path / "out"
+    execute_override_task(
+        (
+            "task=synthesize",
+            "engine=vivado",
+            "module=dau_int32_arrow_lite_stream_aggregation",
+            f"spec_path={spec_path}",
+            f"output_root={output_root}",
+        )
+    )
+
+    backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
+
+    with pytest.raises(BuildStepError, match="is not built: build_status=planned; expected built"):
+        execute_override_task(("task=flash", f"manifest_path={backend_manifest_path}"))
+
+
+def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_path: Path) -> None:
+    spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
+    output_root = tmp_path / "out"
+    execute_override_task(
+        (
+            "task=synthesize",
+            "engine=vivado",
+            "module=dau_int32_arrow_lite_stream_aggregation",
+            f"spec_path={spec_path}",
+            f"output_root={output_root}",
+        )
+    )
+
+    backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
+    backend_manifest_path.write_text(
+        backend_manifest_path.read_text(encoding="utf-8").replace("build_status=planned", "build_status=built"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BuildStepError, match="is built but incomplete: missing bitstream:"):
+        execute_override_task(("task=smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
 
 
 def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> None:
@@ -146,6 +187,103 @@ def test_execute_override_task_accepts_public_hardware_plan_surface() -> None:
     assert result == BuildStepResult(
         step="hardware-plan",
         message="thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx",
+    )
+
+
+def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
+    result = execute_override_task(
+        (
+            "task=build-vivado-artifacts",
+            "work_root=/repo/projects/vivado-shell",
+            "artifact_stem=dau-ci",
+        )
+    )
+
+    assert result.step == "build-vivado-artifacts"
+    assert result.message.splitlines()[0].startswith("vivado-overlay-build\tbash -lc ")
+    assert result.message.splitlines()[1] == (
+        "validate-vivado-artifacts\tdau-build task=validate-vivado-artifacts "
+        "work_root=/repo/projects/vivado-shell manifest_path=dau-ci.manifest command_plan_path=dau-ci.plan"
+    )
+
+
+def test_execute_override_task_runs_build_vivado_artifacts_with_graph_models(monkeypatch) -> None:
+    calls = {"execute_plan_steps": 0, "validate": 0}
+
+    def fake_execute_plan_steps(steps):
+        calls["execute_plan_steps"] += 1
+        assert [step.name for step in steps] == ["vivado-overlay-build"]
+        return 0
+
+    def fake_validate_vivado_artifacts(config, *, manifest_path, command_plan_path, project_manifest_path):
+        calls["validate"] += 1
+        assert config.work_root == Path("/repo/projects/vivado-shell")
+        assert manifest_path == Path("dau-ci.manifest")
+        assert command_plan_path == Path("dau-ci.plan")
+        assert project_manifest_path is None
+        return VivadoBackendArtifactValidation(
+            manifest_path=Path("/repo/projects/vivado-shell/dau-ci.manifest"),
+            command_plan_path=Path("/repo/projects/vivado-shell/dau-ci.plan"),
+            overlay_tcl_path=Path("/repo/projects/vivado-shell/scripts/dau_overlay.tcl"),
+            bitstream_path=Path("/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit"),
+            resource_summary_path=Path("/repo/projects/vivado-shell/reports/dau_utilization.rpt"),
+            timing_summary_path=Path("/repo/projects/vivado-shell/reports/dau_timing_summary.rpt"),
+            vivado_log_path=Path("/repo/projects/vivado-shell/vivado.log"),
+            build_status="built",
+            manifest_items=(),
+            errors=(),
+        )
+
+    monkeypatch.setattr("dau_build.build_steps.execute_plan_steps", fake_execute_plan_steps)
+    monkeypatch.setattr("dau_build.build_steps.validate_vivado_artifacts", fake_validate_vivado_artifacts)
+
+    result = execute_override_task(
+        (
+            "task=build-vivado-artifacts",
+            "work_root=/repo/projects/vivado-shell",
+            "artifact_stem=dau-ci",
+            "execute=true",
+        )
+    )
+
+    assert calls == {"execute_plan_steps": 1, "validate": 1}
+    assert result.step == "build-vivado-artifacts"
+    assert result.message.splitlines()[0] == "dau-build-artifacts\ttask=build-vivado-artifacts backend=vivado steps=2 status=executed"
+    assert result.message.splitlines()[1] == "dau-build-overlay-build\ttask=overlay-build backend=vivado steps=1 status=executed"
+    assert result.message.splitlines()[2].startswith("vivado-artifacts-valid\tmanifest=/repo/projects/vivado-shell/dau-ci.manifest ")
+
+
+def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
+    _write_backend_artifacts(
+        generate_vivado_backend_artifacts(
+            VivadoBackendRequest(
+                dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+                build_root=tmp_path,
+                artifact_stem="dau-ci",
+                overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
+                bitstream_path=Path("artifacts/dau-ci.bit"),
+            )
+        )
+    )
+
+    result = execute_override_task(
+        (
+            "task=validate-vivado-artifacts",
+            f"work_root={tmp_path}",
+            "manifest_path=dau-ci.manifest",
+            "command_plan_path=dau-ci.plan",
+            "execute=true",
+        )
+    )
+
+    assert result == BuildStepResult(
+        step="validate-vivado-artifacts",
+        message=(
+            f"vivado-artifacts-valid\tmanifest={tmp_path / 'dau-ci.manifest'} overlay={tmp_path / 'scripts/dau_ci_overlay.tcl'} "
+            f"command_plan={tmp_path / 'dau-ci.plan'} bitstream={tmp_path / 'artifacts/dau-ci.bit'} build_status=planned "
+            f"resource_summary={tmp_path / 'reports/dau_utilization.rpt'} timing_summary={tmp_path / 'reports/dau_timing_summary.rpt'} "
+            f"vivado_log={tmp_path / 'vivado.log'}"
+        ),
     )
 
 
@@ -240,3 +378,34 @@ def _write_arrow_lite_aggregator_spec(tmp_path: Path) -> Path:
 
 def _read_manifest(path: Path) -> dict[str, str]:
     return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+
+
+def _write_built_backend_outputs(build_root: Path, manifest_path: Path) -> Path:
+    manifest = _read_manifest(manifest_path)
+    paths = {key: build_root / manifest[key] for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log")}
+    paths["bitstream"].parent.mkdir(parents=True, exist_ok=True)
+    paths["bitstream"].write_bytes(b"bit")
+    for key in ("resource_summary", "timing_summary", "vivado_log"):
+        paths[key].parent.mkdir(parents=True, exist_ok=True)
+        paths[key].write_text("built\n", encoding="utf-8")
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace("build_status=planned", "build_status=built"),
+        encoding="utf-8",
+    )
+    return paths["bitstream"]
+
+
+def _write_backend_artifacts(artifacts) -> None:
+    outputs = [
+        (artifacts.overlay_tcl_path, artifacts.overlay_tcl_text),
+        (artifacts.build_tcl_path, artifacts.build_tcl_text),
+        (artifacts.manifest_path, artifacts.manifest_text),
+        (artifacts.command_plan_path, artifacts.command_plan_text),
+        (artifacts.overlay_driver_tcl_path, artifacts.overlay_driver_tcl_text),
+        (artifacts.build_driver_tcl_path, artifacts.build_driver_tcl_text),
+    ]
+    for path, text in outputs:
+        if path is None or text is None:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
