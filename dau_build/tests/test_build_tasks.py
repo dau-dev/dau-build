@@ -190,6 +190,61 @@ def test_execute_override_task_accepts_public_hardware_plan_surface() -> None:
     )
 
 
+def test_execute_override_task_accepts_stage_shell_surface() -> None:
+    result = execute_override_task(
+        (
+            "task=stage-shell",
+            "source_shell_root=/repo/reference/vivado-shell",
+            "work_root=/repo/dau-build/outputs/vivado",
+        )
+    )
+
+    assert result.step == "stage-shell"
+    assert result.message.startswith("stage-shell\tsh -c ")
+    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in result.message
+
+
+def test_execute_override_task_accepts_stage_vivado_overlay_surface() -> None:
+    result = execute_override_task(
+        (
+            "task=stage-vivado-overlay",
+            "work_root=/repo/projects/vivado-shell",
+            "dau_core_root=/repo/dau-core",
+        )
+    )
+
+    lines = result.message.splitlines()
+    assert result.step == "stage-vivado-overlay"
+    assert len(lines) == 4
+    assert lines[0].startswith("write-dau-overlay\tsh -c ")
+    assert lines[1].startswith("write-dau-manifest\tsh -c ")
+    assert lines[2].startswith("write-vivado-build-script\tsh -c ")
+    assert lines[3].startswith("write-vivado-command-plan\tsh -c ")
+
+
+def test_execute_override_task_accepts_stage_vivado_project_surface() -> None:
+    result = execute_override_task(
+        (
+            "task=stage-vivado-project",
+            "source_shell_root=/repo/projects/vivado-shell",
+            "work_root=/repo/dau-build/outputs/vivado",
+            "dau_core_root=/repo/dau-core",
+            "dau_driver_root=/repo/dau-driver",
+            "dau_utils_root=/repo/dau-utils",
+            "artifact_stem=dau-ci",
+        )
+    )
+
+    lines = result.message.splitlines()
+    assert result.step == "stage-vivado-project"
+    assert len(lines) == 6
+    assert lines[0].startswith("stage-shell\tsh -c ")
+    assert lines[1].startswith("write-vivado-project-manifest\tsh -c ")
+    assert "dau-ci.project" in lines[1]
+    assert lines[2].startswith("write-dau-overlay\tsh -c ")
+    assert lines[5].startswith("write-vivado-command-plan\tsh -c ")
+
+
 def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
     result = execute_override_task(
         (

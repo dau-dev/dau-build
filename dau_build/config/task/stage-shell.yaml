@@ -1,0 +1,6 @@
+# @package model
+
+_target_: dau_build.build_steps.ShellStageTask
+work_root: ???
+source_shell_root: ???
+execute: false

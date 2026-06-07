@@ -610,9 +610,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "flash",
             "local-build-and-program",
             "recovery",
-            "stage-vivado-project",
-            "stage-shell",
-            "stage-vivado-overlay",
             "thunderbolt-hold",
             "thunderbolt-release",
             "validate-bitstream",
@@ -640,30 +637,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dau-core-root", type=Path, help="Path to the local dau-core checkout")
     parser.add_argument("--dau-driver-root", type=Path, help="Path to the local dau-driver checkout")
     parser.add_argument("--dau-utils-root", type=Path, help="Path to the local dau-utils checkout")
-    parser.add_argument("--dau-artifact-bundle", type=Path, help="Path to a DAU YAML artifact bundle consumed by backend handoff plans")
     parser.add_argument(
         "--overlay-tcl", default=Path("scripts/dau_overlay.tcl"), type=Path, help="Overlay TCL path relative to the local Vivado root"
     )
-    parser.add_argument("--artifact-stem", default="dau-vivado", help="Stem used for generated backend manifest and command-plan artifacts")
-    parser.add_argument("--backend-platform", default="vivado-xdma", help="Structured backend platform name recorded in generated manifests")
-    parser.add_argument("--backend-shell", default="xdma-shell", help="Structured backend shell name recorded in generated manifests")
-    parser.add_argument("--operator", action="append", help="Operator included in the structured backend request; may be passed more than once")
-    parser.add_argument("--register-map-version", default="0.1", help="Register-map contract version recorded in generated manifests")
-    parser.add_argument("--stream-protocol-version", default="0.1", help="Stream protocol contract version recorded in generated manifests")
-    parser.add_argument(
-        "--manifest-path", type=Path, help="Dry-run manifest path relative to the local Vivado root; defaults to <artifact-stem>.manifest"
-    )
-    parser.add_argument(
-        "--command-plan-path", type=Path, help="Dry-run command plan path relative to the local Vivado root; defaults to <artifact-stem>.plan"
-    )
-    parser.add_argument(
-        "--project-manifest-path",
-        type=Path,
-        help="Structured project manifest path relative to the local Vivado root; defaults to <artifact-stem>.project",
-    )
-    parser.add_argument("--resource-summary-path", default=Path("reports/dau_utilization.rpt"), type=Path, help="Resource summary report path")
-    parser.add_argument("--timing-summary-path", default=Path("reports/dau_timing_summary.rpt"), type=Path, help="Timing summary report path")
-    parser.add_argument("--vivado-log-path", default=Path("vivado.log"), type=Path, help="Vivado log path recorded in generated manifests")
     parser.add_argument("--python", default="python3", help="Local Python executable for hardware smoke tests and source-checkout runtime PM")
     parser.add_argument("--vivado-settings", default=Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"), type=Path, help="Remote Vivado settings script")
     parser.add_argument("--execute", action="store_true", help="Execute the selected plan instead of printing it")
@@ -703,57 +679,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             dau_driver_root=args.dau_driver_root,
             dau_utils_root=args.dau_utils_root,
             python=args.python,
-        )
-    elif args.plan == "stage-shell":
-        if args.source_shell_root is None:
-            parser.error("stage-shell requires --source-shell-root")
-        steps = stage_shell_plan(config, source_shell_root=args.source_shell_root)
-    elif args.plan == "stage-vivado-project":
-        if args.source_shell_root is None or args.dau_core_root is None or args.dau_driver_root is None:
-            parser.error("stage-vivado-project requires --source-shell-root, --dau-core-root, and --dau-driver-root")
-        steps = stage_vivado_project_plan(
-            config,
-            source_shell_root=args.source_shell_root,
-            dau_core_root=args.dau_core_root,
-            dau_driver_root=args.dau_driver_root,
-            dau_utils_root=args.dau_utils_root,
-            dau_artifact_bundle=args.dau_artifact_bundle,
-            artifact_stem=args.artifact_stem,
-            platform=args.backend_platform,
-            shell=args.backend_shell,
-            operator_set=tuple(args.operator or ("identity",)),
-            register_map_version=args.register_map_version,
-            stream_protocol_version=args.stream_protocol_version,
-            overlay_tcl=args.overlay_tcl,
-            manifest_path=args.manifest_path,
-            command_plan_path=args.command_plan_path,
-            project_manifest_path=args.project_manifest_path,
-            resource_summary_path=args.resource_summary_path,
-            timing_summary_path=args.timing_summary_path,
-            vivado_log_path=args.vivado_log_path,
-            vivado_settings=args.vivado_settings,
-        )
-    elif args.plan == "stage-vivado-overlay":
-        if args.dau_core_root is None:
-            parser.error("stage-vivado-overlay requires --dau-core-root")
-        steps = stage_vivado_overlay_plan(
-            config,
-            dau_core_root=args.dau_core_root,
-            source_shell_root=args.source_shell_root,
-            dau_artifact_bundle=args.dau_artifact_bundle,
-            artifact_stem=args.artifact_stem,
-            platform=args.backend_platform,
-            shell=args.backend_shell,
-            operator_set=tuple(args.operator or ("identity",)),
-            register_map_version=args.register_map_version,
-            stream_protocol_version=args.stream_protocol_version,
-            overlay_tcl=args.overlay_tcl,
-            manifest_path=args.manifest_path,
-            command_plan_path=args.command_plan_path,
-            resource_summary_path=args.resource_summary_path,
-            timing_summary_path=args.timing_summary_path,
-            vivado_log_path=args.vivado_log_path,
-            vivado_settings=args.vivado_settings,
         )
     elif args.plan == "flash":
         steps = flash_plan(config, dau_utils_root=args.dau_utils_root, python=args.python, vivado_settings=args.vivado_settings)

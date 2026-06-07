@@ -31,6 +31,9 @@ def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
         "overlay-build",
         "simulate",
         "smoke-test",
+        "stage-shell",
+        "stage-vivado-overlay",
+        "stage-vivado-project",
         "synthesize",
         "validate-vivado-artifacts",
     )

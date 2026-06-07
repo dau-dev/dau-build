@@ -413,6 +413,137 @@ class SmokeTestTask(BuildCallableModel):
         )
 
 
+class StageTask(BuildCallableModel):
+    task_name: ClassVar[str]
+    execute: bool = False
+
+    def stage_steps(self):
+        raise NotImplementedError("StageTask subclasses must provide stage steps")
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        steps = self.stage_steps()
+        if not self.execute:
+            return BuildStepResult(step=self.task_name, message=format_plan_steps(steps))
+        return_code = execute_plan_steps(steps)
+        if return_code != 0:
+            raise BuildStepError(f"stage task {self.task_name!r} failed with exit code {return_code}")
+        backend_segment = f" backend={self.backend}" if getattr(self, "backend", None) else ""
+        return BuildStepResult(
+            step=self.task_name,
+            message=f"dau-build-stage\ttask={self.task_name}{backend_segment} steps={len(steps)} status=executed",
+        )
+
+
+class ShellStageTask(StageTask):
+    task_name: ClassVar[str] = "stage-shell"
+    work_root: Path
+    source_shell_root: Path
+
+    def stage_steps(self):
+        return stage_shell_plan(self._toolchain_config(), source_shell_root=self.source_shell_root)
+
+    def _toolchain_config(self) -> HardwareToolchainConfig:
+        return HardwareToolchainConfig(work_root=self.work_root)
+
+
+class OverlayStageTask(StageTask):
+    backend: str
+
+
+class VivadoOverlayStageTask(OverlayStageTask):
+    task_name: ClassVar[str] = "stage-vivado-overlay"
+    backend: Literal["vivado"] = "vivado"
+    work_root: Path
+    source_shell_root: Path | None = None
+    bitstream: Path | None = None
+    vivado: str = "vivado"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
+    vivado_mount_root: Path | None = None
+    dau_core_root: Path
+    dau_artifact_bundle: Path | None = None
+    overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
+    artifact_stem: str = "dau-vivado"
+    backend_platform: str = "vivado-xdma"
+    backend_shell: str = "xdma-shell"
+    operator: str | None = None
+    register_map_version: str = "0.1"
+    stream_protocol_version: str = "0.1"
+    manifest_path: Path | None = None
+    command_plan_path: Path | None = None
+    resource_summary_path: Path = Path("reports/dau_utilization.rpt")
+    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
+    vivado_log_path: Path = Path("vivado.log")
+    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+
+    def stage_steps(self):
+        return stage_vivado_overlay_plan(
+            self._toolchain_config(),
+            dau_core_root=self.dau_core_root,
+            source_shell_root=self.source_shell_root,
+            dau_artifact_bundle=self.dau_artifact_bundle,
+            artifact_stem=self.artifact_stem,
+            platform=self.backend_platform,
+            shell=self.backend_shell,
+            operator_set=self._operator_set(),
+            register_map_version=self.register_map_version,
+            stream_protocol_version=self.stream_protocol_version,
+            overlay_tcl=self.overlay_tcl,
+            manifest_path=self.manifest_path,
+            command_plan_path=self.command_plan_path,
+            resource_summary_path=self.resource_summary_path,
+            timing_summary_path=self.timing_summary_path,
+            vivado_log_path=self.vivado_log_path,
+            vivado_settings=self.vivado_settings,
+        )
+
+    def _toolchain_config(self) -> HardwareToolchainConfig:
+        return HardwareToolchainConfig(
+            work_root=self.work_root,
+            vivado_executable=self.vivado,
+            vivado_invocation=self.vivado_invocation,
+            vivado_mount_root=self.vivado_mount_root,
+            bitstream_path=self.bitstream,
+        )
+
+    def _operator_set(self) -> tuple[str, ...]:
+        if self.operator is None:
+            return ("identity",)
+        return tuple(operator for operator in self.operator.split(",") if operator) or ("identity",)
+
+
+class VivadoProjectStageTask(VivadoOverlayStageTask):
+    task_name: ClassVar[str] = "stage-vivado-project"
+    source_shell_root: Path
+    dau_driver_root: Path
+    dau_utils_root: Path | None = None
+    project_manifest_path: Path | None = None
+
+    def stage_steps(self):
+        return stage_vivado_project_plan(
+            self._toolchain_config(),
+            source_shell_root=self.source_shell_root,
+            dau_core_root=self.dau_core_root,
+            dau_driver_root=self.dau_driver_root,
+            dau_utils_root=self.dau_utils_root,
+            dau_artifact_bundle=self.dau_artifact_bundle,
+            artifact_stem=self.artifact_stem,
+            platform=self.backend_platform,
+            shell=self.backend_shell,
+            operator_set=self._operator_set(),
+            register_map_version=self.register_map_version,
+            stream_protocol_version=self.stream_protocol_version,
+            overlay_tcl=self.overlay_tcl,
+            manifest_path=self.manifest_path,
+            command_plan_path=self.command_plan_path,
+            project_manifest_path=self.project_manifest_path,
+            resource_summary_path=self.resource_summary_path,
+            timing_summary_path=self.timing_summary_path,
+            vivado_log_path=self.vivado_log_path,
+            vivado_settings=self.vivado_settings,
+        )
+
+
 class OverlayBuildTask(BuildCallableModel):
     backend: str
     execute: bool = False
@@ -598,9 +729,6 @@ class HardwarePlanTask(BuildCallableModel):
         "flash",
         "local-build-and-program",
         "recovery",
-        "stage-vivado-project",
-        "stage-shell",
-        "stage-vivado-overlay",
         "thunderbolt-hold",
         "thunderbolt-release",
         "validate-bitstream",
@@ -617,20 +745,7 @@ class HardwarePlanTask(BuildCallableModel):
     dau_core_root: Path | None = None
     dau_driver_root: Path | None = None
     dau_utils_root: Path | None = None
-    dau_artifact_bundle: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
-    artifact_stem: str = "dau-vivado"
-    backend_platform: str = "vivado-xdma"
-    backend_shell: str = "xdma-shell"
-    operator: str | None = None
-    register_map_version: str = "0.1"
-    stream_protocol_version: str = "0.1"
-    manifest_path: Path | None = None
-    command_plan_path: Path | None = None
-    project_manifest_path: Path | None = None
-    resource_summary_path: Path = Path("reports/dau_utilization.rpt")
-    timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
-    vivado_log_path: Path = Path("vivado.log")
     python: str = "python3"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     execute: bool = False
@@ -638,11 +753,6 @@ class HardwarePlanTask(BuildCallableModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         plan_result = self._plan_result()
-        if isinstance(plan_result, VivadoBackendArtifactValidation | VivadoProjectArtifactValidation):
-            if not plan_result.ok:
-                raise BuildStepError(_vivado_artifact_validation_message(plan_result))
-            return BuildStepResult(step="hardware-plan", message=_vivado_artifact_validation_message(plan_result))
-
         if self.execute:
             return_code = execute_plan_steps(plan_result)
             if return_code != 0:
@@ -685,51 +795,6 @@ class HardwarePlanTask(BuildCallableModel):
                 dau_utils_root=self.dau_utils_root,
                 python=self.python,
             )
-        if self.plan == "stage-shell":
-            return stage_shell_plan(config, source_shell_root=self._required_path("source_shell_root"))
-        if self.plan == "stage-vivado-project":
-            return stage_vivado_project_plan(
-                config,
-                source_shell_root=self._required_path("source_shell_root"),
-                dau_core_root=self._required_path("dau_core_root"),
-                dau_driver_root=self._required_path("dau_driver_root"),
-                dau_utils_root=self.dau_utils_root,
-                dau_artifact_bundle=self.dau_artifact_bundle,
-                artifact_stem=self.artifact_stem,
-                platform=self.backend_platform,
-                shell=self.backend_shell,
-                operator_set=self._operator_set(),
-                register_map_version=self.register_map_version,
-                stream_protocol_version=self.stream_protocol_version,
-                overlay_tcl=self.overlay_tcl,
-                manifest_path=self.manifest_path,
-                command_plan_path=self.command_plan_path,
-                project_manifest_path=self.project_manifest_path,
-                resource_summary_path=self.resource_summary_path,
-                timing_summary_path=self.timing_summary_path,
-                vivado_log_path=self.vivado_log_path,
-                vivado_settings=self.vivado_settings,
-            )
-        if self.plan == "stage-vivado-overlay":
-            return stage_vivado_overlay_plan(
-                config,
-                dau_core_root=self._required_path("dau_core_root"),
-                source_shell_root=self.source_shell_root,
-                dau_artifact_bundle=self.dau_artifact_bundle,
-                artifact_stem=self.artifact_stem,
-                platform=self.backend_platform,
-                shell=self.backend_shell,
-                operator_set=self._operator_set(),
-                register_map_version=self.register_map_version,
-                stream_protocol_version=self.stream_protocol_version,
-                overlay_tcl=self.overlay_tcl,
-                manifest_path=self.manifest_path,
-                command_plan_path=self.command_plan_path,
-                resource_summary_path=self.resource_summary_path,
-                timing_summary_path=self.timing_summary_path,
-                vivado_log_path=self.vivado_log_path,
-                vivado_settings=self.vivado_settings,
-            )
         if self.plan == "flash":
             return hardware_flash_plan(config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings)
         if self.plan == "recovery":
@@ -743,11 +808,6 @@ class HardwarePlanTask(BuildCallableModel):
         if value is None:
             raise BuildStepError(f"task=hardware-plan plan={self.plan} requires {field_name}")
         return value
-
-    def _operator_set(self) -> tuple[str, ...]:
-        if self.operator is None:
-            return ("identity",)
-        return tuple(operator for operator in self.operator.split(",") if operator) or ("identity",)
 
 
 STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
@@ -771,6 +831,9 @@ TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
         "overlay-build": VivadoOverlayBuildTask,
         "simulate": SimulateTask,
         "smoke-test": SmokeTestTask,
+        "stage-shell": ShellStageTask,
+        "stage-vivado-overlay": VivadoOverlayStageTask,
+        "stage-vivado-project": VivadoProjectStageTask,
         "synthesize": SynthesizeTask,
         "validate-vivado-artifacts": ValidateVivadoArtifactsTask,
     }

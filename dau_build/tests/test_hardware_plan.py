@@ -349,7 +349,7 @@ def test_structured_vivado_project_generation_request_records_workdir_inputs() -
     assert manifest["bitstream"] == "artifacts/dau-ci.bit"
     assert manifest["xdma_module"] == "sw/xdma/xdma.ko"
     assert manifest["vivado_invocation"] == "standard"
-    assert manifest["stage_command"].startswith("dau-build task=hardware-plan plan=stage-vivado-overlay ")
+    assert manifest["stage_command"].startswith("dau-build task=stage-vivado-overlay ")
     assert "source_shell_root=/repo/projects/vivado-shell" in manifest["stage_command"]
     assert "--source-shell-root" not in manifest["stage_command"]
     assert manifest["build_command"].startswith("dau-build task=build-vivado-artifacts ")
@@ -954,73 +954,6 @@ def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -
     assert "cd /repo/projects/vivado-shell" in steps[1].argv[2]
     assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
     assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
-
-
-def test_cli_prints_stage_vivado_overlay_plan_without_vivado_execution(capsys) -> None:
-    exit_code = main(
-        [
-            "stage-vivado-overlay",
-            "--work-root",
-            "/repo/projects/vivado-shell",
-            "--dau-core-root",
-            "/repo/dau-core",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 4
-    assert lines[0].startswith("write-dau-overlay\tsh -c ")
-    assert lines[1].startswith("write-dau-manifest\tsh -c ")
-    assert lines[2].startswith("write-vivado-build-script\tsh -c ")
-    assert lines[3].startswith("write-vivado-command-plan\tsh -c ")
-
-
-def test_cli_prints_stage_shell_plan_for_generated_workdir(capsys) -> None:
-    exit_code = main(
-        [
-            "stage-shell",
-            "--source-shell-root",
-            "/repo/reference/vivado-shell",
-            "--work-root",
-            "/repo/dau-build/outputs/vivado",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 1
-    assert lines[0].startswith("stage-shell\tsh -c ")
-    assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in lines[0]
-
-
-def test_cli_prints_stage_vivado_project_plan(capsys) -> None:
-    exit_code = main(
-        [
-            "stage-vivado-project",
-            "--source-shell-root",
-            "/repo/projects/vivado-shell",
-            "--work-root",
-            "/repo/dau-build/outputs/vivado",
-            "--dau-core-root",
-            "/repo/dau-core",
-            "--dau-driver-root",
-            "/repo/dau-driver",
-            "--dau-utils-root",
-            "/repo/dau-utils",
-            "--artifact-stem",
-            "dau-ci",
-        ]
-    )
-
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert len(lines) == 6
-    assert lines[0].startswith("stage-shell\tsh -c ")
-    assert lines[1].startswith("write-vivado-project-manifest\tsh -c ")
-    assert "dau-ci.project" in lines[1]
-    assert lines[2].startswith("write-dau-overlay\tsh -c ")
-    assert lines[5].startswith("write-vivado-command-plan\tsh -c ")
 
 
 def test_cli_local_build_can_stage_shell_before_overlay(capsys) -> None:

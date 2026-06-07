@@ -518,7 +518,7 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
     if request.dau_artifact_bundle_path is not None:
         overrides.append(("dau_artifact_bundle", request.dau_artifact_bundle_path))
     overrides.append(("operator", ",".join(request.operator_set)))
-    return _hardware_plan_task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
+    return _task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
 
 
 def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str:
@@ -546,10 +546,6 @@ def vivado_project_validate_command(request: VivadoProjectGenerationRequest) -> 
         ("project_manifest_path", request.resolved_project_manifest_path),
     ]
     return _task_command(request.plan_executable, "validate-vivado-artifacts", tuple(overrides))
-
-
-def _hardware_plan_task_command(executable: str, plan: str, overrides: tuple[tuple[str, object], ...]) -> str:
-    return _task_command(executable, "hardware-plan", (("plan", plan), *overrides))
 
 
 def _task_command(executable: str, task: str, overrides: tuple[tuple[str, object], ...]) -> str:

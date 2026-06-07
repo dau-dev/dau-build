@@ -61,12 +61,12 @@ Currently available packaged DAU Verilator profiles are:
 
 ## Vivado Command Plans
 
-`dau-build task=hardware-plan` owns the Vivado hardware-session command sequence. By default it prints plans without executing privileged commands; pass `execute=true` when running directly on the hardware host. Use `work_root=...` as a generated work directory and `source_shell_root=...` as the read-only shell seed when a plan needs the current Vivado shell.
+`dau-build task=stage-*` owns generated Vivado artifact staging, while `dau-build task=hardware-plan` owns live hardware-session command sequences. By default these tasks print plans without executing privileged commands; pass `execute=true` when running directly on the hardware host. Use `work_root=...` as a generated work directory and `source_shell_root=...` as the read-only shell seed when staging needs the current Vivado shell.
 
 Useful plans:
 
 ```bash
-dau-build task=hardware-plan plan=stage-shell \
+dau-build task=stage-shell \
   source_shell_root=/path/to/vivado-shell-seed \
   work_root=outputs/vivado
 dau-build task=hardware-plan plan=local-build-and-program \
@@ -81,7 +81,7 @@ dau-build task=hardware-plan plan=validate-bitstream \
   dau_core_root=/path/to/dau-core \
   dau_driver_root=/path/to/dau-driver \
   dau_utils_root=/path/to/dau-utils
-dau-build task=hardware-plan plan=stage-vivado-overlay \
+dau-build task=stage-vivado-overlay \
   source_shell_root=/path/to/vivado-shell-seed \
   work_root=outputs/vivado \
   dau_core_root=/path/to/dau-core \
@@ -90,7 +90,7 @@ dau-build task=hardware-plan plan=stage-vivado-overlay \
   backend_platform=vivado-xdma \
   backend_shell=xdma-shell \
   operator=identity
-dau-build task=hardware-plan plan=stage-vivado-project \
+dau-build task=stage-vivado-project \
   source_shell_root=/path/to/vivado-shell-seed \
   work_root=outputs/vivado \
   dau_core_root=/path/to/dau-core \
@@ -129,11 +129,11 @@ The hardware-session path that does not invoke Vivado is `validate-bitstream`. I
 
 The backend dry-run path is `stage-vivado-overlay`. It can first stage the shell seed into the generated work directory, then writes the generated overlay Tcl, guarded build Tcl, structured backend manifest preview, and Vivado command plan there without invoking Vivado or touching hardware. The manifest is produced from a typed backend request that records the platform, shell, artifact stem, register map version, stream protocol version, operator set, DAU HDL root, final manifest/plan/bitstream paths, resource/timing report paths, Vivado log path, and Vivado command settings. Use `task=validate-vivado-artifacts` immediately after staging to check that the manifest, overlay Tcl, build Tcl, command plan, and planned output paths agree without requiring Xilinx tools. The `task=build-vivado-artifacts` workflow runs only the generated overlay/build Vivado command and then validates the artifact bundle; it does not program JTAG, rescan PCIe, or run smoke tests. After the generated build Tcl runs, it appends `build_status=built` and the bitstream/report/log paths; validation then requires those files to exist.
 
-For DAU-native backend handoff, pass `dau_artifact_bundle=...` to `plan=stage-vivado-overlay` or `plan=stage-vivado-project`. The Vivado backend loads and validates the YAML bundle, records the generated top and HDL source set in the backend manifest, and adds those HDL sources to the generated overlay Tcl before the shell-specific bridge is applied. This is the first handoff step from DAU build artifacts into the Vivado/XDMA adapter.
+For DAU-native backend handoff, pass `dau_artifact_bundle=...` to `task=stage-vivado-overlay` or `task=stage-vivado-project`. The Vivado backend loads and validates the YAML bundle, records the generated top and HDL source set in the backend manifest, and adds those HDL sources to the generated overlay Tcl before the shell-specific bridge is applied. This is the first handoff step from DAU build artifacts into the Vivado/XDMA adapter.
 
 For a local wrapper that already runs `vivado -mode batch -source`, pass `vivado_invocation=source-only` so generated command plans invoke the wrapper with only a Tcl source path. If that wrapper launches Vivado in a container that mounts the current directory, also pass `vivado_mount_root=/path/to/dau`; the backend will emit small driver Tcl files, launch the wrapper from the mounted root, and render DAU HDL and bundle source paths relative to the generated work directory.
 
-The structured project dry-run path is `plan=stage-vivado-project`. It stages the read-only shell seed into the generated work directory, writes `<artifact-stem>.project` to record the shell seed, work directory, DAU checkout roots, XDMA module path, backend artifacts, Vivado settings, and the high-level stage/build/validate commands, then writes the same backend overlay/build/manifest/plan artifacts as `plan=stage-vivado-overlay`. The generated build command points at `task=build-vivado-artifacts`, and the generated validate command points at `task=validate-vivado-artifacts`. Pass `project_manifest_path=<artifact-stem>.project` to validation to include the project manifest schema, backend cross-references, and generated command contracts in the no-Xilinx check.
+The structured project dry-run path is `task=stage-vivado-project`. It stages the read-only shell seed into the generated work directory, writes `<artifact-stem>.project` to record the shell seed, work directory, DAU checkout roots, XDMA module path, backend artifacts, Vivado settings, and the high-level stage/build/validate commands, then writes the same backend overlay/build/manifest/plan artifacts as `task=stage-vivado-overlay`. The generated stage/build/validate commands point at `task=stage-vivado-overlay`, `task=build-vivado-artifacts`, and `task=validate-vivado-artifacts`. Pass `project_manifest_path=<artifact-stem>.project` to validation to include the project manifest schema, backend cross-references, and generated command contracts in the no-Xilinx check.
 
 The `local-build-and-program` plan uses the explicitly named `dau_build.vivado_backend` module. That backend stages a generated `scripts/dau_overlay.tcl` in the generated Vivado work directory, imports the DAU identity register HDL and AXI-Lite wrapper from `dau-core`, replaces the scratch AXI GPIO identity endpoint, maps the DAU window at `xdma_0/M_AXI_LITE + 0x1000`, regenerates and pins `Top_wrapper` in the generated work directory, resets the DAU module-ref out-of-context synthesis run, writes `dau-vivado.manifest`, then runs a generated `scripts/dau_build.tcl` that keeps the existing synthesis/implementation flow while guarding stale hard-coded XDMA lane cell paths from the shell seed. Treat this as the current Vivado backend for bring-up, not the final structured DAU build generator.
 
