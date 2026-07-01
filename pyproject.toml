@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
     "amaranth",
     "artlink",
-    "ccflow>=0.8.3",
+    "ccflow>=0.8.5",
     "dau-core",
     "dau-utils",
     "hydra-core",
