@@ -1,4 +1,5 @@
 from pathlib import Path
+from shutil import which
 
 import pytest
 
@@ -6,6 +7,7 @@ from dau_build.build_steps import BuildStepError, execute_override_task
 from dau_build.tests.test_build_steps import _write_counter_testbench
 
 
+@pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
 def test_profile_only_simulate_runs(tmp_path):
     manifest_path = _write_self_contained_counter_manifest(tmp_path)
     result = execute_override_task(
