@@ -8,7 +8,7 @@ from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-__all__ = ("load_config", "request_config", "run_request_config")
+__all__ = ("compose_config", "load_config", "request_config", "run_request_config")
 
 
 def load_config(
@@ -66,6 +66,18 @@ def run_request_config(
             version_base=version_base,
         ).cfg
     )
+
+
+def compose_config(
+    overrides: Sequence[str] | None = None,
+    *,
+    config_dir: str | None = None,
+    version_base: str | None = None,
+) -> ConfigLoadResult:
+    """Compose the dau-build hydra config with raw overrides (group selection,
+    field overrides, user --config-dir overlays). The public entry for the
+    dau-build-cfg CLI surface."""
+    return _load_base_config(overrides, config_dir=config_dir, version_base=version_base)
 
 
 def _load_base_config(

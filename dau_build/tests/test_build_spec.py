@@ -1,9 +1,12 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from dau_core.design import UnitKind
 from dau_core.hdl import DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV
+from dau_core.stream import LogicalType, OperationCode
 
-from dau_build.build_spec import DauBuildSpec, generate_dau_build_artifacts, load_dau_build_spec, main, write_dau_build_artifacts
+from dau_build.build_spec import DauBuildSpec, design_from_spec, generate_dau_build_artifacts, load_dau_build_spec, main, write_dau_build_artifacts
 from dau_build.packaging import artifact_modules, load_artifact_manifest
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
@@ -73,6 +76,18 @@ def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Pat
     )
 
 
+def test_design_from_spec_advertises_one_aggregation_unit(tmp_path: Path) -> None:
+    spec = replace(load_dau_build_spec(_write_spec(tmp_path)), operators=("int32-arrow-lite-aggregation",))
+
+    design = design_from_spec(spec)
+
+    assert design.capacity(UnitKind.AGGREGATION) == 1
+    assert design.capacity(UnitKind.JOIN) == 0
+    for opcode in (OperationCode.SUM, OperationCode.MIN, OperationCode.MAX, OperationCode.COUNT):
+        assert design.aggregation_capacity(opcode, LogicalType.INT32) == 1
+    assert design.aggregation_capacity(OperationCode.AVERAGE, LogicalType.INT32) == 0
+
+
 def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_path: Path) -> None:
     spec = load_dau_build_spec(_write_spec(tmp_path))
     artifacts = generate_dau_build_artifacts(spec, output_root=tmp_path / "out")
@@ -88,6 +103,8 @@ def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_pa
     assert "clock=clk" in artifacts.manifest_text
     assert "reset=reset" in artifacts.manifest_text
     assert "operators=identity,sum_i64" in artifacts.manifest_text
+    assert "design_name=identity-pipeline" in artifacts.manifest_text
+    assert "units=aggregation:1:sum:int32" in artifacts.manifest_text
     assert "backend=vivado" in artifacts.manifest_text
     assert "artifact_manifest=dau-identity.artifacts.yaml" in artifacts.manifest_text
     assert "schema: artlink.manifest/v0" in artifacts.artifact_manifest_text

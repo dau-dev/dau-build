@@ -14,6 +14,14 @@ artifacts:
         name: dau-int32-stream-aggregation
       - kind: simulation-profile
         name: dau-int32-arrow-lite-stream-aggregation
+  - id: dau-aggregation-pkg-source
+    uri: package://dau_core.hdl/dau_aggregation_pkg.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+    provides:
+      - kind: hdl-module
+        name: dau_aggregation_pkg
   - id: dau-int32-aggregation-tile-source
     uri: package://dau_core.hdl/dau_int32_aggregation_tile.sv
     kind: source
@@ -30,6 +38,21 @@ artifacts:
     provides:
       - kind: hdl-module
         name: dau_int32_stream_aggregation
+  - id: dau-int32-grouped-aggregation-source
+    uri: package://dau_core.hdl/dau_int32_grouped_aggregation.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+  - id: dau-map-alu-pkg-source
+    uri: package://dau_core.hdl/dau_map_alu_pkg.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+  - id: dau-int32-map-alu-source
+    uri: package://dau_core.hdl/dau_int32_map_alu.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
   - id: dau-int32-arrow-lite-stream-aggregation-source
     uri: package://dau_core.hdl/dau_int32_arrow_lite_stream_aggregation.sv
     kind: source
@@ -39,17 +62,27 @@ artifacts:
       - kind: hdl-module
         name: dau_int32_arrow_lite_stream_aggregation
   - id: dau-int32-aggregation-tile-tb
-    uri: package://dau_build.profiles/sv/dau_int32_aggregation_tile_tb.sv
+    uri: package://dau_core/tests/sv/dau_int32_aggregation_tile_tb.sv
     kind: source
     role: testbench-source
     language: systemverilog
   - id: dau-int32-stream-aggregation-tb
-    uri: package://dau_build.profiles/sv/dau_int32_stream_aggregation_tb.sv
+    uri: package://dau_core/tests/sv/dau_int32_stream_aggregation_tb.sv
+    kind: source
+    role: testbench-source
+    language: systemverilog
+  - id: dau-int32-grouped-aggregation-tb
+    uri: package://dau_core/tests/sv/dau_int32_grouped_aggregation_tb.sv
+    kind: source
+    role: testbench-source
+    language: systemverilog
+  - id: dau-int32-map-alu-tb
+    uri: package://dau_core/tests/sv/dau_int32_map_alu_tb.sv
     kind: source
     role: testbench-source
     language: systemverilog
   - id: dau-int32-arrow-lite-stream-aggregation-tb
-    uri: package://dau_build.profiles/sv/dau_int32_arrow_lite_stream_aggregation_tb.sv
+    uri: package://dau_core/tests/sv/dau_int32_arrow_lite_stream_aggregation_tb.sv
     kind: source
     role: testbench-source
     language: systemverilog

@@ -20,6 +20,8 @@ def test_default_verilator_profiles_are_loaded_from_packaged_artlink_manifest() 
     assert available_verilator_profiles() == (
         "dau-int32-aggregation-tile",
         "dau-int32-arrow-lite-stream-aggregation",
+        "dau-int32-grouped-aggregation",
+        "dau-int32-map-alu",
         "dau-int32-stream-aggregation",
     )
 
@@ -27,10 +29,15 @@ def test_default_verilator_profiles_are_loaded_from_packaged_artlink_manifest() 
 
     assert profile.top_module == "dau_int32_aggregation_tile_tb"
     assert profile.expect_stdout == "DAU_INT32_AGGREGATION_TILE_TB_OK"
-    assert len(profile.sources) == 1
-    assert profile.sources[0].name == "dau_int32_aggregation_tile_tb.sv"
-    assert "dau_build/profiles/sv" in profile.sources[0].as_posix()
-    assert profile.sources[0].is_file()
+    # the shared aggregation package precedes the bench (single source of
+    # truth for the accumulate step across tile and stream modules)
+    assert len(profile.sources) == 2
+    assert profile.sources[0].name == "dau_aggregation_pkg.sv"
+    assert profile.sources[1].name == "dau_int32_aggregation_tile_tb.sv"
+    # benches live beside what they verify (F11): the manifest points at
+    # dau-core's canonical copy, not a dau-build twin
+    assert "dau_core/tests/sv" in profile.sources[1].as_posix()
+    assert all(source.is_file() for source in profile.sources)
 
 
 def test_custom_verilator_profile_loads_sources_from_artlink_manifest(tmp_path: Path) -> None:

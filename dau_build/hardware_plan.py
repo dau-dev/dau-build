@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from dau_core.capabilities import DPV1_PCI_ID
+
 from dau_build.vivado_backend import (
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
@@ -66,10 +68,10 @@ class HardwareToolchainConfig:
     vivado_mount_root: Path | None = None
     openfpgaloader_executable: str = "openFPGALoader"
     runtime_pm_executable: str = "dau-pci-runtime-pm"
-    runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", "10ee:7011", "Xilinx")
+    runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", DPV1_PCI_ID, "Xilinx")
     jtag_cable: str = "digilent_hs2"
     endpoint_bdf: str = "0000:04:00.0"
-    expected_endpoint_id: str = "10ee:7011"
+    expected_endpoint_id: str = DPV1_PCI_ID
 
     @property
     def project_tcl(self) -> Path:

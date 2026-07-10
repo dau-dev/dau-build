@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-import yaml
+from dau_sim.integrations.verilator_profiles import VerilatorProfile
 
-from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest
+from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest, load_yaml_mapping
 
 SIMULATION_PROFILE_SCHEMA = "dau.simulation-profile/v0"
 SIMULATION_PROFILE_ROLE = "simulation-profile"
@@ -18,14 +17,6 @@ PACKAGE_URI_PREFIX = "package://"
 
 class SimulationProfileError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class VerilatorProfile:
-    name: str
-    sources: tuple[Path, ...]
-    top_module: str
-    expect_stdout: str
 
 
 def default_profile_manifest_paths() -> tuple[Path, ...]:
@@ -43,6 +34,26 @@ def resolve_verilator_profile(name: str, profile_manifests: Iterable[Path] = ())
     except KeyError as exc:
         known = ", ".join(sorted(profiles))
         raise SimulationProfileError(f"unknown DAU Verilator profile {name!r}; expected one of: {known}") from exc
+
+
+def resolve_profile(name: str, profile_manifests: Iterable[Path] = ()) -> VerilatorProfile:
+    """The single profile resolution chain: dau-sim's registered profiles
+    first, then manifest-registered ones. Every dau-build simulate entrypoint
+    resolves through here so a profile name means the same thing everywhere."""
+    from dau_sim.integrations.verilator_profiles import (
+        available_verilator_profiles as registered_names,
+        resolve_verilator_profile as resolve_registered,
+    )
+
+    try:
+        return resolve_registered(name)
+    except KeyError:
+        pass
+    try:
+        return resolve_verilator_profile(name, profile_manifests=profile_manifests)
+    except SimulationProfileError:
+        known = ", ".join(sorted({*registered_names(), *available_verilator_profiles(profile_manifests)}))
+        raise SimulationProfileError(f"unknown DAU Verilator profile {name!r}; expected one of: {known}") from None
 
 
 def load_verilator_profiles_from_manifest(manifest_path: Path) -> dict[str, VerilatorProfile]:
@@ -74,18 +85,7 @@ def _load_verilator_profile_map(profile_manifests: Iterable[Path]) -> dict[str, 
 
 
 def _load_profile_yaml(path: Path) -> Mapping[str, Any]:
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise SimulationProfileError(f"failed to read simulation profile artifact {path.as_posix()}: {exc}") from exc
-    except yaml.YAMLError as exc:
-        raise SimulationProfileError(f"invalid simulation profile YAML: {path.as_posix()}") from exc
-    if not isinstance(raw, Mapping):
-        raise SimulationProfileError(f"simulation profile artifact must be a YAML mapping: {path.as_posix()}")
-    schema = raw.get("schema", "")
-    if schema != SIMULATION_PROFILE_SCHEMA:
-        raise SimulationProfileError(f"unsupported simulation profile schema {schema!r}: {path.as_posix()}")
-    return raw
+    return load_yaml_mapping(path, description="simulation profile", error_type=SimulationProfileError, schema=SIMULATION_PROFILE_SCHEMA)
 
 
 def _profile_entries(raw: Mapping[str, Any], *, profile_path: Path) -> tuple[Mapping[str, Any], ...]:

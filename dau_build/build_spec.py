@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
+from dau_core.design import DauDesign, OperatorUnit, UnitKind
 from dau_core.registers import DEFAULT_STREAM_JOB_REGISTER_CONTRACT
+from dau_core.stream import LogicalType, OperationCode
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
@@ -176,6 +177,7 @@ def dau_build_manifest_text(spec: DauBuildSpec, *, top_sv_path: Path, manifest_p
         ("clock", spec.clock),
         ("reset", spec.reset),
         ("operators", ",".join(spec.operators)),
+        *design_from_spec(spec).manifest_items(),
         ("modules", ",".join(spec.modules)),
         ("sources", str(len(spec.sources))),
         ("backend", spec.backend),
@@ -362,13 +364,9 @@ def _required_str(raw: dict[str, Any], key: str) -> str:
 
 
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise DauBuildSpecError(f"invalid YAML build spec: {path.as_posix()}") from exc
-    if not isinstance(raw, dict):
-        raise DauBuildSpecError("build spec must be a YAML mapping")
-    return raw
+    from dau_build.packaging import load_yaml_mapping
+
+    return load_yaml_mapping(path, description="build spec", error_type=DauBuildSpecError)
 
 
 def _required_str_tuple(raw: dict[str, Any], key: str) -> tuple[str, ...]:
@@ -404,17 +402,32 @@ def _contract_version_to_u32(version: str) -> int:
     return (major << 16) | minor
 
 
+def design_from_spec(spec: DauBuildSpec) -> DauDesign:
+    """Derive the operator-unit inventory a build advertises to the planner.
+
+    The current INT32 aggregation path exposes one aggregation unit covering the
+    opcodes in the operator bitmap (AVERAGE excluded, as the HDL rejects it).
+    """
+    bitmap = _operator_bitmap(spec.operators)
+    opcodes = tuple(opcode for opcode in OperationCode if opcode != OperationCode.AVERAGE and bitmap & (1 << int(opcode)))
+    units: tuple[OperatorUnit, ...] = ()
+    if opcodes:
+        units = (OperatorUnit(kind=UnitKind.AGGREGATION, count=1, opcodes=opcodes, input_types=(LogicalType.INT32,)),)
+    return DauDesign(name=spec.name, units=units)
+
+
 def _operator_bitmap(operators: tuple[str, ...]) -> int:
     bitmap = 0
     for operator in operators:
         normalized = operator.lower().replace("_", "-")
         if "aggregation" in normalized:
-            for opcode in (1, 2, 3, 4):
-                bitmap |= 1 << opcode
+            for opcode in OperationCode:
+                if opcode is not OperationCode.AVERAGE:
+                    bitmap |= 1 << int(opcode)
             continue
-        for token, opcode in (("min", 1), ("max", 2), ("sum", 3), ("count", 4), ("average", 5)):
-            if token in normalized:
-                bitmap |= 1 << opcode
+        for opcode in OperationCode:
+            if opcode.name.lower() in normalized:
+                bitmap |= 1 << int(opcode)
     return bitmap
 
 
