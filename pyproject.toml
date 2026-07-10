@@ -33,7 +33,6 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-core",
     "dau-sim",
     "dau-utils",
     "hydra-core",
@@ -62,7 +61,6 @@ develop = [
     "wheel",
     "verilator",
     # tests
-    "dau-core",
 ]
 
 [project.scripts]

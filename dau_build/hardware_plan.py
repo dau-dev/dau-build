@@ -8,8 +8,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from dau_core.capabilities import DPV1_PCI_ID
-
 from dau_build.vivado_backend import (
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
@@ -26,6 +24,10 @@ from dau_build.vivado_backend import (
     validate_vivado_project_artifact_bundle,
     vivado_build_tcl,
 )
+
+# dpv1 board identity (platform integration lives here; the private DAU
+# packages carry their own copy and the dau integration suite pins the two)
+DPV1_PCI_ID = "10ee:7011"
 
 PCI_RESCAN_BDFS = (
     "0000:03:01.0",

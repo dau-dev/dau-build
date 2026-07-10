@@ -1,6 +1,5 @@
 import shlex
 from collections.abc import Iterable, Mapping
-from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, Literal, TypeVar
@@ -1034,7 +1033,7 @@ def _write_vivado_backend_handoff(
     try:
         backend_artifacts = generate_vivado_backend_artifacts(
             VivadoBackendRequest(
-                dau_core_hdl_root=_dau_core_hdl_root(),
+                dau_core_hdl_root=_spec_hdl_root(spec),
                 build_root=output_root / "vivado",
                 dau_artifact_bundle_path=dau_artifact_bundle_path.resolve(),
                 artifact_stem=spec.artifact_stem,
@@ -1068,8 +1067,12 @@ def _write_vivado_backend_artifacts(artifacts: VivadoBackendArtifacts) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _dau_core_hdl_root() -> Path:
-    return Path(str(files("dau_core.hdl")))
+def _spec_hdl_root(spec) -> Path:
+    # the overlay HDL root is wherever the spec's sources live — dau-build
+    # stays independent of any particular HDL package
+    if not spec.sources:
+        raise BuildStepError("spec provides no HDL sources to derive the HDL root from")
+    return Path(spec.sources[0]).parent
 
 
 def _read_key_value_manifest(path: Path) -> dict[str, str]:

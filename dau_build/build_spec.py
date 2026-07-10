@@ -5,15 +5,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dau_core.design import DauDesign, OperatorUnit, UnitKind
-from dau_core.registers import DEFAULT_STREAM_JOB_REGISTER_CONTRACT
-from dau_core.stream import LogicalType, OperationCode
-
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
 from dau_build.svparser import Design
 
 SUPPORTED_BACKENDS = frozenset(("none", "vivado"))
+
+# Generic staging-window defaults for generated register tops. dau-build is
+# public and independent of any DAU package; the dau integration suite pins
+# these to the DAU stream-job register contract so they cannot drift.
+DEFAULT_INPUT_BUFFER_ADDRESS = 0x0000_0000
+DEFAULT_INPUT_BUFFER_BYTES = 0x0010_0000
+DEFAULT_OUTPUT_BUFFER_ADDRESS = 0x0010_0000
+DEFAULT_OUTPUT_BUFFER_BYTES = 0x0010_0000
+DEFAULT_RESULT_BYTES = 136
+
+# canonical aggregation operator tokens, in wire-opcode order
+_OPERATOR_TOKENS = ("min", "max", "sum", "count")
 
 
 class DauBuildSpecError(ValueError):
@@ -118,7 +126,6 @@ def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> Da
     top_sv_path = output_root / "generated" / f"{spec.top_name}.sv"
     manifest_path = output_root / f"{spec.artifact_stem}.manifest"
     artifact_manifest_path = output_root / f"{spec.artifact_stem}.artifacts.yaml"
-    stream_job_contract = DEFAULT_STREAM_JOB_REGISTER_CONTRACT
     top_sv_text = design.generate_dau_top_sv(
         name=spec.top_name,
         module_names=list(spec.modules),
@@ -127,11 +134,11 @@ def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> Da
         register_map_version=_contract_version_to_u32(spec.register_map_version),
         stream_protocol_version=_contract_version_to_u32(spec.stream_protocol_version),
         operator_bitmap=_operator_bitmap(spec.operators),
-        input_buffer_address=stream_job_contract.input_buffer_address,
-        input_buffer_bytes=stream_job_contract.input_buffer_bytes,
-        output_buffer_address=stream_job_contract.output_buffer_address,
-        output_buffer_bytes=stream_job_contract.output_buffer_bytes,
-        result_bytes=stream_job_contract.result_bytes,
+        input_buffer_address=DEFAULT_INPUT_BUFFER_ADDRESS,
+        input_buffer_bytes=DEFAULT_INPUT_BUFFER_BYTES,
+        output_buffer_address=DEFAULT_OUTPUT_BUFFER_ADDRESS,
+        output_buffer_bytes=DEFAULT_OUTPUT_BUFFER_BYTES,
+        result_bytes=DEFAULT_RESULT_BYTES,
     )
     artifact_manifest = dau_artifact_manifest(spec, design=design, top_sv_path=top_sv_path.relative_to(output_root))
     manifest_text = dau_build_manifest_text(
@@ -177,7 +184,7 @@ def dau_build_manifest_text(spec: DauBuildSpec, *, top_sv_path: Path, manifest_p
         ("clock", spec.clock),
         ("reset", spec.reset),
         ("operators", ",".join(spec.operators)),
-        *design_from_spec(spec).manifest_items(),
+        *design_manifest_items(spec),
         ("modules", ",".join(spec.modules)),
         ("sources", str(len(spec.sources))),
         ("backend", spec.backend),
@@ -402,32 +409,32 @@ def _contract_version_to_u32(version: str) -> int:
     return (major << 16) | minor
 
 
-def design_from_spec(spec: DauBuildSpec) -> DauDesign:
-    """Derive the operator-unit inventory a build advertises to the planner.
-
-    The current INT32 aggregation path exposes one aggregation unit covering the
-    opcodes in the operator bitmap (AVERAGE excluded, as the HDL rejects it).
-    """
-    bitmap = _operator_bitmap(spec.operators)
-    opcodes = tuple(opcode for opcode in OperationCode if opcode != OperationCode.AVERAGE and bitmap & (1 << int(opcode)))
-    units: tuple[OperatorUnit, ...] = ()
-    if opcodes:
-        units = (OperatorUnit(kind=UnitKind.AGGREGATION, count=1, opcodes=opcodes, input_types=(LogicalType.INT32,)),)
-    return DauDesign(name=spec.name, units=units)
+def design_manifest_items(spec: DauBuildSpec) -> tuple[tuple[str, str], ...]:
+    """The operator-unit inventory a build advertises to the planner, derived
+    lexically from the spec operator tokens (``kind:count:ops:types`` — the
+    consumer-side model lives with the consumer; dau-build stays generic)."""
+    tokens = _operator_tokens(spec.operators)
+    units = f"aggregation:1:{'|'.join(tokens)}:int32" if tokens else ""
+    return (("design_name", spec.name), ("units", units))
 
 
-def _operator_bitmap(operators: tuple[str, ...]) -> int:
-    bitmap = 0
+def _operator_tokens(operators: tuple[str, ...]) -> tuple[str, ...]:
+    tokens: list[str] = []
     for operator in operators:
         normalized = operator.lower().replace("_", "-")
         if "aggregation" in normalized:
-            for opcode in OperationCode:
-                if opcode is not OperationCode.AVERAGE:
-                    bitmap |= 1 << int(opcode)
-            continue
-        for opcode in OperationCode:
-            if opcode.name.lower() in normalized:
-                bitmap |= 1 << int(opcode)
+            return _OPERATOR_TOKENS
+        for token in _OPERATOR_TOKENS:
+            if token in normalized and token not in tokens:
+                tokens.append(token)
+    return tuple(sorted(tokens, key=_OPERATOR_TOKENS.index))
+
+
+def _operator_bitmap(operators: tuple[str, ...]) -> int:
+    # wire opcodes are 1-based in _OPERATOR_TOKENS order
+    bitmap = 0
+    for token in _operator_tokens(operators):
+        bitmap |= 1 << (_OPERATOR_TOKENS.index(token) + 1)
     return bitmap
 
 

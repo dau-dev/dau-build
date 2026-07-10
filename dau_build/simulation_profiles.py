@@ -20,7 +20,9 @@ class SimulationProfileError(ValueError):
 
 
 def default_profile_manifest_paths() -> tuple[Path, ...]:
-    return (_resource_path(files("dau_build.profiles").joinpath("dau-core-verilator-profiles.artifacts.yaml")),)
+    """dau-build ships no profiles of its own (it is generic build
+    integration); consumers pass manifests explicitly or via config."""
+    return ()
 
 
 def available_verilator_profiles(profile_manifests: Iterable[Path] = ()) -> tuple[str, ...]:

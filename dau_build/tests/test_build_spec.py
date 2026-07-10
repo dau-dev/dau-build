@@ -2,11 +2,15 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from dau_core.design import UnitKind
-from dau_core.hdl import DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV
-from dau_core.stream import LogicalType, OperationCode
 
-from dau_build.build_spec import DauBuildSpec, design_from_spec, generate_dau_build_artifacts, load_dau_build_spec, main, write_dau_build_artifacts
+from dau_build.build_spec import (
+    DauBuildSpec,
+    design_manifest_items,
+    generate_dau_build_artifacts,
+    load_dau_build_spec,
+    main,
+    write_dau_build_artifacts,
+)
 from dau_build.packaging import artifact_modules, load_artifact_manifest
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
@@ -76,16 +80,19 @@ def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Pat
     )
 
 
-def test_design_from_spec_advertises_one_aggregation_unit(tmp_path: Path) -> None:
+def test_design_manifest_items_advertise_one_aggregation_unit(tmp_path: Path) -> None:
     spec = replace(load_dau_build_spec(_write_spec(tmp_path)), operators=("int32-arrow-lite-aggregation",))
 
-    design = design_from_spec(spec)
+    assert design_manifest_items(spec) == (
+        ("design_name", "identity-pipeline"),
+        ("units", "aggregation:1:min|max|sum|count:int32"),
+    )
 
-    assert design.capacity(UnitKind.AGGREGATION) == 1
-    assert design.capacity(UnitKind.JOIN) == 0
-    for opcode in (OperationCode.SUM, OperationCode.MIN, OperationCode.MAX, OperationCode.COUNT):
-        assert design.aggregation_capacity(opcode, LogicalType.INT32) == 1
-    assert design.aggregation_capacity(OperationCode.AVERAGE, LogicalType.INT32) == 0
+    sum_only = replace(spec, operators=("sum_i64",))
+    assert design_manifest_items(sum_only)[1] == ("units", "aggregation:1:sum:int32")
+
+    no_ops = replace(spec, operators=("identity",))
+    assert design_manifest_items(no_ops)[1] == ("units", "")
 
 
 def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_path: Path) -> None:
@@ -127,26 +134,26 @@ def test_write_dau_build_artifacts_persists_bundle_without_toolchain_invocation(
     assert not (tmp_path / "out" / "scripts" / "dau_overlay.tcl").exists()
 
 
-def test_generate_dau_build_artifacts_emits_stream_job_top_boundary_for_arrow_lite_aggregator(tmp_path: Path) -> None:
+def test_generate_dau_build_artifacts_emits_stream_job_top_boundary_for_stream_module(tmp_path: Path) -> None:
     spec_path = tmp_path / "arrow-lite-dau-build.yaml"
     spec_path.write_text(
         "\n".join(
             (
-                "name: arrow-lite-aggregation-pipeline",
-                "top_name: dau_int32_arrow_lite_top",
+                "name: stream-doubler-pipeline",
+                "top_name: stream_doubler_top",
                 "platform: vivado-xdma",
                 "shell: xdma-ddr",
-                "artifact_stem: dau-int32-arrow-lite",
+                "artifact_stem: stream-doubler",
                 'register_map_version: "0.1"',
                 'stream_protocol_version: "0.1"',
                 "clock: clk",
                 "reset: rst",
                 "operators:",
-                "  - int32-arrow-lite-aggregation",
+                "  - sum",
                 "sources:",
-                f"  - {Path(str(DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV)).as_posix()}",
+                f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
                 "modules:",
-                "  - dau_int32_arrow_lite_stream_aggregation",
+                "  - stream_doubler",
                 "backend: vivado",
                 "",
             )
