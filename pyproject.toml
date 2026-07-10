@@ -33,7 +33,7 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-sim",
+    "dau-sim>=0.1.0",
     "dau-utils",
     "hydra-core",
     "pydantic",
