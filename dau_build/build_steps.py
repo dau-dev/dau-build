@@ -1,6 +1,5 @@
 import shlex
 from collections.abc import Iterable, Mapping
-from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, Literal, TypeVar
@@ -195,12 +194,12 @@ class SimulateStep(SpecPathModel):
         except ModuleNotFoundError as exc:
             raise BuildStepError("simulate.engine=verilator requires dau-sim to be importable") from exc
 
-        from dau_build.simulation_profiles import SimulationProfileError, resolve_verilator_profile
+        from dau_build.simulation_profiles import SimulationProfileError, resolve_profile
 
         profile = None
         if self.simulate_profile:
             try:
-                profile = resolve_verilator_profile(self.simulate_profile, profile_manifests=self.simulate_profile_manifest)
+                profile = resolve_profile(self.simulate_profile, profile_manifests=self.simulate_profile_manifest)
             except SimulationProfileError as exc:
                 raise BuildStepError(str(exc)) from exc
 
@@ -282,6 +281,10 @@ class ExplainStep(SpecPathModel):
 
 
 class SimulateTask(ModuleSelectionModel):
+    # spec_path/module are optional for profile-only Verilator runs, where a
+    # registered profile already carries its sources and top module
+    spec_path: Path | None = None
+    module: str = ""
     simulator: Literal["cocotb", "svparser", "verilator"] = "svparser"
     output_root: Path | None = None
     profile: str | None = None
@@ -299,6 +302,10 @@ class SimulateTask(ModuleSelectionModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
+        if self.simulator == "verilator" and self.profile and self.spec_path is None:
+            return self._run_registered_profile()
+        if self.spec_path is None or not self.module:
+            raise BuildStepError("task=simulate requires spec_path and module (or simulator=verilator profile=<name> for a registered profile)")
         spec = self.load_spec_and_validate_module()
         output_root = self.output_root or self.spec_path.parent / ".dau-build-sim"
         if self.simulator in {"svparser", "cocotb"}:
@@ -330,6 +337,24 @@ class SimulateTask(ModuleSelectionModel):
             step_data["simulate.expect_stdout"] = self.expect_stdout
         result = _execute_callable_model(SimulateStep, step_data, request_kind="step", request_name="simulate")
         return BuildStepResult(step="simulate", message=f"{result.message} task=simulate simulator=verilator module={self.module}")
+
+    def _run_registered_profile(self) -> BuildStepResult:
+        from dau_sim.integrations.verilator import run_verilator_testbench
+
+        from dau_build.simulation_profiles import resolve_profile
+
+        profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
+        work_root = self.output_root or Path.cwd() / ".dau-build-sim"
+        work_dir = work_root / profile.name
+        work_dir.mkdir(parents=True, exist_ok=True)
+        result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=work_dir)
+        marker = self.expect_stdout or profile.expect_stdout
+        if marker not in result.stdout:
+            raise BuildStepError(f"profile {profile.name!r} did not report {marker!r}")
+        return BuildStepResult(
+            step="simulate",
+            message=f"dau-build-simulate	task=simulate simulator=verilator profile={profile.name} status=passed marker={marker}",
+        )
 
 
 class SynthesizeTask(ModuleSelectionModel):
@@ -774,10 +799,9 @@ class HardwarePlanTask(BuildCallableModel):
             jtag_cable=self.jtag_cable,
             endpoint_bdf=self.endpoint_bdf,
         )
-        if self.plan == "build-and-program":
-            return build_and_program_plan(config)
-        if self.plan == "local-build-and-program":
-            return local_build_and_program_plan(
+        composers = {
+            "build-and-program": lambda: build_and_program_plan(config),
+            "local-build-and-program": lambda: local_build_and_program_plan(
                 config,
                 dau_core_root=self._required_path("dau_core_root"),
                 dau_driver_root=self._required_path("dau_driver_root"),
@@ -786,22 +810,22 @@ class HardwarePlanTask(BuildCallableModel):
                 overlay_tcl=self.overlay_tcl,
                 python=self.python,
                 vivado_settings=self.vivado_settings,
-            )
-        if self.plan == "validate-bitstream":
-            return validate_bitstream_plan(
+            ),
+            "validate-bitstream": lambda: validate_bitstream_plan(
                 config,
                 dau_core_root=self._required_path("dau_core_root"),
                 dau_driver_root=self._required_path("dau_driver_root"),
                 dau_utils_root=self.dau_utils_root,
                 python=self.python,
-            )
-        if self.plan == "flash":
-            return hardware_flash_plan(config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings)
-        if self.plan == "recovery":
-            return recovery_plan(config)
-        if self.plan == "thunderbolt-hold":
-            return thunderbolt_hold_plan(config)
-        return thunderbolt_release_plan(config)
+            ),
+            "flash": lambda: hardware_flash_plan(
+                config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings
+            ),
+            "recovery": lambda: recovery_plan(config),
+            "thunderbolt-hold": lambda: thunderbolt_hold_plan(config),
+            "thunderbolt-release": lambda: thunderbolt_release_plan(config),
+        }
+        return composers[self.plan]()
 
     def _required_path(self, field_name: str) -> Path:
         value = getattr(self, field_name)
@@ -810,34 +834,28 @@ class HardwarePlanTask(BuildCallableModel):
         return value
 
 
-STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
-    {
-        "explain": ExplainStep,
-        "generate": GenerateStep,
-        "inspect": InspectStep,
-        "resolved-config": ResolvedConfigStep,
-        "simulate": SimulateStep,
-        "synthesis": SynthesisStep,
-        "validate": ValidateStep,
-        "write": WriteStep,
-    }
-)
+def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallableModel]]:
+    """The hydra config tree is the single registry of steps/tasks: each
+    ``config/<kind>/<name>.yaml`` names its model via ``_target_``, and the
+    name→class maps are derived from it, never hand-maintained."""
+    import importlib
 
-TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = MappingProxyType(
-    {
-        "build-vivado-artifacts": BuildVivadoArtifactsTask,
-        "flash": FlashTask,
-        "hardware-plan": HardwarePlanTask,
-        "overlay-build": VivadoOverlayBuildTask,
-        "simulate": SimulateTask,
-        "smoke-test": SmokeTestTask,
-        "stage-shell": ShellStageTask,
-        "stage-vivado-overlay": VivadoOverlayStageTask,
-        "stage-vivado-project": VivadoProjectStageTask,
-        "synthesize": SynthesizeTask,
-        "validate-vivado-artifacts": ValidateVivadoArtifactsTask,
-    }
-)
+    import yaml
+
+    model_types: dict[str, type[BuildCallableModel]] = {}
+    for path in sorted((Path(__file__).parent / "config" / kind).glob("*.yaml")):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        target = raw.get("_target_") if isinstance(raw, Mapping) else None
+        if not isinstance(target, str) or not target:
+            raise BuildStepError(f"config {kind}/{path.name} must declare _target_")
+        module_name, _, attribute = target.rpartition(".")
+        model_types[path.stem] = getattr(importlib.import_module(module_name), attribute)
+    return MappingProxyType(model_types)
+
+
+STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = _model_types_from_config_group("step")
+
+TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = _model_types_from_config_group("task")
 
 
 def available_step_names() -> tuple[str, ...]:
@@ -1015,7 +1033,7 @@ def _write_vivado_backend_handoff(
     try:
         backend_artifacts = generate_vivado_backend_artifacts(
             VivadoBackendRequest(
-                dau_core_hdl_root=_dau_core_hdl_root(),
+                dau_core_hdl_root=_spec_hdl_root(spec),
                 build_root=output_root / "vivado",
                 dau_artifact_bundle_path=dau_artifact_bundle_path.resolve(),
                 artifact_stem=spec.artifact_stem,
@@ -1049,8 +1067,12 @@ def _write_vivado_backend_artifacts(artifacts: VivadoBackendArtifacts) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _dau_core_hdl_root() -> Path:
-    return Path(str(files("dau_core.hdl")))
+def _spec_hdl_root(spec) -> Path:
+    # the overlay HDL root is wherever the spec's sources live — dau-build
+    # stays independent of any particular HDL package
+    if not spec.sources:
+        raise BuildStepError("spec provides no HDL sources to derive the HDL root from")
+    return Path(spec.sources[0]).parent
 
 
 def _read_key_value_manifest(path: Path) -> dict[str, str]:

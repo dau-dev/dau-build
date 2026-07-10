@@ -14,23 +14,10 @@ from dau_build.simulation_profiles import (
 )
 
 
-def test_default_verilator_profiles_are_loaded_from_packaged_artlink_manifest() -> None:
-    assert default_profile_manifest_paths()[0].is_file()
-    assert "dau_core.tests.sv" not in default_profile_manifest_paths()[0].read_text(encoding="utf-8")
-    assert available_verilator_profiles() == (
-        "dau-int32-aggregation-tile",
-        "dau-int32-arrow-lite-stream-aggregation",
-        "dau-int32-stream-aggregation",
-    )
-
-    profile = resolve_verilator_profile("dau-int32-aggregation-tile")
-
-    assert profile.top_module == "dau_int32_aggregation_tile_tb"
-    assert profile.expect_stdout == "DAU_INT32_AGGREGATION_TILE_TB_OK"
-    assert len(profile.sources) == 1
-    assert profile.sources[0].name == "dau_int32_aggregation_tile_tb.sv"
-    assert "dau_build/profiles/sv" in profile.sources[0].as_posix()
-    assert profile.sources[0].is_file()
+def test_default_profile_manifests_are_empty() -> None:
+    # dau-build is generic: it ships no profiles of its own
+    assert default_profile_manifest_paths() == ()
+    assert available_verilator_profiles() == ()
 
 
 def test_custom_verilator_profile_loads_sources_from_artlink_manifest(tmp_path: Path) -> None:
@@ -85,6 +72,6 @@ def test_custom_verilator_profile_loads_sources_from_artlink_manifest(tmp_path: 
     assert profiles["counter-profile"].sources == (testbench.resolve(),)
 
 
-def test_unknown_profile_error_names_available_profiles() -> None:
-    with pytest.raises(SimulationProfileError, match="dau-int32-aggregation-tile"):
+def test_unknown_profile_error_lists_available_profiles() -> None:
+    with pytest.raises(SimulationProfileError, match="expected one of: $"):
         resolve_verilator_profile("missing-profile")

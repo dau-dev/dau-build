@@ -47,13 +47,24 @@ class ArtifactManifest(Manifest):
         return self
 
 
-def load_artifact_manifest(path: Path, *, validate_paths: bool = False, root: Path | None = None) -> ArtifactManifest:
+def load_yaml_mapping(path: Path, *, description: str, error_type: type[Exception], schema: str | None = None) -> dict[str, Any]:
+    """Shared read -> safe_load -> mapping/schema-check skeleton for every
+    dau-build YAML surface (manifests, build specs, simulation profiles)."""
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise error_type(f"failed to read {description}: {path.as_posix()}: {exc}") from exc
     except yaml.YAMLError as exc:
-        raise ArtifactManifestError(f"invalid artifact manifest YAML: {path.as_posix()}") from exc
+        raise error_type(f"invalid {description} YAML: {path.as_posix()}") from exc
     if not isinstance(raw, dict):
-        raise ArtifactManifestError("artifact manifest must be a YAML mapping")
+        raise error_type(f"{description} must be a YAML mapping: {path.as_posix()}")
+    if schema is not None and raw.get("schema", "") != schema:
+        raise error_type(f"unsupported {description} schema {raw.get('schema')!r}: {path.as_posix()}")
+    return raw
+
+
+def load_artifact_manifest(path: Path, *, validate_paths: bool = False, root: Path | None = None) -> ArtifactManifest:
+    raw = load_yaml_mapping(path, description="artifact manifest", error_type=ArtifactManifestError)
     manifest = artifact_manifest_from_mapping(raw)
     if validate_paths:
         validate_artifact_files(manifest, root=path.parent if root is None else root)

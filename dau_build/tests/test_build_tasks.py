@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 import tomllib
 from ccflow import CallableModel
-from dau_core.hdl import DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV
 
 from dau_build.build_spec import main
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
@@ -81,7 +80,7 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
         (
             "task=synthesize",
             "engine=vivado",
-            "module=dau_int32_arrow_lite_stream_aggregation",
+            "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
         )
@@ -94,8 +93,8 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
     assert backend_manifest["dau_artifact_bundle"] == (output_root / "dau-int32-arrow-lite.artifacts.yaml").resolve().as_posix()
     assert backend_manifest["dau_generated_top"] == (output_root / "generated" / "dau_int32_arrow_lite_top.sv").resolve().as_posix()
     assert (output_root / "generated" / "dau_int32_arrow_lite_top.sv").resolve().as_posix() in backend_manifest["dau_bundle_hdl_sources"]
-    assert Path(str(DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV)).resolve().as_posix() in backend_manifest["dau_bundle_hdl_sources"]
-    assert backend_manifest["selected_module"] == "dau_int32_arrow_lite_stream_aggregation"
+    assert (Path(__file__).parent / "sv" / "stream_doubler.sv").resolve().as_posix() in backend_manifest["dau_bundle_hdl_sources"]
+    assert backend_manifest["selected_module"] == "stream_doubler"
     assert backend_manifest["job_control_offset"] == "0x00000050"
     assert backend_manifest["job_status_offset"] == "0x00000054"
     assert backend_manifest["input_buffer_address"] == "0x0000000000000000"
@@ -125,7 +124,7 @@ def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) 
         (
             "task=synthesize",
             "engine=vivado",
-            "module=dau_int32_arrow_lite_stream_aggregation",
+            "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
         )
@@ -144,7 +143,7 @@ def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_pat
         (
             "task=synthesize",
             "engine=vivado",
-            "module=dau_int32_arrow_lite_stream_aggregation",
+            "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
         )
@@ -370,6 +369,8 @@ def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
     assert scripts == {
         "dau-build": "dau_build.build_spec:main",
         "dau-build-steps": "dau_build.build_spec:main_callable_steps",
+        "dau-build-cfg": "dau_build.cli:main",
+        "dau-build-cfg-explain": "dau_build.cli:explain",
     }
 
 
@@ -419,9 +420,9 @@ def _write_arrow_lite_aggregator_spec(tmp_path: Path) -> Path:
                 "operators:",
                 "  - int32-arrow-lite-aggregation",
                 "sources:",
-                f"  - {Path(str(DAU_INT32_ARROW_LITE_STREAM_AGGREGATION_SV)).as_posix()}",
+                f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
                 "modules:",
-                "  - dau_int32_arrow_lite_stream_aggregation",
+                "  - stream_doubler",
                 "backend: vivado",
                 "",
             )

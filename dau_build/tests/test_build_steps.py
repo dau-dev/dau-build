@@ -5,7 +5,6 @@ from shutil import which
 
 import pytest
 from ccflow import CallableModel
-from dau_core.hdl import DAU_INT32_AGGREGATION_TILE_SV
 
 from dau_build.build_spec import main_callable_steps
 from dau_build.build_steps import (
@@ -168,33 +167,6 @@ def test_simulate_step_can_run_verilator_testbench(tmp_path: Path) -> None:
         ),
     )
     assert (work_dir / "obj_dir" / "Vcounter_tb").is_file()
-
-
-@pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
-def test_simulate_step_can_run_verilator_profile(tmp_path: Path) -> None:
-    pytest.importorskip("dau_sim.integrations.verilator")
-    spec_path = _write_aggregation_tile_spec(tmp_path)
-    work_dir = tmp_path / "verilator-profile-work"
-
-    result = execute_override_step(
-        (
-            "step=simulate",
-            f"spec_path={spec_path}",
-            "simulate.engine=verilator",
-            "simulate.profile=dau-int32-aggregation-tile",
-            f"output_root={work_dir}",
-        )
-    )
-
-    assert result == BuildStepResult(
-        step="simulate",
-        message=(
-            f"dau-build-simulate\tspec={spec_path} top=dau_int32_aggregation_tile modules=dau_int32_aggregation_tile "
-            f"sources=1 engine=verilator profile=dau-int32-aggregation-tile testbench_top=dau_int32_aggregation_tile_tb "
-            f"work_dir={work_dir} status=passed"
-        ),
-    )
-    assert (work_dir / "obj_dir" / "Vdau_int32_aggregation_tile_tb").is_file()
 
 
 @pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
@@ -416,32 +388,3 @@ def _write_counter_profile_manifest(tmp_path: Path, testbench_path: Path) -> Pat
         encoding="utf-8",
     )
     return manifest_path
-
-
-def _write_aggregation_tile_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "aggregation-tile-dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: aggregation-tile-pipeline",
-                "top_name: dau_int32_aggregation_tile",
-                "platform: sim",
-                "shell: unit-test",
-                "artifact_stem: dau-int32-aggregation-tile",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: rst",
-                "operators:",
-                "  - int32-aggregation",
-                "sources:",
-                f"  - {Path(str(DAU_INT32_AGGREGATION_TILE_SV)).as_posix()}",
-                "modules:",
-                "  - dau_int32_aggregation_tile",
-                "backend: none",
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
-    return spec_path

@@ -25,6 +25,10 @@ from dau_build.vivado_backend import (
     vivado_build_tcl,
 )
 
+# dpv1 board identity (platform integration lives here; the private DAU
+# packages carry their own copy and the dau integration suite pins the two)
+DPV1_PCI_ID = "10ee:7011"
+
 PCI_RESCAN_BDFS = (
     "0000:03:01.0",
     "0000:02:00.0",
@@ -66,10 +70,10 @@ class HardwareToolchainConfig:
     vivado_mount_root: Path | None = None
     openfpgaloader_executable: str = "openFPGALoader"
     runtime_pm_executable: str = "dau-pci-runtime-pm"
-    runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", "10ee:7011", "Xilinx")
+    runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", DPV1_PCI_ID, "Xilinx")
     jtag_cable: str = "digilent_hs2"
     endpoint_bdf: str = "0000:04:00.0"
-    expected_endpoint_id: str = "10ee:7011"
+    expected_endpoint_id: str = DPV1_PCI_ID
 
     @property
     def project_tcl(self) -> Path:

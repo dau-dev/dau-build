@@ -5,8 +5,6 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-from dau_core.registers import DEFAULT_STREAM_JOB_REGISTER_CONTRACT
-
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
 
 SUPPORTED_VIVADO_INVOCATIONS = frozenset(("standard", "source-only"))
@@ -1093,7 +1091,7 @@ def _bundle_manifest_puts_tcl(
 
 
 def _stream_job_contract_manifest() -> tuple[tuple[str, str], ...]:
-    return DEFAULT_STREAM_JOB_REGISTER_CONTRACT.manifest_items()
+    return _STREAM_JOB_CONTRACT_MANIFEST_ITEMS
 
 
 def _stream_job_contract_puts_tcl() -> str:
@@ -1471,3 +1469,28 @@ def _vivado_source_command(*, vivado_executable: str, tcl_path: Path, vivado_inv
     if vivado_invocation == "source-only":
         return shlex.join((vivado_executable, str(tcl_path)))
     return shlex.join((vivado_executable, "-mode", "batch", "-source", str(tcl_path)))
+
+
+# Generic stream-job contract manifest values. dau-build is public and
+# independent of any DAU package; the dau integration suite pins these to
+# the DAU register contract so they cannot drift.
+_STREAM_JOB_CONTRACT_MANIFEST_ITEMS = (
+    ("register_window_offset", "0x00001000"),
+    ("job_control_offset", "0x00000050"),
+    ("job_status_offset", "0x00000054"),
+    ("last_error_offset", "0x0000002c"),
+    ("input_address_low_offset", "0x00000058"),
+    ("input_length_low_offset", "0x00000060"),
+    ("output_address_low_offset", "0x00000068"),
+    ("output_length_low_offset", "0x00000070"),
+    ("result_length_low_offset", "0x0000007c"),
+    ("job_start_bit", "0"),
+    ("job_busy_bit", "1"),
+    ("job_done_bit", "2"),
+    ("job_error_bit", "3"),
+    ("input_buffer_address", "0x0000000000000000"),
+    ("input_buffer_bytes", "0x0000000000100000"),
+    ("output_buffer_address", "0x0000000000100000"),
+    ("output_buffer_bytes", "0x0000000000100000"),
+    ("result_bytes", "0x0000000000000088"),
+)

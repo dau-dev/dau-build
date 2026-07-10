@@ -33,7 +33,7 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-core",
+    "dau-sim>=0.1.0",
     "dau-utils",
     "hydra-core",
     "pydantic",
@@ -61,12 +61,13 @@ develop = [
     "wheel",
     "verilator",
     # tests
-    "dau-core",
 ]
 
 [project.scripts]
 dau-build = "dau_build.build_spec:main"
 dau-build-steps = "dau_build.build_spec:main_callable_steps"
+dau-build-cfg = "dau_build.cli:main"
+dau-build-cfg-explain = "dau_build.cli:explain"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"
