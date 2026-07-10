@@ -38,6 +38,21 @@ artifacts:
     provides:
       - kind: hdl-module
         name: dau_int32_stream_aggregation
+  - id: dau-predicate-pkg-source
+    uri: package://dau_core.hdl/dau_predicate_pkg.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+  - id: dau-int32-predicate-filter-source
+    uri: package://dau_core.hdl/dau_int32_predicate_filter.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
+  - id: dau-int32-record-batch-aggregation-source
+    uri: package://dau_core.hdl/dau_int32_record_batch_aggregation.sv
+    kind: source
+    role: hdl-source
+    language: systemverilog
   - id: dau-int32-grouped-aggregation-source
     uri: package://dau_core.hdl/dau_int32_grouped_aggregation.sv
     kind: source
@@ -68,6 +83,16 @@ artifacts:
     language: systemverilog
   - id: dau-int32-stream-aggregation-tb
     uri: package://dau_core/tests/sv/dau_int32_stream_aggregation_tb.sv
+    kind: source
+    role: testbench-source
+    language: systemverilog
+  - id: dau-int32-predicate-filter-tb
+    uri: package://dau_core/tests/sv/dau_int32_predicate_filter_tb.sv
+    kind: source
+    role: testbench-source
+    language: systemverilog
+  - id: dau-int32-record-batch-aggregation-tb
+    uri: package://dau_core/tests/sv/dau_int32_record_batch_aggregation_tb.sv
     kind: source
     role: testbench-source
     language: systemverilog

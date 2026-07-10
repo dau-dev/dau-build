@@ -15,6 +15,22 @@ profiles:
       - artifact: dau-aggregation-pkg-source
       - artifact: dau-int32-aggregation-tile-source
       - artifact: dau-int32-stream-aggregation-tb
+  - name: dau-int32-predicate-filter
+    simulator: verilator
+    top_module: dau_int32_predicate_filter_tb
+    expect_stdout: DAU_INT32_PREDICATE_FILTER_TB_OK
+    sources:
+      - artifact: dau-predicate-pkg-source
+      - artifact: dau-int32-predicate-filter-source
+      - artifact: dau-int32-predicate-filter-tb
+  - name: dau-int32-record-batch-aggregation
+    simulator: verilator
+    top_module: dau_int32_record_batch_aggregation_tb
+    expect_stdout: DAU_INT32_RECORD_BATCH_AGGREGATION_TB_OK
+    sources:
+      - artifact: dau-aggregation-pkg-source
+      - artifact: dau-int32-record-batch-aggregation-source
+      - artifact: dau-int32-record-batch-aggregation-tb
   - name: dau-int32-grouped-aggregation
     simulator: verilator
     top_module: dau_int32_grouped_aggregation_tb

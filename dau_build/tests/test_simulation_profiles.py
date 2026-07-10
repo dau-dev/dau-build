@@ -22,6 +22,8 @@ def test_default_verilator_profiles_are_loaded_from_packaged_artlink_manifest() 
         "dau-int32-arrow-lite-stream-aggregation",
         "dau-int32-grouped-aggregation",
         "dau-int32-map-alu",
+        "dau-int32-predicate-filter",
+        "dau-int32-record-batch-aggregation",
         "dau-int32-stream-aggregation",
     )
 
