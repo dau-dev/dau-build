@@ -33,7 +33,7 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-sim>=0.1.0",
+    "dau-sim @ git+https://github.com/dau-dev/dau-sim.git",  # PyPI release predates CocotbProfile/run_cocotb_testbench; repin on next release
     "dau-utils",
     "hydra-core",
     "pydantic",
@@ -155,3 +155,6 @@ section-order = [
     "F401",
     "F403",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
