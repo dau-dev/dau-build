@@ -387,6 +387,36 @@ class SynthesizeTask(ModuleSelectionModel):
         )
 
 
+def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
+    """Resolve and verify the bitstream from an artlink shell-build
+    manifest: build_status must be built and the file must match its
+    recorded digest — a flashed bitstream is identified by provenance,
+    never by filename."""
+    import hashlib
+
+    from dau_build.packaging import load_artifact_manifest
+
+    manifest = load_artifact_manifest(manifest_path)
+    if manifest.metadata.get("build_status") != "built":
+        raise BuildStepError(f"shell-build manifest is not built: {manifest_path.as_posix()}")
+    bitstreams = [artifact for artifact in manifest.artifacts if artifact.role == "bitstream"]
+    if len(bitstreams) != 1:
+        raise BuildStepError(f"shell-build manifest must carry exactly one bitstream artifact: {manifest_path.as_posix()}")
+    bitstream = bitstreams[0]
+    if bitstream.path is None:
+        raise BuildStepError(f"bitstream artifact has no path: {manifest_path.as_posix()}")
+    bitstream_path = bitstream.path if bitstream.path.is_absolute() else manifest_path.parent / bitstream.path
+    if not bitstream_path.is_file():
+        raise BuildStepError(f"bitstream does not exist: {bitstream_path.as_posix()}")
+    if bitstream.digest is not None:
+        actual = hashlib.new(bitstream.digest.algorithm, bitstream_path.read_bytes()).hexdigest()
+        if actual != bitstream.digest.value:
+            raise BuildStepError(
+                f"bitstream digest mismatch (manifest {bitstream.digest.value[:12]}..., file {actual[:12]}...): {bitstream_path.as_posix()}"
+            )
+    return bitstream_path
+
+
 class FlashTask(BuildCallableModel):
     tool: str = "openFPGAloader"
     bitstream: Path | None = None
@@ -400,9 +430,12 @@ class FlashTask(BuildCallableModel):
         bitstream = self.bitstream
         manifest_segment = ""
         if self.manifest_path is not None:
-            manifest = _read_key_value_manifest(self.manifest_path)
-            _require_built_manifest(self.manifest_path, manifest)
-            bitstream = bitstream or _manifest_path(self.manifest_path.parent, manifest, "bitstream")
+            if self.manifest_path.suffix in (".yaml", ".yml"):
+                bitstream = bitstream or _bitstream_from_shell_build_manifest(self.manifest_path)
+            else:
+                manifest = _read_key_value_manifest(self.manifest_path)
+                _require_built_manifest(self.manifest_path, manifest)
+                bitstream = bitstream or _manifest_path(self.manifest_path.parent, manifest, "bitstream")
             manifest_segment = f" manifest={self.manifest_path}"
         if bitstream is None:
             raise BuildStepError("flash requires bitstream or manifest_path")
@@ -435,6 +468,49 @@ class SmokeTestTask(BuildCallableModel):
         return BuildStepResult(
             step="smoke-test",
             message=f"dau-build-smoke-test\ttask=smoke-test test={self.test}{device_segment}{manifest_segment} status=planned",
+        )
+
+
+class BuildShellProjectTask(BuildCallableModel):
+    """Run a generated shell project script through Vivado and package the
+    outputs as an artlink shell-build manifest (bitstream digest, reports,
+    log, generated inputs, contributing sources with repository state).
+    Plan-only unless ``execute=true``."""
+
+    output_root: Path
+    script: str = "build_mm_job.tcl"
+    vivado: str = "vivado"
+    manifest_name: str = "dau-shell"
+    source_paths: tuple[Path, ...] = ()
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    execute: bool = False
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        from dau_build.shell_build import run_shell_project_build, write_shell_build_manifest
+
+        script_path = self.output_root / self.script
+        if not script_path.is_file():
+            raise BuildStepError(f"shell project script does not exist: {script_path.as_posix()}")
+        command = shlex.join([self.vivado, "-mode", "batch", "-source", self.script])
+        if not self.execute:
+            return BuildStepResult(
+                step="build-shell-project",
+                message=f"dau-build-shell\ttask=build-shell-project output_root={self.output_root} command={command!r} status=planned",
+            )
+        status = run_shell_project_build(self.output_root, script=self.script, vivado_executable=self.vivado)
+        manifest_path = write_shell_build_manifest(
+            self.output_root,
+            name=self.manifest_name,
+            source_paths=self.source_paths,
+            metadata={**self.metadata, **status},
+        )
+        return BuildStepResult(
+            step="build-shell-project",
+            message=(
+                f"dau-build-shell\ttask=build-shell-project output_root={self.output_root}"
+                f" wns={status.get('wns_ns')} manifest={manifest_path} status=built"
+            ),
         )
 
 

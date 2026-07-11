@@ -24,6 +24,7 @@ _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
     assert available_step_names() == ("explain", "generate", "inspect", "resolved-config", "simulate", "synthesis", "validate", "write")
     assert available_task_names() == (
+        "build-shell-project",
         "build-vivado-artifacts",
         "flash",
         "hardware-plan",
