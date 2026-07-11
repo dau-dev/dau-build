@@ -140,3 +140,25 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
     tcl = (request.output_root / "build_mm_job.tcl").read_text()
     assert "my_mm_top.v" in tcl
     assert "stream_tile.sv" in tcl
+
+
+def test_project_tcl_matches_pre_fragment_goldens() -> None:
+    """The fragment refactor (shared preamble/postamble emitters) must not
+    change a byte of the generated scripts — these fixtures were captured
+    from the pre-refactor monolithic templates."""
+    fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
+    mm = MmJobShellRequest(
+        output_root=Path("/work/shell"),
+        hdl_sources=(Path("/src/tile.sv"), Path("/src/identity.v")),
+        generated_sources=(("my_top.v", "module my_top; endmodule\n"),),
+        top_module="my_top",
+    )
+    ddr = MmDdrJobShellRequest(
+        output_root=Path("/work/shell"),
+        hdl_sources=(Path("/src/tile.sv"),),
+        generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
+        top_module="my_ddr_top",
+        mig_prj=Path("/src/mig.prj"),
+    )
+    assert mm_job_shell_project_tcl(mm) == (fixtures / "mm_job_project.tcl").read_text()
+    assert mm_ddr_job_shell_project_tcl(ddr) == (fixtures / "mm_ddr_job_project.tcl").read_text()
