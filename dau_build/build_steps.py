@@ -760,7 +760,12 @@ class ValidateVivadoArtifactsTask(OverlayArtifactValidationTask):
         )
         if not validation.ok:
             raise BuildStepError(_vivado_artifact_validation_message(validation))
-        return BuildStepResult(step="validate-vivado-artifacts", message=_vivado_artifact_validation_message(validation))
+        from dau_build.shell_build import write_overlay_build_manifest
+
+        resolved_manifest = manifest_path if manifest_path.is_absolute() else self.work_root / manifest_path
+        packaged = write_overlay_build_manifest(self.work_root, resolved_manifest, name=self.artifact_stem) if resolved_manifest.is_file() else None
+        packaged_segment = f" artlink={packaged}" if packaged else ""
+        return BuildStepResult(step="validate-vivado-artifacts", message=_vivado_artifact_validation_message(validation) + packaged_segment)
 
     def _toolchain_config(self) -> HardwareToolchainConfig:
         return HardwareToolchainConfig(

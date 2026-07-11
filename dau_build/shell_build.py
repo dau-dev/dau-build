@@ -177,3 +177,53 @@ def write_shell_build_manifest(
     manifest_path = output_root / SHELL_BUILD_MANIFEST_NAME
     manifest_path.write_text(yaml.safe_dump(manifest.model_dump(mode="json", exclude_defaults=True), sort_keys=False), encoding="utf-8")
     return manifest_path
+
+
+def write_overlay_build_manifest(work_root: Path, key_value_manifest_path: Path, *, name: str) -> Path | None:
+    """Package a *built* overlay backend run as an artlink manifest beside
+    its key=value handoff (the Tcl-side format stays as the in-band
+    mechanism; provenance converges on artlink). Returns None when the
+    key=value manifest is still ``planned`` — there is nothing to package
+    yet."""
+    from dau_build.vivado_backend import _parse_manifest_text
+
+    items, errors = _parse_manifest_text(key_value_manifest_path.read_text(encoding="utf-8"))
+    if errors:
+        raise ShellBuildError(f"invalid key=value manifest {key_value_manifest_path.as_posix()}: {'; '.join(errors)}")
+    manifest = dict(items)
+    if manifest.get("build_status") != "built":
+        return None
+
+    def resolve(key: str) -> Path | None:
+        value = manifest.get(key)
+        if not value:
+            return None
+        path = Path(value)
+        return path if path.is_absolute() else work_root / path
+
+    bitstream_path = resolve("bitstream")
+    if bitstream_path is None or not bitstream_path.is_file():
+        raise ShellBuildError(f"built manifest names no existing bitstream: {key_value_manifest_path.as_posix()}")
+
+    artifacts: list[Artifact] = [Artifact(path=bitstream_path, kind="binary", role="bitstream", digest=_digest(bitstream_path))]
+    for key, role in (
+        ("resource_summary", "report"),
+        ("timing_summary", "report"),
+        ("vivado_log", "build-log"),
+        ("overlay", "generated-project-input"),
+    ):
+        path = resolve(key)
+        if path is not None and path.is_file():
+            artifacts.append(Artifact(path=path, kind="metadata" if role != "generated-project-input" else "source", role=role))
+
+    packaged = ArtifactManifest(
+        name=name,
+        intent="output",
+        artifacts=tuple(artifacts),
+        metadata={"build_status": "built", **{k: v for k, v in manifest.items() if k not in ("build_status",)}},
+    )
+    import yaml
+
+    manifest_path = key_value_manifest_path.with_suffix(".artifacts.yaml")
+    manifest_path.write_text(yaml.safe_dump(packaged.model_dump(mode="json", exclude_defaults=True), sort_keys=False), encoding="utf-8")
+    return manifest_path
