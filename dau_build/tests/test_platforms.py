@@ -117,6 +117,47 @@ def test_resolve_platform_rejects_unknown() -> None:
         resolve_platform("no-such-board")
 
 
+def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
+    # a user overlay registers a brand-new board with zero dau-build source
+    # changes — the board is built from scratch via hydra _target_, proving
+    # PlatformDefinition and its parts are overlay-instantiable (P0.3)
+    from dau_build.config import resolve_platform
+
+    overlay = tmp_path / "user-configs"
+    (overlay / "platform").mkdir(parents=True)
+    (overlay / "platform" / "myboard.yaml").write_text(
+        "\n".join(
+            (
+                "# @package platform",
+                "_target_: dau_build.platforms.PlatformDefinition",
+                "name: myboard",
+                "part: xc7k70tfbg484-2",
+                "budget:",
+                "  _target_: dau_build.platforms.ResourceBudget",
+                "  lut: 41000",
+                "  ff: 82000",
+                "  bram36: 135",
+                "  dsp: 240",
+                "host_link:",
+                "  _target_: dau_build.platforms.HostLink",
+                "  interface: pcie-xdma",
+                "  pcie_lanes: 1",
+                "memory:",
+                "  _target_: dau_build.platforms.PlatformMemory",
+                "  kind: ddr3",
+                "  size_bytes: 1073741824",
+            )
+        )
+    )
+    board = resolve_platform("myboard", config_dir=str(overlay))
+    assert board.name == "myboard"
+    assert board.part == "xc7k70tfbg484-2"
+    assert board.budget.lut == 41000
+    assert board.host_link.pcie_lanes == 1
+    # the packaged dpv1 board still resolves alongside the overlay
+    assert resolve_platform("dpv1", config_dir=str(overlay)) == dpv1_platform()
+
+
 def _dpv1_with(**overrides: object) -> PlatformDefinition:
     base = dict(
         name="dpv1",
