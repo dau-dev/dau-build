@@ -7,8 +7,6 @@ from typing import Any, ClassVar, Literal, TypeVar
 from ccflow import CallableModel, Flow, NullContext, ResultBase
 from pydantic import Field, ValidationError, field_validator
 
-from dau_build.build_config import resolve_build_config
-from dau_build.build_spec import dau_build_spec_summary, generate_dau_build_artifacts, load_dau_build_spec, write_dau_build_artifacts
 from dau_build.hardware_plan import (
     HardwareToolchainConfig,
     build_and_program_plan,
@@ -34,6 +32,21 @@ from dau_build.vivado_backend import (
     VivadoProjectArtifactValidation,
     generate_vivado_backend_artifacts,
 )
+
+
+def _build_spec_api():
+    """Deferred: dau_build.build_spec pulls the SV parser stack (amaranth,
+    pyslang), which hardware hosts running flash/shell tasks never need."""
+    from dau_build import build_spec
+
+    return build_spec
+
+
+def _resolve_build_config(spec, overrides):
+    """Deferred for the same reason: build_config imports build_spec."""
+    from dau_build.build_config import resolve_build_config
+
+    return resolve_build_config(spec, overrides)
 
 
 class BuildStepError(ValueError):
@@ -101,7 +114,7 @@ class SpecPathModel(ConfigOverrideModel):
     spec_path: Path
 
     def load_spec(self):
-        return load_dau_build_spec(self.spec_path)
+        return _build_spec_api().load_dau_build_spec(self.spec_path)
 
 
 class ModuleSelectionModel(SpecPathModel):
@@ -119,7 +132,7 @@ class ModuleSelectionModel(SpecPathModel):
 class InspectStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        return BuildStepResult(step="inspect", message=dau_build_spec_summary(self.load_spec()))
+        return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
 
 
 class ValidateStep(SpecPathModel):
@@ -134,7 +147,7 @@ class GenerateStep(SpecPathModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        artifacts = generate_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
+        artifacts = _build_spec_api().generate_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
         return BuildStepResult(
             step="generate",
             message=f"dau-build-artifacts-generated\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}",
@@ -146,14 +159,14 @@ class WriteStep(SpecPathModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        artifacts = write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
+        artifacts = _build_spec_api().write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
         return BuildStepResult(step="write", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
 
 
 class ResolvedConfigStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        resolved = resolve_build_config(self.load_spec(), self.override_mapping())
+        resolved = _resolve_build_config(self.load_spec(), self.override_mapping())
         return BuildStepResult(step="resolved-config", message=resolved.to_text())
 
 
@@ -176,8 +189,8 @@ class SimulateStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolve_build_config(spec, self.override_mapping())
-        generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_path.parent / ".dau-build-sim")
+        _resolve_build_config(spec, self.override_mapping())
+        _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_path.parent / ".dau-build-sim")
         if self.simulate_engine == "verilator":
             return self._run_verilator(spec)
         return BuildStepResult(
@@ -251,8 +264,8 @@ class SynthesisStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = resolve_build_config(spec, self.override_mapping())
-        artifacts = write_dau_build_artifacts(spec, output_root=self.output_root)
+        resolved = _resolve_build_config(spec, self.override_mapping())
+        artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         return BuildStepResult(
             step="synthesis",
             message=(
@@ -266,7 +279,7 @@ class ExplainStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = resolve_build_config(spec, self.override_mapping())
+        resolved = _resolve_build_config(spec, self.override_mapping())
         return BuildStepResult(
             step="explain",
             message="\n".join(
@@ -309,8 +322,8 @@ class SimulateTask(ModuleSelectionModel):
         spec = self.load_spec_and_validate_module()
         output_root = self.output_root or self.spec_path.parent / ".dau-build-sim"
         if self.simulator in {"svparser", "cocotb"}:
-            resolve_build_config(spec, self.override_mapping())
-            generate_dau_build_artifacts(spec, output_root=output_root)
+            _resolve_build_config(spec, self.override_mapping())
+            _build_spec_api().generate_dau_build_artifacts(spec, output_root=output_root)
             return BuildStepResult(
                 step="simulate",
                 message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_path} status=validated",
@@ -366,8 +379,8 @@ class SynthesizeTask(ModuleSelectionModel):
         spec = self.load_spec_and_validate_module()
         task_overrides = self.override_mapping()
         task_overrides["backend.name"] = self.engine
-        resolved = resolve_build_config(spec, task_overrides)
-        artifacts = write_dau_build_artifacts(spec, output_root=self.output_root)
+        resolved = _resolve_build_config(spec, task_overrides)
+        artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         backend_artifacts = _write_vivado_backend_handoff(
             spec,
             selected_module=self.module,

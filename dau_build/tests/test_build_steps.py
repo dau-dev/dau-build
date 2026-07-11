@@ -389,3 +389,20 @@ def _write_counter_profile_manifest(tmp_path: Path, testbench_path: Path) -> Pat
         encoding="utf-8",
     )
     return manifest_path
+
+
+def test_task_dispatch_import_stays_light() -> None:
+    """Hardware hosts run flash/shell tasks with none of the SV-parser
+    stack installed: importing the task surface must not pull it."""
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import dau_build.build_steps; heavy = [m for m in ('amaranth', 'pyslang', 'dau_sim') if m in sys.modules]; raise SystemExit(1 if heavy else 0)",
+        ],
+        capture_output=True,
+    )
+    assert completed.returncode == 0, completed.stderr.decode()
