@@ -12,10 +12,9 @@ The resource input to ``fits()`` is duck-typed (any object exposing
 so this public module never imports the private core, respecting the
 public/private wall.
 
-This is the schema (roadmap P0.1). Reconciling dpv1's authoritative values
-(the full XDMA personality map, constraint files) and resolving them
-through a hydra config group is P0.2 — ``dpv1_platform()`` here is a
-representative instance for the schema, not yet the build's source of truth.
+``dpv1_platform()`` is reconciled with the authoritative build constants
+(``DPV1_PART``, ``DPV1_XDMA_PERSONALITY``) and is resolvable through the
+``platform`` hydra config group (``resolve_platform("dpv1")``).
 """
 
 from __future__ import annotations
@@ -158,19 +157,39 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
     return FitReport(fits=all(value >= 0 for value in headroom.values()), headroom=headroom, utilization=utilization)
 
 
-def dpv1_platform() -> PlatformDefinition:
-    """Representative dpv1 (NiteFury XC7A200T) platform — the P0.1 schema
-    example. The XDMA personality map and constraint files are populated in
-    P0.2 from ``dau_build.dpv1_shell.DPV1_XDMA_PERSONALITY``; until then this
-    is a schema demonstration, not the authoritative build source.
+def _pcie_lanes_from_personality(personality: Mapping[str, str]) -> int:
+    """Derive the PCIe link width (an int) from the XDMA personality's
+    ``pl_link_cap_max_link_width`` (``"X4"`` → ``4``) so the lane count has
+    the same single source as the rest of the endpoint configuration."""
+    width = personality.get("pl_link_cap_max_link_width", "")
+    if not width.upper().startswith("X") or not width[1:].isdigit():
+        raise PlatformError(f"cannot parse pcie lane width from personality: {width!r}")
+    return int(width[1:])
 
-    Budget: XC7A200T-2FBG484 (134,600 LUT / 269,200 FF / 365 BRAM36 / 740
-    DSP48E1). Memory: 1 GiB DDR3-800 (~1.6 GB/s). Link: XDMA PCIe Gen2 x4."""
+
+def dpv1_platform() -> PlatformDefinition:
+    """The dpv1 (NiteFury XC7A200T) platform, reconciled with the
+    authoritative build constants: ``part`` and the XDMA personality map
+    (and the PCIe lane count derived from it) come from
+    ``dau_build.dpv1_shell`` — the personality stays defined once, so the
+    47-parameter map cannot drift from what the shell builds with.
+
+    Budget is the XC7A200T-2FBG484 datasheet capacity (134,600 LUT /
+    269,200 FF / 365 BRAM36 / 740 DSP48E1); memory is the board's 1 GiB
+    DDR3-800 (~1.6 GB/s) fronted by the vendored ``dpv1_mig.prj``. Shell
+    constraints are generated per build (``dpv1_constraints_xdc``), not
+    static platform files, so ``constraints`` is empty here."""
+    from dau_build.dpv1_shell import DPV1_PART, DPV1_XDMA_PERSONALITY
+
     return PlatformDefinition(
         name="dpv1",
-        part="xc7a200tfbg484-2",
+        part=DPV1_PART,
         budget=ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
-        host_link=HostLink(interface="pcie-xdma", pcie_lanes=4),
+        host_link=HostLink(
+            interface="pcie-xdma",
+            pcie_lanes=_pcie_lanes_from_personality(DPV1_XDMA_PERSONALITY),
+            xdma_personality=dict(DPV1_XDMA_PERSONALITY),
+        ),
         memory=PlatformMemory(kind="ddr3", size_bytes=1 << 30, mig_prj="dpv1_mig.prj", bandwidth_bytes_per_s=1_600_000_000),
         program_method="jtag",
     )

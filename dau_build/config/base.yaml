@@ -4,6 +4,7 @@ defaults:
   - _self_
   - optional task: null
   - optional step: null
+  - optional platform: null
   - callable: callable
 
 context: {}

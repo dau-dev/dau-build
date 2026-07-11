@@ -8,7 +8,20 @@ from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-__all__ = ("compose_config", "load_config", "request_config", "run_request_config")
+__all__ = ("compose_config", "load_config", "request_config", "resolve_platform", "run_request_config")
+
+
+def resolve_platform(name: str, *, config_dir: str | None = None, version_base: str | None = None):
+    """Resolve a platform from the ``platform`` hydra config group to a
+    ``dau_build.platforms.PlatformDefinition`` (user ``--config-dir``
+    overlays may add boards). ``resolve_platform("dpv1")`` returns the
+    reconciled dpv1 platform."""
+    from hydra.utils import instantiate
+
+    result = _load_base_config((f"platform={name}",), config_dir=config_dir, version_base=version_base)
+    if "platform" not in result.cfg or result.cfg.platform is None:
+        raise KeyError(f"unknown platform {name!r}")
+    return instantiate(result.cfg.platform)
 
 
 def load_config(
