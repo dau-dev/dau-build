@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-import yaml
+from pydantic import ValidationError
 
 from dau_build.platforms import (
     HostLink,
     PlatformDefinition,
-    PlatformError,
     PlatformMemory,
     ResourceBudget,
+    XdmaPersonality,
     dpv1_platform,
     fits,
 )
@@ -27,10 +27,9 @@ class _Use:
     dsp: int
 
 
-def test_dpv1_round_trips_through_yaml() -> None:
+def test_dpv1_round_trips_through_model_serialization() -> None:
     platform = dpv1_platform()
-    reloaded = PlatformDefinition.from_dict(yaml.safe_load(yaml.safe_dump(platform.to_dict())))
-    assert reloaded == platform
+    assert PlatformDefinition.model_validate(platform.model_dump()) == platform
 
 
 def test_round_trip_preserves_personality_and_constraints() -> None:
@@ -38,33 +37,38 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
         name="probe",
         part="xc7k325tffg676-2",
         budget=ResourceBudget(lut=203800, ff=407600, bram36=445, dsp=840),
-        host_link=HostLink(interface="pcie-xdma", pcie_lanes=8, xdma_personality={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
+        host_link=HostLink(
+            interface="pcie-xdma",
+            pcie_lanes=8,
+            xdma_personality=XdmaPersonality(params={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
+        ),
         memory=PlatformMemory(kind="ddr3", size_bytes=8 << 30),
         constraints=("pins.xdc", "timing.xdc"),
         program_method="flash",
     )
-    reloaded = PlatformDefinition.from_dict(yaml.safe_load(yaml.safe_dump(platform.to_dict())))
+    reloaded = PlatformDefinition.model_validate(platform.model_dump())
     assert reloaded == platform
-    assert reloaded.host_link.xdma_personality["pl_link_cap_max_link_width"] == "X8"
+    assert reloaded.host_link.xdma_personality.params["pl_link_cap_max_link_width"] == "X8"
     assert reloaded.constraints == ("pins.xdc", "timing.xdc")
 
 
+def test_personality_emits_tcl_config_and_derives_link_width() -> None:
+    personality = XdmaPersonality(params={"pl_link_cap_max_link_width": "X4", "axisten_freq": "125"})
+    assert personality.link_width() == 4
+    assert personality.to_tcl_config() == "    CONFIG.pl_link_cap_max_link_width {X4} \\\n    CONFIG.axisten_freq {125}"
+
+
 def test_validation_rejects_bad_values() -> None:
-    with pytest.raises(PlatformError, match="lut must be positive"):
+    with pytest.raises(ValidationError, match="lut must be positive"):
         ResourceBudget(lut=0, ff=1, bram36=1, dsp=1)
-    with pytest.raises(PlatformError, match="pcie_lanes"):
+    with pytest.raises(ValidationError, match="pcie_lanes"):
         HostLink(interface="pcie-xdma", pcie_lanes=3)
-    with pytest.raises(PlatformError, match="size_bytes"):
+    with pytest.raises(ValidationError, match="size_bytes"):
         PlatformMemory(kind="ddr3", size_bytes=0)
-    with pytest.raises(PlatformError, match="program_method"):
+    with pytest.raises(ValidationError, match="program_method"):
         _dpv1_with(program_method="usb")
-    with pytest.raises(PlatformError, match="part must be non-empty"):
+    with pytest.raises(ValidationError, match="part must be non-empty"):
         _dpv1_with(part="")
-
-
-def test_from_dict_reports_malformed_input() -> None:
-    with pytest.raises(PlatformError, match="malformed"):
-        PlatformDefinition.from_dict({"name": "x"})  # missing part/budget/link/memory
 
 
 def test_fits_under_and_over_budget() -> None:
@@ -95,13 +99,18 @@ def test_dpv1_platform_reconciles_with_authoritative_shell_constants() -> None:
 
     platform = dpv1_platform()
     # part and the 47-parameter personality are sourced from the shell, not
-    # duplicated — the P0.2 gate: resolved values equal the build constants
+    # duplicated — the resolved values equal the build constants
     assert platform.part == DPV1_PART
-    assert platform.host_link.xdma_personality == dict(DPV1_XDMA_PERSONALITY)
-    assert len(platform.host_link.xdma_personality) == 47
+    assert platform.host_link.xdma_personality.params == dict(DPV1_XDMA_PERSONALITY)
+    assert len(platform.host_link.xdma_personality.params) == 47
     # lane count derives from the personality's link-width, not a literal
     assert platform.host_link.pcie_lanes == 4
     assert platform.memory.mig_prj == "dpv1_mig.prj"
+    # the emitted CONFIG block matches the shell's own inline emission
+    from dau_build.dpv1_shell import DPV1_XDMA_PERSONALITY as personality_map
+
+    expected = " \\\n".join(f"    CONFIG.{key} {{{value}}}" for key, value in personality_map.items())
+    assert platform.host_link.xdma_personality.to_tcl_config() == expected
 
 
 def test_platform_group_resolves_dpv1_through_hydra() -> None:
@@ -120,7 +129,7 @@ def test_resolve_platform_rejects_unknown() -> None:
 def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     # a user overlay registers a brand-new board with zero dau-build source
     # changes — the board is built from scratch via hydra _target_, proving
-    # PlatformDefinition and its parts are overlay-instantiable (P0.3)
+    # the models are overlay-instantiable
     from dau_build.config import resolve_platform
 
     overlay = tmp_path / "user-configs"

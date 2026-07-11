@@ -1,36 +1,56 @@
 """Platform definitions: boards as data.
 
 A ``PlatformDefinition`` captures what a build needs to know about a target
-board that is not the design itself — the FPGA part, the host link, the
-memory system, constraints, the programming method — plus a resource
-budget in the same units as dau-core's ``ResourceEnvelope`` (LUT/FF/BRAM36/
-DSP). ``fits()`` checks a composition's estimated resources against that
-budget before the design is built.
+board that is not the design itself — the FPGA part, the host link (with its
+XDMA personality), the memory system, constraints, the programming method —
+plus a resource budget in the same units as dau-core's ``ResourceEnvelope``
+(LUT/FF/BRAM36/DSP). ``fits()`` checks a composition's estimated resources
+against that budget before the design is built.
+
+These are ``ccflow.BaseModel`` (pydantic) models, selected and composed
+through the ``platform`` hydra config group like the task tree — validation,
+serialization, and CLI field overrides come from pydantic, not hand-rolled.
 
 The resource input to ``fits()`` is duck-typed (any object exposing
 ``lut``/``ff``/``bram36``/``dsp`` — dau-core's ``ResourceEnvelope`` does)
 so this public module never imports the private core, respecting the
 public/private wall.
-
-``dpv1_platform()`` is reconciled with the authoritative build constants
-(``DPV1_PART``, ``DPV1_XDMA_PERSONALITY``) and is resolvable through the
-``platform`` hydra config group (``resolve_platform("dpv1")``).
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Mapping, Protocol
+from typing import Protocol
+
+from ccflow import BaseModel
+from pydantic import Field, field_validator
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
 
 
-class PlatformError(ValueError):
-    pass
+class XdmaPersonality(BaseModel):
+    """The XDMA endpoint's complete set of ``value_src=user`` XCI
+    parameters, applied verbatim — the dpv1 bring-up proved a hand-picked
+    subset leaves the core memory-dead (BARs enumerate, reads all ones), so
+    the personality is the *complete* customization. ``to_tcl_config``
+    emits the Vivado ``CONFIG.*`` block the shell project Tcl is built with;
+    keeping it here (not inline in the shell generator) makes it reusable
+    across platforms."""
+
+    params: dict[str, str] = Field(default_factory=dict)
+
+    def to_tcl_config(self, *, indent: str = "    ") -> str:
+        return " \\\n".join(f"{indent}CONFIG.{key} {{{value}}}" for key, value in self.params.items())
+
+    def link_width(self) -> int:
+        """PCIe lane count from ``pl_link_cap_max_link_width`` (``"X4"`` →
+        ``4``) — one source for the endpoint's lane configuration."""
+        width = self.params.get("pl_link_cap_max_link_width", "")
+        if not width.upper().startswith("X") or not width[1:].isdigit():
+            raise ValueError(f"cannot parse pcie lane width from personality: {width!r}")
+        return int(width[1:])
 
 
-@dataclass(frozen=True)
-class ResourceBudget:
+class ResourceBudget(BaseModel):
     """Placeable capacity of a platform, in ``ResourceEnvelope`` units."""
 
     lut: int
@@ -38,31 +58,37 @@ class ResourceBudget:
     bram36: float
     dsp: int
 
-    def __post_init__(self) -> None:
-        for name in ("lut", "ff", "bram36", "dsp"):
-            if getattr(self, name) <= 0:
-                raise PlatformError(f"resource budget {name} must be positive")
+    @field_validator("lut", "ff", "bram36", "dsp")
+    @classmethod
+    def _positive(cls, value: float, info) -> float:
+        if value <= 0:
+            raise ValueError(f"resource budget {info.field_name} must be positive")
+        return value
 
 
-@dataclass(frozen=True)
-class HostLink:
-    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards. The
-    personality map is the set of XCI user parameters the shell's endpoint
-    is customized with (empty until P0.2 populates it)."""
+class HostLink(BaseModel):
+    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards."""
 
     interface: str
     pcie_lanes: int
-    xdma_personality: Mapping[str, str] = field(default_factory=dict)
+    xdma_personality: XdmaPersonality = Field(default_factory=XdmaPersonality)
 
-    def __post_init__(self) -> None:
-        if not self.interface:
-            raise PlatformError("host link interface must be non-empty")
-        if self.pcie_lanes not in _PCIE_LANE_WIDTHS:
-            raise PlatformError(f"pcie_lanes must be one of {_PCIE_LANE_WIDTHS}, got {self.pcie_lanes}")
+    @field_validator("interface")
+    @classmethod
+    def _interface_nonempty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("host link interface must be non-empty")
+        return value
+
+    @field_validator("pcie_lanes")
+    @classmethod
+    def _valid_lane_width(cls, value: int) -> int:
+        if value not in _PCIE_LANE_WIDTHS:
+            raise ValueError(f"pcie_lanes must be one of {_PCIE_LANE_WIDTHS}, got {value}")
+        return value
 
 
-@dataclass(frozen=True)
-class PlatformMemory:
+class PlatformMemory(BaseModel):
     """The device-side memory a design stages through."""
 
     kind: str
@@ -70,17 +96,29 @@ class PlatformMemory:
     mig_prj: str | None = None
     bandwidth_bytes_per_s: int | None = None
 
-    def __post_init__(self) -> None:
-        if not self.kind:
-            raise PlatformError("memory kind must be non-empty")
-        if self.size_bytes <= 0:
-            raise PlatformError("memory size_bytes must be positive")
-        if self.bandwidth_bytes_per_s is not None and self.bandwidth_bytes_per_s <= 0:
-            raise PlatformError("memory bandwidth_bytes_per_s must be positive when set")
+    @field_validator("kind")
+    @classmethod
+    def _kind_nonempty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("memory kind must be non-empty")
+        return value
+
+    @field_validator("size_bytes")
+    @classmethod
+    def _size_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("memory size_bytes must be positive")
+        return value
+
+    @field_validator("bandwidth_bytes_per_s")
+    @classmethod
+    def _bandwidth_positive(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("memory bandwidth_bytes_per_s must be positive when set")
+        return value
 
 
-@dataclass(frozen=True)
-class PlatformDefinition:
+class PlatformDefinition(BaseModel):
     """One target board as data."""
 
     name: str
@@ -91,39 +129,19 @@ class PlatformDefinition:
     constraints: tuple[str, ...] = ()
     program_method: str = "jtag"
 
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise PlatformError("platform name must be non-empty")
-        if not self.part:
-            raise PlatformError("platform part must be non-empty")
-        if self.program_method not in ("jtag", "flash"):
-            raise PlatformError(f"program_method must be 'jtag' or 'flash', got {self.program_method!r}")
-
-    def to_dict(self) -> dict:
-        """Plain nested dict/list form (yaml/hydra friendly)."""
-        return asdict(self)
-
+    @field_validator("name", "part")
     @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> PlatformDefinition:
-        """Reconstruct from a plain mapping (the inverse of ``to_dict``),
-        validating every field through the dataclass constructors."""
-        try:
-            host = data["host_link"]
-            return cls(
-                name=data["name"],
-                part=data["part"],
-                budget=ResourceBudget(**data["budget"]),
-                host_link=HostLink(
-                    interface=host["interface"],
-                    pcie_lanes=host["pcie_lanes"],
-                    xdma_personality=dict(host.get("xdma_personality") or {}),
-                ),
-                memory=PlatformMemory(**data["memory"]),
-                constraints=tuple(data.get("constraints") or ()),
-                program_method=data.get("program_method", "jtag"),
-            )
-        except (KeyError, TypeError) as exc:
-            raise PlatformError(f"malformed platform definition: {exc}") from exc
+    def _nonempty(cls, value: str, info) -> str:
+        if not value:
+            raise ValueError(f"platform {info.field_name} must be non-empty")
+        return value
+
+    @field_validator("program_method")
+    @classmethod
+    def _valid_program_method(cls, value: str) -> str:
+        if value not in ("jtag", "flash"):
+            raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
+        return value
 
 
 class ResourceUse(Protocol):
@@ -136,15 +154,14 @@ class ResourceUse(Protocol):
     dsp: int
 
 
-@dataclass(frozen=True)
-class FitReport:
+class FitReport(BaseModel):
     """Whether a design's resources fit a platform, with per-resource
     detail. ``headroom`` is ``budget - used`` (negative where over);
     ``utilization`` is ``used / budget``."""
 
     fits: bool
-    headroom: Mapping[str, float]
-    utilization: Mapping[str, float]
+    headroom: dict[str, float]
+    utilization: dict[str, float]
 
 
 def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
@@ -157,39 +174,25 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
     return FitReport(fits=all(value >= 0 for value in headroom.values()), headroom=headroom, utilization=utilization)
 
 
-def _pcie_lanes_from_personality(personality: Mapping[str, str]) -> int:
-    """Derive the PCIe link width (an int) from the XDMA personality's
-    ``pl_link_cap_max_link_width`` (``"X4"`` → ``4``) so the lane count has
-    the same single source as the rest of the endpoint configuration."""
-    width = personality.get("pl_link_cap_max_link_width", "")
-    if not width.upper().startswith("X") or not width[1:].isdigit():
-        raise PlatformError(f"cannot parse pcie lane width from personality: {width!r}")
-    return int(width[1:])
-
-
 def dpv1_platform() -> PlatformDefinition:
     """The dpv1 (NiteFury XC7A200T) platform, reconciled with the
-    authoritative build constants: ``part`` and the XDMA personality map
-    (and the PCIe lane count derived from it) come from
-    ``dau_build.dpv1_shell`` — the personality stays defined once, so the
-    47-parameter map cannot drift from what the shell builds with.
+    authoritative build constants: ``part`` and the XDMA personality (and
+    the PCIe lane count derived from it) come from ``dau_build.dpv1_shell``
+    — the personality stays defined once, so the 47-parameter map cannot
+    drift from what the shell builds with.
 
     Budget is the XC7A200T-2FBG484 datasheet capacity (134,600 LUT /
     269,200 FF / 365 BRAM36 / 740 DSP48E1); memory is the board's 1 GiB
     DDR3-800 (~1.6 GB/s) fronted by the vendored ``dpv1_mig.prj``. Shell
-    constraints are generated per build (``dpv1_constraints_xdc``), not
-    static platform files, so ``constraints`` is empty here."""
+    constraints are generated per build, so ``constraints`` is empty."""
     from dau_build.dpv1_shell import DPV1_PART, DPV1_XDMA_PERSONALITY
 
+    personality = XdmaPersonality(params=dict(DPV1_XDMA_PERSONALITY))
     return PlatformDefinition(
         name="dpv1",
         part=DPV1_PART,
         budget=ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
-        host_link=HostLink(
-            interface="pcie-xdma",
-            pcie_lanes=_pcie_lanes_from_personality(DPV1_XDMA_PERSONALITY),
-            xdma_personality=dict(DPV1_XDMA_PERSONALITY),
-        ),
+        host_link=HostLink(interface="pcie-xdma", pcie_lanes=personality.link_width(), xdma_personality=personality),
         memory=PlatformMemory(kind="ddr3", size_bytes=1 << 30, mig_prj="dpv1_mig.prj", bandwidth_bytes_per_s=1_600_000_000),
         program_method="jtag",
     )
