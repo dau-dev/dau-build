@@ -75,3 +75,53 @@ def test_custom_verilator_profile_loads_sources_from_artlink_manifest(tmp_path: 
 def test_unknown_profile_error_lists_available_profiles() -> None:
     with pytest.raises(SimulationProfileError, match="expected one of: $"):
         resolve_verilator_profile("missing-profile")
+
+
+def test_cocotb_profile_parses_and_runs_through_simulate_task(tmp_path) -> None:
+    """A simulator: cocotb profile resolves through the same manifest chain
+    and task=simulate runs it via dau-sim's canonical cocotb launcher."""
+    from shutil import which
+
+    import pytest as _pytest
+    from dau_sim.integrations.cocotb import CocotbProfile
+
+    from dau_build.build_steps import SimulateTask
+    from dau_build.simulation_profiles import resolve_profile
+
+    profiles_yaml = tmp_path / "profiles.yaml"
+    profiles_yaml.write_text(
+        "schema: dau.simulation-profile/v0\n"
+        "profiles:\n"
+        "  - name: ready-valid-sum-cocotb\n"
+        "    simulator: cocotb\n"
+        "    top_module: ready_valid_sum\n"
+        "    test_module: dau_sim.tests.cocotb_benches.ready_valid_sum_tb\n"
+        "    sources:\n"
+        "      - uri: package://dau_sim/tests/sv/ready_valid_sum.sv\n"
+    )
+    manifest_yaml = tmp_path / "profiles.artifacts.yaml"
+    manifest_yaml.write_text(
+        "schema: artlink.manifest/v0\n"
+        "name: test-cocotb-profiles\n"
+        "intent: simulation-profiles\n"
+        "artifacts:\n"
+        "  - id: profiles\n"
+        f"    path: {profiles_yaml.name}\n"
+        "    kind: metadata\n"
+        "    role: simulation-profile\n"
+        "    format: dau.simulation-profile/v0\n"
+    )
+
+    profile = resolve_profile("ready-valid-sum-cocotb", profile_manifests=(manifest_yaml,))
+    assert isinstance(profile, CocotbProfile)
+    assert profile.hdl_toplevel == "ready_valid_sum"
+
+    if which("verilator") is None:
+        _pytest.skip("verilator not found")
+    result = SimulateTask(
+        simulator="cocotb",
+        profile="ready-valid-sum-cocotb",
+        profile_manifest=(manifest_yaml,),
+        output_root=tmp_path / "work",
+    )(None)
+    assert "simulator=cocotb" in result.message and "status=passed" in result.message

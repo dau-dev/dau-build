@@ -107,17 +107,27 @@ def _verilator_profile_from_mapping(
     *,
     artifacts_by_id: Mapping[str, Artifact],
     root: Path,
-) -> VerilatorProfile:
+):
     name = _required_str(profile, "name")
     simulator = _required_str(profile, "simulator")
-    if simulator != "verilator":
-        raise SimulationProfileError(f"profile {name!r} uses unsupported simulator {simulator!r}; expected verilator")
-    return VerilatorProfile(
-        name=name,
-        sources=_profile_sources(profile.get("sources", ()), artifacts_by_id=artifacts_by_id, root=root),
-        top_module=_required_str(profile, "top_module"),
-        expect_stdout=_required_str(profile, "expect_stdout"),
-    )
+    sources = _profile_sources(profile.get("sources", ()), artifacts_by_id=artifacts_by_id, root=root)
+    if simulator == "verilator":
+        return VerilatorProfile(
+            name=name,
+            sources=sources,
+            top_module=_required_str(profile, "top_module"),
+            expect_stdout=_required_str(profile, "expect_stdout"),
+        )
+    if simulator == "cocotb":
+        from dau_sim.integrations.cocotb import CocotbProfile
+
+        return CocotbProfile(
+            name=name,
+            sources=sources,
+            hdl_toplevel=_required_str(profile, "top_module"),
+            test_module=_required_str(profile, "test_module"),
+        )
+    raise SimulationProfileError(f"profile {name!r} uses unsupported simulator {simulator!r}; expected verilator or cocotb")
 
 
 def _profile_sources(value: Any, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> tuple[Path, ...]:

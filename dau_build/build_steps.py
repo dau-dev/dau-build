@@ -315,7 +315,7 @@ class SimulateTask(ModuleSelectionModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        if self.simulator == "verilator" and self.profile and self.spec_path is None:
+        if self.simulator in ("verilator", "cocotb") and self.profile and self.spec_path is None:
             return self._run_registered_profile()
         if self.spec_path is None or not self.module:
             raise BuildStepError("task=simulate requires spec_path and module (or simulator=verilator profile=<name> for a registered profile)")
@@ -352,6 +352,7 @@ class SimulateTask(ModuleSelectionModel):
         return BuildStepResult(step="simulate", message=f"{result.message} task=simulate simulator=verilator module={self.module}")
 
     def _run_registered_profile(self) -> BuildStepResult:
+        from dau_sim.integrations.cocotb import CocotbProfile, run_cocotb_testbench
         from dau_sim.integrations.verilator import run_verilator_testbench
 
         from dau_build.simulation_profiles import resolve_profile
@@ -360,6 +361,18 @@ class SimulateTask(ModuleSelectionModel):
         work_root = self.output_root or Path.cwd() / ".dau-build-sim"
         work_dir = work_root / profile.name
         work_dir.mkdir(parents=True, exist_ok=True)
+        if isinstance(profile, CocotbProfile):
+            # the cocotb runner raises on any failing test
+            run_cocotb_testbench(
+                sources=profile.sources,
+                hdl_toplevel=profile.hdl_toplevel,
+                test_module=profile.test_module,
+                build_dir=work_dir,
+            )
+            return BuildStepResult(
+                step="simulate",
+                message=f"dau-build-simulate	task=simulate simulator=cocotb profile={profile.name} status=passed",
+            )
         result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=work_dir)
         marker = self.expect_stdout or profile.expect_stdout
         if marker not in result.stdout:
