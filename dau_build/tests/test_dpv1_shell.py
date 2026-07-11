@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from dau_build.dpv1_shell import (
-    DPV1_XDMA_PERSONALITY,
     GT_LANE_SWIZZLE,
     MmDdrJobShellRequest,
     MmJobShellRequest,
     dpv1_constraints_xdc,
     dpv1_ddr_constraints_xdc,
+    dpv1_xdma_personality,
     gt_lane_swizzle_hook_tcl,
     mm_ddr_job_shell_project_tcl,
     mm_job_shell_project_tcl,
@@ -32,18 +32,18 @@ def _request(tmp_path: Path) -> MmJobShellRequest:
 
 def test_personality_mirrors_the_proven_shell() -> None:
     # the hardware rules: 64-bit prefetchable BARs, 128K KB-scale AXI-Lite, QPLL1
-    assert DPV1_XDMA_PERSONALITY["axil_master_64bit_en"] == "true"
-    assert DPV1_XDMA_PERSONALITY["axil_master_prefetchable"] == "true"
-    assert DPV1_XDMA_PERSONALITY["xdma_pcie_prefetchable"] == "true"
-    assert DPV1_XDMA_PERSONALITY["axilite_master_scale"] == "Kilobytes"
-    assert DPV1_XDMA_PERSONALITY["axilite_master_size"] == "128"
-    assert DPV1_XDMA_PERSONALITY["plltype"] == "QPLL1"
-    assert DPV1_XDMA_PERSONALITY["pf0_device_id"] == "7011"
+    assert dpv1_xdma_personality().params["axil_master_64bit_en"] == "true"
+    assert dpv1_xdma_personality().params["axil_master_prefetchable"] == "true"
+    assert dpv1_xdma_personality().params["xdma_pcie_prefetchable"] == "true"
+    assert dpv1_xdma_personality().params["axilite_master_scale"] == "Kilobytes"
+    assert dpv1_xdma_personality().params["axilite_master_size"] == "128"
+    assert dpv1_xdma_personality().params["plltype"] == "QPLL1"
+    assert dpv1_xdma_personality().params["pf0_device_id"] == "7011"
 
 
 def test_project_tcl_embeds_personality_staging_and_hook(tmp_path: Path) -> None:
     text = mm_job_shell_project_tcl(_request(tmp_path))
-    for key, value in DPV1_XDMA_PERSONALITY.items():
+    for key, value in dpv1_xdma_personality().params.items():
         assert f"CONFIG.{key} {{{value}}}" in text
     # staging layout from the register contract
     assert "-offset 0x00000000 -range 0x00020000" in text  # input BRAM
@@ -87,7 +87,7 @@ def _ddr_request(tmp_path: Path) -> MmDdrJobShellRequest:
 
 def test_ddr_project_tcl_embeds_mig_and_shared_memory_path(tmp_path: Path) -> None:
     text = mm_ddr_job_shell_project_tcl(_ddr_request(tmp_path))
-    for key, value in DPV1_XDMA_PERSONALITY.items():
+    for key, value in dpv1_xdma_personality().params.items():
         assert f"CONFIG.{key} {{{value}}}" in text
     # the memory controller comes from the vendored proven configuration
     assert "xilinx.com:ip:mig_7series" in text
