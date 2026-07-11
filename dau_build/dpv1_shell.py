@@ -26,6 +26,7 @@ DPV1_PART = "xc7a200tfbg484-2"
 # lane index -> GTPE2 channel site (reversed lane order on the DAU platform variant 1 (dpv1))
 GT_LANE_SWIZZLE = ((3, "GTPE2_CHANNEL_X0Y7"), (0, "GTPE2_CHANNEL_X0Y6"), (2, "GTPE2_CHANNEL_X0Y5"), (1, "GTPE2_CHANNEL_X0Y4"))
 
+
 # The XDMA personality (the 47 value_src=user XCI parameters, applied
 # verbatim — a hand-picked subset is memory-dead on hardware) lives in
 # config/platform/dpv1.yaml, the single source. Resolve it once per process.
