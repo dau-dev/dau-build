@@ -3,38 +3,43 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ccflow import BaseModel
+from pydantic import field_validator
+
 from dau_build.build_spec import DauBuildSpec
 
 
-@dataclass(frozen=True)
-class BoardConfig:
+class BoardConfig(BaseModel):
     name: str
     platform: str
     shell: str
 
 
-@dataclass(frozen=True)
-class BackendConfig:
+class BackendConfig(BaseModel):
     name: str
     invocation: str
 
 
-@dataclass(frozen=True)
-class DriverConfig:
+class DriverConfig(BaseModel):
     os: str
     transport: str
 
 
-@dataclass(frozen=True)
-class OperatorConfig:
+class OperatorConfig(BaseModel):
     set_name: str
     names: tuple[str, ...]
 
 
-@dataclass(frozen=True)
-class MemoryConfig:
-    host_staging_bytes: int
-    device_staging_bytes: int
+class MemoryConfig(BaseModel):
+    host_staging_bytes: int = 0
+    device_staging_bytes: int = 0
+
+    @field_validator("host_staging_bytes", "device_staging_bytes")
+    @classmethod
+    def _non_negative(cls, value: int, info) -> int:
+        if value < 0:
+            raise ValueError(f"{info.field_name} cannot be negative")
+        return value
 
 
 @dataclass(frozen=True)
@@ -91,9 +96,6 @@ def _int_override(overrides: Mapping[str, str], key: str, default: int) -> int:
     if raw is None:
         return default
     try:
-        value = int(raw, 0)
+        return int(raw, 0)
     except ValueError as exc:
         raise ValueError(f"override {key} must be an integer") from exc
-    if value < 0:
-        raise ValueError(f"override {key} cannot be negative")
-    return value
