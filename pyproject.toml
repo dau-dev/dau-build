@@ -12,7 +12,7 @@ authors = [
 description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
 keywords = []
 
@@ -33,7 +33,7 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-sim @ git+https://github.com/dau-dev/dau-sim.git",  # PyPI release predates CocotbProfile/run_cocotb_testbench; repin on next release
+    "dau-sim>=0.2.0",
     "dau-utils",
     "hydra-core",
     "pydantic",
@@ -74,7 +74,7 @@ Repository = "https://github.com/dau-dev/dau-build"
 Homepage = "https://github.com/dau-dev/dau-build"
 
 [tool.bumpversion]
-current_version = "0.1.0"
+current_version = "0.2.0"
 commit = true
 tag = true
 commit_args = "-s"
@@ -156,5 +156,3 @@ section-order = [
     "F403",
 ]
 
-[tool.hatch.metadata]
-allow-direct-references = true
