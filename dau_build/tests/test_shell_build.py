@@ -143,3 +143,26 @@ def test_task_reachable_from_config_tree() -> None:
     from dau_build.build_steps import available_task_names
 
     assert "build-shell-project" in available_task_names()
+
+
+def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None:
+    from dau_build.shell_build import write_overlay_build_manifest
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "overlay.bit").write_bytes(b"\x01\x02")
+    (work / "util.rpt").write_text("luts\n")
+    (work / "vivado.log").write_text("done\n")
+    kv = work / "dau-vivado.manifest"
+
+    kv.write_text("build_status=planned\nbitstream=overlay.bit\n")
+    assert write_overlay_build_manifest(work, kv, name="dau-vivado") is None
+
+    kv.write_text("build_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    packaged = write_overlay_build_manifest(work, kv, name="dau-vivado")
+    manifest = load_artifact_manifest(packaged)
+    assert manifest.metadata["build_status"] == "built"
+    roles = [artifact.role for artifact in manifest.artifacts]
+    assert roles.count("bitstream") == 1 and "report" in roles and "build-log" in roles
+    bitstream = next(a for a in manifest.artifacts if a.role == "bitstream")
+    assert bitstream.digest is not None
