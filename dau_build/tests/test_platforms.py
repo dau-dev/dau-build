@@ -90,6 +90,33 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
 
 
+def test_dpv1_platform_reconciles_with_authoritative_shell_constants() -> None:
+    from dau_build.dpv1_shell import DPV1_PART, DPV1_XDMA_PERSONALITY
+
+    platform = dpv1_platform()
+    # part and the 47-parameter personality are sourced from the shell, not
+    # duplicated — the P0.2 gate: resolved values equal the build constants
+    assert platform.part == DPV1_PART
+    assert platform.host_link.xdma_personality == dict(DPV1_XDMA_PERSONALITY)
+    assert len(platform.host_link.xdma_personality) == 47
+    # lane count derives from the personality's link-width, not a literal
+    assert platform.host_link.pcie_lanes == 4
+    assert platform.memory.mig_prj == "dpv1_mig.prj"
+
+
+def test_platform_group_resolves_dpv1_through_hydra() -> None:
+    from dau_build.config import resolve_platform
+
+    assert resolve_platform("dpv1") == dpv1_platform()
+
+
+def test_resolve_platform_rejects_unknown() -> None:
+    from dau_build.config import resolve_platform
+
+    with pytest.raises(KeyError, match="unknown platform"):
+        resolve_platform("no-such-board")
+
+
 def _dpv1_with(**overrides: object) -> PlatformDefinition:
     base = dict(
         name="dpv1",

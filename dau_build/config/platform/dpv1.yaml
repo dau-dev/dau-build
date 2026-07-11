@@ -1,0 +1,5 @@
+# @package platform
+
+# dpv1 (NiteFury XC7A200T) — points at the drift-free factory so the part
+# and 47-parameter XDMA personality stay sourced from dau_build.dpv1_shell.
+_target_: dau_build.platforms.dpv1_platform
