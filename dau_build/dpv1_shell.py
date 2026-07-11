@@ -18,6 +18,7 @@ XDMA). Hardware rules baked in (see dau-docs GUIDELINES):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 DPV1_PART = "xc7a200tfbg484-2"
@@ -25,61 +26,15 @@ DPV1_PART = "xc7a200tfbg484-2"
 # lane index -> GTPE2 channel site (reversed lane order on the DAU platform variant 1 (dpv1))
 GT_LANE_SWIZZLE = ((3, "GTPE2_CHANNEL_X0Y7"), (0, "GTPE2_CHANNEL_X0Y6"), (2, "GTPE2_CHANNEL_X0Y5"), (1, "GTPE2_CHANNEL_X0Y4"))
 
-# XDMA personality: byte-for-byte the proven shell's PCIe-facing configuration.
-DPV1_XDMA_PERSONALITY = {
-    # every value_src=user parameter from the proven bring-up core's XCI
-    # (xdma 4.1, extracted 2026-07-09), applied verbatim: fresh 2025.x
-    # customizations with only the "obvious" subset were memory-dead on
-    # hardware (BARs enumerate, all reads 0xFFFFFFFF), so the personality is
-    # the complete user-set customization, not a hand-picked one.
-    "mode_selection": "Advanced",
-    "pl_link_cap_max_link_width": "X4",
-    "pl_link_cap_max_link_speed": "5.0_GT/s",
-    "axi_data_width": "128_bit",
-    "axisten_freq": "125",
-    "xdma_axi_intf_mm": "AXI_Memory_Mapped",
-    "xdma_rnum_chnl": "1",
-    "xdma_wnum_chnl": "1",
-    "xdma_sts_ports": "false",
-    "axilite_master_en": "true",
-    "axilite_master_size": "128",
-    "axilite_master_scale": "Kilobytes",
-    "axil_master_64bit_en": "true",
-    "axil_master_prefetchable": "true",
-    "xdma_pcie_64bit_en": "true",
-    "xdma_pcie_prefetchable": "true",
-    "plltype": "QPLL1",
-    "cfg_mgmt_if": "false",
-    "copy_pf0": "true",
-    "runbit_fix": "false",
-    "en_ext_ch_gt_drp": "false",
-    "en_pcie_drp": "false",
-    "en_transceiver_status_ports": "false",
-    "enable_gen4": "false",
-    "vendor_id": "10EE",
-    "pf0_device_id": "7011",
-    "pf0_Use_Class_Code_Lookup_Assistant": "false",
-    "pf0_base_class_menu": "Device_was_built_before_Class_Code_definitions_were_finalized",
-    "pf0_sub_class_interface_menu": "All_currently_implemented_devices_except_VGA-compatible_devices",
-    "pf0_class_code": "120000",
-    "pf0_class_code_base": "12",
-    "pf0_class_code_sub": "00",
-    "pf0_class_code_interface": "00",
-    "pf0_subsystem_vendor_id": "0",
-    "pf0_subsystem_id": "0",
-    "pf0_msix_cap_table_bir": "BAR_3:2",
-    "pf0_msix_cap_pba_bir": "BAR_3:2",
-    "pf1_msix_cap_table_size": "000",
-    "pf1_msix_cap_table_offset": "00000000",
-    "pf1_msix_cap_pba_offset": "00000000",
-    "PF0_DEVICE_ID_mqdma": "9024",
-    "PF2_DEVICE_ID_mqdma": "9024",
-    "PF3_DEVICE_ID_mqdma": "9024",
-    "PF0_SRIOV_VF_DEVICE_ID": "0000",
-    "PF1_SRIOV_VF_DEVICE_ID": "A134",
-    "PF2_SRIOV_VF_DEVICE_ID": "A234",
-    "PF3_SRIOV_VF_DEVICE_ID": "A334",
-}
+# The XDMA personality (the 47 value_src=user XCI parameters, applied
+# verbatim — a hand-picked subset is memory-dead on hardware) lives in
+# config/platform/dpv1.yaml, the single source. Resolve it once per process.
+@lru_cache(maxsize=1)
+def dpv1_xdma_personality():
+    """The dpv1 XDMA personality, resolved from the platform config."""
+    from dau_build.config import resolve_platform
+
+    return resolve_platform("dpv1").host_link.xdma_personality
 
 
 @dataclass(frozen=True)
@@ -211,7 +166,7 @@ set_property CFGBVS VCCO [current_design]
 def _project_preamble_tcl(request, *, banner: str) -> str:
     """Shared create_project/add_files/constraints/XDMA-BD preamble: every
     dpv1 shell starts from the same proven PCIe front end."""
-    xdma_config = " \\\n".join(f"    CONFIG.{key} {{{value}}}" for key, value in DPV1_XDMA_PERSONALITY.items())
+    xdma_config = dpv1_xdma_personality().to_tcl_config()
     generated_paths = tuple(request.output_root / name for name, _ in request.generated_sources)
     sources = " \\\n".join(f'    "{path.as_posix()}"' for path in (*request.hdl_sources, *generated_paths))
     sv_typing = "\n".join(

@@ -94,23 +94,22 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
 
 
-def test_dpv1_platform_reconciles_with_authoritative_shell_constants() -> None:
-    from dau_build.dpv1_shell import DPV1_PART, DPV1_XDMA_PERSONALITY
+def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
+    from dau_build.dpv1_shell import DPV1_PART, dpv1_xdma_personality
 
     platform = dpv1_platform()
-    # part and the 47-parameter personality are sourced from the shell, not
-    # duplicated — the resolved values equal the build constants
-    assert platform.part == DPV1_PART
-    assert platform.host_link.xdma_personality.params == dict(DPV1_XDMA_PERSONALITY)
     assert len(platform.host_link.xdma_personality.params) == 47
-    # lane count derives from the personality's link-width, not a literal
-    assert platform.host_link.pcie_lanes == 4
+    # part stays a shell constant (request default); the config must not drift
+    assert platform.part == DPV1_PART
+    # lane count is consistent with the personality's link width
+    assert platform.host_link.pcie_lanes == platform.host_link.xdma_personality.link_width() == 4
     assert platform.memory.mig_prj == "dpv1_mig.prj"
-    # the emitted CONFIG block matches the shell's own inline emission
-    from dau_build.dpv1_shell import DPV1_XDMA_PERSONALITY as personality_map
-
-    expected = " \\\n".join(f"    CONFIG.{key} {{{value}}}" for key, value in personality_map.items())
-    assert platform.host_link.xdma_personality.to_tcl_config() == expected
+    # the shell's personality accessor resolves the same config
+    assert dpv1_xdma_personality() == platform.host_link.xdma_personality
+    # coerce-sensitive values survive yaml load intact
+    params = platform.host_link.xdma_personality.params
+    assert params["pf1_msix_cap_table_size"] == "000"
+    assert params["pf1_msix_cap_table_offset"] == "00000000"
 
 
 def test_platform_group_resolves_dpv1_through_hydra() -> None:

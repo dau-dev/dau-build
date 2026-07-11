@@ -175,24 +175,10 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
 
 
 def dpv1_platform() -> PlatformDefinition:
-    """The dpv1 (NiteFury XC7A200T) platform, reconciled with the
-    authoritative build constants: ``part`` and the XDMA personality (and
-    the PCIe lane count derived from it) come from ``dau_build.dpv1_shell``
-    — the personality stays defined once, so the 47-parameter map cannot
-    drift from what the shell builds with.
+    """The dpv1 (NiteFury XC7A200T) platform, resolved from its config
+    (``config/platform/dpv1.yaml``) — the single source for the part,
+    budget, memory, and the 47-parameter XDMA personality the shell builds
+    with. A convenience wrapper over ``resolve_platform("dpv1")``."""
+    from dau_build.config import resolve_platform
 
-    Budget is the XC7A200T-2FBG484 datasheet capacity (134,600 LUT /
-    269,200 FF / 365 BRAM36 / 740 DSP48E1); memory is the board's 1 GiB
-    DDR3-800 (~1.6 GB/s) fronted by the vendored ``dpv1_mig.prj``. Shell
-    constraints are generated per build, so ``constraints`` is empty."""
-    from dau_build.dpv1_shell import DPV1_PART, DPV1_XDMA_PERSONALITY
-
-    personality = XdmaPersonality(params=dict(DPV1_XDMA_PERSONALITY))
-    return PlatformDefinition(
-        name="dpv1",
-        part=DPV1_PART,
-        budget=ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
-        host_link=HostLink(interface="pcie-xdma", pcie_lanes=personality.link_width(), xdma_personality=personality),
-        memory=PlatformMemory(kind="ddr3", size_bytes=1 << 30, mig_prj="dpv1_mig.prj", bandwidth_bytes_per_s=1_600_000_000),
-        program_method="jtag",
-    )
+    return resolve_platform("dpv1")
