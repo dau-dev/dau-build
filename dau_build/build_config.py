@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 from ccflow import BaseModel
 from pydantic import field_validator
@@ -42,8 +41,7 @@ class MemoryConfig(BaseModel):
         return value
 
 
-@dataclass(frozen=True)
-class ResolvedBuildConfig:
+class ResolvedBuildConfig(BaseModel):
     spec: DauBuildSpec
     board: BoardConfig
     backend: BackendConfig
