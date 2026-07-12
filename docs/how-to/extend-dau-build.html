@@ -327,39 +327,40 @@ add <code class="docutils literal notranslate"><span class="pre">mypkg/config/pl
 <code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>. Select them with
 <code class="docutils literal notranslate"><span class="pre">board=boards/&lt;vendor&gt;/&lt;board&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
 </section>
-<section id="add-a-synthesis-backend">
-<h2>Add a synthesis backend<a class="headerlink" href="#add-a-synthesis-backend" title="Link to this heading">¶</a></h2>
-<p>Adding a <em>real</em> backend is more than a config file, because <code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> is
-only a label — the engine that runs codegen is <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code>. The
-yosys backend is the worked example of a second engine; read
+<section id="add-a-synthesis-engine">
+<h2>Add a synthesis engine<a class="headerlink" href="#add-a-synthesis-engine" title="Link to this heading">¶</a></h2>
+<p>The synthesis engine is the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group: each option instantiates a
+polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> delegates to
+<code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code> — there is no dispatch <code class="docutils literal notranslate"><span class="pre">if</span></code> to edit. <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> is
+the worked example; read
 <a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the backend section of the architecture explanation</span></a>
-first, then use <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> as the template. A new backend requires:</p>
+first, then use <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> + <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> as the template. A new engine
+requires:</p>
 <ol class="arabic">
-<li><p><strong>A backend label</strong>, so it is selectable. Add
-<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/&lt;name&gt;.yaml</span></code> reusing the existing model
-(this is exactly <code class="docutils literal notranslate"><span class="pre">backends/yosys.yaml</span></code>):</p>
+<li><p><strong>An engine model</strong> — a <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass with a <code class="docutils literal notranslate"><span class="pre">synthesize</span></code>
+method and whatever fields it needs (like <code class="docutils literal notranslate"><span class="pre">YosysEngine.frontend</span></code>). Its
+<code class="docutils literal notranslate"><span class="pre">synthesize</span></code> either generates a plan (Vivado’s Tcl/manifests) or generates and
+runs a tool (yosys’s script + <code class="docutils literal notranslate"><span class="pre">run_yosys_synthesis</span></code>). Put its heavy backend
+logic in a module paralleling <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code>.</p></li>
+<li><p><strong>A config option</strong> so it is selectable and configurable. Add
+<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/&lt;name&gt;.yaml</span></code> (this is exactly
+<code class="docutils literal notranslate"><span class="pre">backends/yosys.yaml</span></code>):</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package backend</span>
 
-<span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dau_build.build_config.BackendConfig</span>
+<span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypkg.engines.NextpnrEngine</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nextpnr</span>
 <span class="nt">invocation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standard</span>
 </pre></div>
 </div>
-<p>By itself this only changes the reported metadata in the resolved config.</p>
+<p>It composes as <code class="docutils literal notranslate"><span class="pre">backend=backends/&lt;name&gt;</span></code> and is fully configurable via
+<code class="docutils literal notranslate"><span class="pre">backend.&lt;field&gt;=...</span></code> — no change to <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>.</p>
 </li>
-<li><p><strong>A backend module.</strong> Parallel <code class="docutils literal notranslate"><span class="pre">dau_build/yosys_backend.py</span></code> (or
-<code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code>): its own request/result <code class="docutils literal notranslate"><span class="pre">ccflow.BaseModel</span></code>s and entry
-points that either generate a plan (Vivado’s Tcl/manifests) or generate and
-run a tool (yosys’s script + <code class="docutils literal notranslate"><span class="pre">run_yosys_synthesis</span></code>).</p></li>
-<li><p><strong>Engine dispatch.</strong> <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is <code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;,</span> <span class="pre">&quot;yosys&quot;]</span></code>
-and the task branches on it (<code class="docutils literal notranslate"><span class="pre">_synthesize_with_yosys</span></code>). Widen the literal and
-add a branch for your engine. This is the change that lands <em>in dau-build</em>
-(or a fork), since the dispatch lives there.</p></li>
 <li><p><strong>Any build/validate tasks</strong> your flow needs, paralleling the Vivado ones,
 each targeting a new <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>.</p></li>
 </ol>
-<p>The config label composes purely from your package via the search path; the
-engine branch is the one piece that lives in dau-build.</p>
+<p>Because the engine is just a composed model, an engine defined in your own
+package composes purely via the search path — nothing lands in dau-build unless
+you extend the packaged set.</p>
 </section>
 <section id="try-it-without-packaging">
 <h2>Try it without packaging<a class="headerlink" href="#try-it-without-packaging" title="Link to this heading">¶</a></h2>
@@ -433,7 +434,7 @@ task config before wiring up the entry point.</p>
 <li><a class="reference internal" href="#register-your-config-tree-on-the-search-path">Register your config tree on the search path</a></li>
 <li><a class="reference internal" href="#add-a-task">Add a task</a></li>
 <li><a class="reference internal" href="#add-a-board-or-platform">Add a board or platform</a></li>
-<li><a class="reference internal" href="#add-a-synthesis-backend">Add a synthesis backend</a></li>
+<li><a class="reference internal" href="#add-a-synthesis-engine">Add a synthesis engine</a></li>
 <li><a class="reference internal" href="#try-it-without-packaging">Try it without packaging</a></li>
 </ul>
 </li>

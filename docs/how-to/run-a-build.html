@@ -252,8 +252,9 @@ step needs a Vivado host.</p>
 <p>The stages are <strong>synthesize → stage → build → validate</strong>, then hand off to
 <a class="reference internal" href="program-hardware.html"><span class="std std-doc">programming the board</span></a>. This guide is the Vivado bitstream
 flow, so every backend-specific command below is a <code class="docutils literal notranslate"><span class="pre">vivado</span></code> command. For a fast
-open-source synthesis check that runs anywhere, use <code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code> on the
-synthesize task instead (see the <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>).</p>
+open-source synthesis check that runs anywhere, select the yosys engine on the
+synthesize task instead (<code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>; see the
+<a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>).</p>
 <p>Field lists for each task are in the <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.
 To see the full resolved config for any command before running it, prefix it with
 <code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code>.</p>

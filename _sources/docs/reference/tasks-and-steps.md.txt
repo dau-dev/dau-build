@@ -49,16 +49,18 @@ bench; `simulator=verilator` compiles and runs a Verilator testbench via a named
 ### `tasks/build/synthesize` — `SynthesizeTask`
 
 Writes the generated DAU top, manifest, and `artlink.manifest/v0` bundle, then
-dispatches on `engine`. Required: `module`, `output_root`.
+delegates to the synthesis engine composed from the `backend` group (default
+`backends/vivado`). Required: `module`, `output_root`.
 
-- `engine=vivado` (default) writes the `vivado/<artifact-stem>.manifest` backend
-  handoff at `build_status=planned` and does not invoke Vivado.
-- `engine=yosys` runs a real synthesis of the generated top with yosys, failing
-  the task if synthesis fails. `frontend=verilog` (default) uses
-  `read_verilog -sv`; `frontend=slang` uses the yosys-slang plugin; `yosys` sets
-  the executable.
+- `backend=backends/vivado` writes the `vivado/<artifact-stem>.manifest` handoff
+  at `build_status=planned` and does not invoke Vivado.
+- `backend=backends/yosys` runs a real synthesis of the generated top with yosys,
+  failing the task if synthesis fails. The engine is fully configurable:
+  `backend.frontend=verilog` (default, `read_verilog -sv`) or
+  `backend.frontend=slang` (yosys-slang), and `backend.yosys=<exe>`.
 
-Mode: **run**.
+Mode: **run**. See the [config group reference](config-groups.md) for the engine
+models.
 
 ### `tasks/build/build-shell-project` — `BuildShellProjectTask`
 

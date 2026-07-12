@@ -289,16 +289,18 @@ bench; <code class="docutils literal notranslate"><span class="pre">simulator=ve
 <section id="tasks-build-synthesize-synthesizetask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code><a class="headerlink" href="#tasks-build-synthesize-synthesizetask" title="Link to this heading">¶</a></h3>
 <p>Writes the generated DAU top, manifest, and <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> bundle, then
-dispatches on <code class="docutils literal notranslate"><span class="pre">engine</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">module</span></code>, <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.</p>
+delegates to the synthesis engine composed from the <code class="docutils literal notranslate"><span class="pre">backend</span></code> group (default
+<code class="docutils literal notranslate"><span class="pre">backends/vivado</span></code>). Required: <code class="docutils literal notranslate"><span class="pre">module</span></code>, <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">engine=vivado</span></code> (default) writes the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;artifact-stem&gt;.manifest</span></code> backend
-handoff at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does not invoke Vivado.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code> runs a real synthesis of the generated top with yosys, failing
-the task if synthesis fails. <code class="docutils literal notranslate"><span class="pre">frontend=verilog</span></code> (default) uses
-<code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>; <code class="docutils literal notranslate"><span class="pre">frontend=slang</span></code> uses the yosys-slang plugin; <code class="docutils literal notranslate"><span class="pre">yosys</span></code> sets
-the executable.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code> writes the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;artifact-stem&gt;.manifest</span></code> handoff
+at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does not invoke Vivado.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code> runs a real synthesis of the generated top with yosys,
+failing the task if synthesis fails. The engine is fully configurable:
+<code class="docutils literal notranslate"><span class="pre">backend.frontend=verilog</span></code> (default, <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>) or
+<code class="docutils literal notranslate"><span class="pre">backend.frontend=slang</span></code> (yosys-slang), and <code class="docutils literal notranslate"><span class="pre">backend.yosys=&lt;exe&gt;</span></code>.</p></li>
 </ul>
-<p>Mode: <strong>run</strong>.</p>
+<p>Mode: <strong>run</strong>. See the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the engine
+models.</p>
 </section>
 <section id="tasks-build-build-shell-project-buildshellprojecttask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code><a class="headerlink" href="#tasks-build-build-shell-project-buildshellprojecttask" title="Link to this heading">¶</a></h3>

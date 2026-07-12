@@ -374,41 +374,39 @@ bitstream.</p>
 <section id="backends-vivado-and-yosys">
 <h2>Backends: Vivado and yosys<a class="headerlink" href="#backends-vivado-and-yosys" title="Link to this heading">¶</a></h2>
 <p>Two synthesis engines are real: <strong>Vivado</strong> (the FPGA bitstream flow) and
-<strong>yosys</strong> (open-source synthesis). They differ in an important way that shapes
-how each is used.</p>
-<p><code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> has two fields, <code class="docutils literal notranslate"><span class="pre">name</span></code> and <code class="docutils literal notranslate"><span class="pre">invocation</span></code>, and it is a <em>label</em>, not
-a driver. <code class="docutils literal notranslate"><span class="pre">invocation</span></code> (<code class="docutils literal notranslate"><span class="pre">standard</span></code> vs <code class="docutils literal notranslate"><span class="pre">dry-run</span></code>) is surfaced in the resolved
-config as metadata and is not branched on. The <code class="docutils literal notranslate"><span class="pre">backends/none</span></code> option is that
-label with no toolchain behind it. So selecting <code class="docutils literal notranslate"><span class="pre">backend=backends/...</span></code> changes
-what the resolved config <em>reports</em>, not what codegen runs.</p>
-<p>What actually runs is the synthesis engine. <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is a
-<code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;,</span> <span class="pre">&quot;yosys&quot;]</span></code>, and the task dispatches on it:</p>
+<strong>yosys</strong> (open-source synthesis). The engine is chosen the hydra-first way —
+it <em>is</em> the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group. Each option instantiates a polymorphic
+<code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> just delegates to
+<code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code>. There is no engine <code class="docutils literal notranslate"><span class="pre">Literal</span></code> and no <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">engine</span> <span class="pre">==</span></code>
+dispatch branch; adding an engine is adding a model and a yaml.</p>
 <ul class="simple">
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">engine=vivado</span></code></strong> writes a Vivado backend <em>handoff</em> — the real
-implementation in <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code> generates text artifacts (overlay Tcl,
-build Tcl, a key=value manifest, a command plan) but never spawns Vivado;
-that happens later in the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> build tasks and in <code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>.
-Vivado is not present in CI, so this path is plan-only there.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code></strong> <em>runs</em> synthesis. <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> generates a yosys
-script and executes it, so the generated top is actually elaborated and
-synthesized — a real check, not a plan. yosys is open-source and installs in
-CI, which is the point: <code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code> turns synthesis into something the test
-suite can exercise on every run.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code></strong> (the default) composes a <code class="docutils literal notranslate"><span class="pre">VivadoEngine</span></code>, which
+writes a Vivado <em>handoff</em> — <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code> generates text artifacts
+(overlay Tcl, build Tcl, a key=value manifest, a command plan) but never
+spawns Vivado; that happens later in the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> build tasks and in
+<code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>. Vivado is not present in CI, so this path is plan-only there.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></strong> composes a <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code>, which <em>runs</em> synthesis.
+<code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> generates a yosys script and executes it, so the generated
+top is actually elaborated and synthesized — a real check, not a plan. yosys is
+open-source and installs in CI, which is the point: it turns synthesis into
+something the test suite can exercise on every run.</p></li>
 </ul>
-<p>The yosys backend supports two SystemVerilog frontends, selected with
-<code class="docutils literal notranslate"><span class="pre">frontend=</span></code>: <code class="docutils literal notranslate"><span class="pre">verilog</span></code> (yosys’s built-in <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>, enough for
-dau-build’s own synthesizable sources) and <code class="docutils literal notranslate"><span class="pre">slang</span></code> (the yosys-slang plugin’s
-<code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code> parser, for the
-full SV surface — packages, interfaces — that the private cores use). The
-frontend is a script-generation detail; the run path is identical.</p>
-<p>There is no dispatch <em>table</em> keyed on backend name — the wiring from each engine
-value to its generator is direct. That is enough for two engines; a third (a
-nextpnr place-and-route flow, another vendor) would add its own module and engine
-branch. The config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code>
-indirection, and the search-path extension are all backend-agnostic, so most of a
-new backend composes from a package without touching dau-build —
+<p>Because the engine is a composed model, it is fully hydra-configurable. The
+<code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code>’s SystemVerilog frontend is a field, set like any other override:
+<code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span> <span class="pre">backend.frontend=slang</span></code> (or <code class="docutils literal notranslate"><span class="pre">+backend.&lt;field&gt;=...</span></code>).
+<code class="docutils literal notranslate"><span class="pre">frontend=verilog</span></code> uses yosys’s built-in <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code> (enough for
+dau-build’s own synthesizable sources); <code class="docutils literal notranslate"><span class="pre">frontend=slang</span></code> uses the yosys-slang
+plugin’s <code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code> parser,
+for the full SV surface (packages, interfaces) the private cores use.</p>
+<p>The engine model carries only <code class="docutils literal notranslate"><span class="pre">name</span></code>/<code class="docutils literal notranslate"><span class="pre">invocation</span></code> up to the resolved-config view
+(<code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code> normalizes it to that label), so an engine’s own fields
+never leak into the build-config reporting. A third engine (a nextpnr
+place-and-route flow, another vendor) is a new <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass and a
+yaml; the config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> indirection,
+and the search-path extension are all engine-agnostic, so it can even come from a
+package without touching dau-build —
 <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> walks through exactly what a
-new backend requires, using yosys as the worked example.</p>
+new engine requires, using yosys as the worked example.</p>
 </section>
 </section>
 
