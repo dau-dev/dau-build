@@ -1,0 +1,6 @@
+# @package plan
+_target_: dau_build.hardware_plan.FlashPlan
+name: flash
+dau_utils_root: null
+python: python3
+vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh

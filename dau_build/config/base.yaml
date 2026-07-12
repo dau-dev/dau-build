@@ -9,6 +9,7 @@ defaults:
   - optional backend: null
   - optional simulator: null
   - optional spec: null
+  - optional plan: null
   - optional design: null
   - callable: callable
 

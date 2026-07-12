@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import base64
 import shlex
 import subprocess
@@ -613,98 +612,104 @@ def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Print Vivado build/program/recovery command plans")
-    parser.add_argument(
-        "plan",
-        choices=(
-            "build-and-program",
-            "flash",
-            "local-build-and-program",
-            "recovery",
-            "thunderbolt-hold",
-            "thunderbolt-release",
-            "validate-bitstream",
-        ),
-        help="Command plan to print",
-    )
-    parser.add_argument("--work-root", required=True, type=Path, help="Path to the Vivado project root")
-    parser.add_argument("--source-shell-root", type=Path, help="Read-only Vivado shell seed copied into --work-root before staging/building")
-    parser.add_argument("--bitstream", type=Path, help="Bitstream path to program; relative paths are resolved under --work-root")
-    parser.add_argument("--vivado", default="vivado", help="Vivado executable to use in build plans")
-    parser.add_argument(
-        "--vivado-invocation",
-        default="standard",
-        choices=("standard", "source-only"),
-        help="Use 'source-only' for wrappers that already run Vivado in batch source mode",
-    )
-    parser.add_argument(
-        "--vivado-mount-root",
-        type=Path,
-        help="Host root mounted by a source-only Vivado wrapper; generated Tcl paths are made relative to the staged workdir",
-    )
-    parser.add_argument("--openfpgaloader", default="openFPGALoader", help="openFPGALoader executable to use")
-    parser.add_argument("--jtag-cable", default="digilent_hs2", help="openFPGALoader cable profile")
-    parser.add_argument("--endpoint-bdf", default="0000:04:00.0", help="PCI endpoint BDF for recovery/check steps")
-    parser.add_argument("--dau-core-root", type=Path, help="Path to the local dau-core checkout")
-    parser.add_argument("--dau-driver-root", type=Path, help="Path to the local dau-driver checkout")
-    parser.add_argument("--dau-utils-root", type=Path, help="Path to the local dau-utils checkout")
-    parser.add_argument(
-        "--overlay-tcl", default=Path("scripts/dau_overlay.tcl"), type=Path, help="Overlay TCL path relative to the local Vivado root"
-    )
-    parser.add_argument("--python", default="python3", help="Local Python executable for hardware smoke tests and source-checkout runtime PM")
-    parser.add_argument("--vivado-settings", default=Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"), type=Path, help="Remote Vivado settings script")
-    parser.add_argument("--execute", action="store_true", help="Execute the selected plan instead of printing it")
-    args = parser.parse_args(argv)
+class HardwarePlan(BaseModel):
+    """A hardware-session plan selected from the ``plan`` config group. Each is
+    a polymorphic model owning its required fields; ``HardwarePlanTask``
+    delegates to ``compose`` — there is no plan ``Literal`` or dict-of-lambdas
+    dispatch."""
 
-    config = HardwareToolchainConfig(
-        work_root=args.work_root,
-        vivado_executable=args.vivado,
-        vivado_invocation=args.vivado_invocation,
-        vivado_mount_root=args.vivado_mount_root,
-        bitstream_path=args.bitstream,
-        openfpgaloader_executable=args.openfpgaloader,
-        jtag_cable=args.jtag_cable,
-        endpoint_bdf=args.endpoint_bdf,
-    )
-    if args.plan == "build-and-program":
-        steps = build_and_program_plan(config)
-    elif args.plan == "local-build-and-program":
-        if args.dau_core_root is None or args.dau_driver_root is None:
-            parser.error("local-build-and-program requires --dau-core-root and --dau-driver-root")
-        steps = local_build_and_program_plan(
+    name: str
+
+    def compose(self, config: "HardwareToolchainConfig") -> tuple[ToolStep, ...]:
+        raise NotImplementedError
+
+
+class BuildAndProgramPlan(HardwarePlan):
+    name: str = "build-and-program"
+
+    def compose(self, config):
+        return build_and_program_plan(config)
+
+
+class RecoveryPlan(HardwarePlan):
+    name: str = "recovery"
+
+    def compose(self, config):
+        return recovery_plan(config)
+
+
+class ThunderboltHoldPlan(HardwarePlan):
+    name: str = "thunderbolt-hold"
+
+    def compose(self, config):
+        return thunderbolt_hold_plan(config)
+
+
+class ThunderboltReleasePlan(HardwarePlan):
+    name: str = "thunderbolt-release"
+
+    def compose(self, config):
+        return thunderbolt_release_plan(config)
+
+
+class FlashPlan(HardwarePlan):
+    name: str = "flash"
+    dau_utils_root: Path | None = None
+    python: str = "python3"
+    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+
+    def compose(self, config):
+        return flash_plan(config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings)
+
+
+class ValidateBitstreamPlan(HardwarePlan):
+    name: str = "validate-bitstream"
+    dau_core_root: Path
+    dau_driver_root: Path
+    dau_utils_root: Path | None = None
+    python: str = "python3"
+
+    def compose(self, config):
+        return validate_bitstream_plan(
             config,
-            dau_core_root=args.dau_core_root,
-            dau_driver_root=args.dau_driver_root,
-            source_shell_root=args.source_shell_root,
-            dau_utils_root=args.dau_utils_root,
-            overlay_tcl=args.overlay_tcl,
-            python=args.python,
-            vivado_settings=args.vivado_settings,
+            dau_core_root=self.dau_core_root,
+            dau_driver_root=self.dau_driver_root,
+            dau_utils_root=self.dau_utils_root,
+            python=self.python,
         )
-    elif args.plan == "validate-bitstream":
-        if args.dau_core_root is None or args.dau_driver_root is None:
-            parser.error("validate-bitstream requires --dau-core-root and --dau-driver-root")
-        steps = validate_bitstream_plan(
+
+
+class LocalBuildAndProgramPlan(HardwarePlan):
+    name: str = "local-build-and-program"
+    dau_core_root: Path
+    dau_driver_root: Path
+    source_shell_root: Path | None = None
+    dau_utils_root: Path | None = None
+    overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
+    python: str = "python3"
+    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+
+    def compose(self, config):
+        return local_build_and_program_plan(
             config,
-            dau_core_root=args.dau_core_root,
-            dau_driver_root=args.dau_driver_root,
-            dau_utils_root=args.dau_utils_root,
-            python=args.python,
+            dau_core_root=self.dau_core_root,
+            dau_driver_root=self.dau_driver_root,
+            source_shell_root=self.source_shell_root,
+            dau_utils_root=self.dau_utils_root,
+            overlay_tcl=self.overlay_tcl,
+            python=self.python,
+            vivado_settings=self.vivado_settings,
         )
-    elif args.plan == "flash":
-        steps = flash_plan(config, dau_utils_root=args.dau_utils_root, python=args.python, vivado_settings=args.vivado_settings)
-    elif args.plan == "recovery":
-        steps = recovery_plan(config)
-    elif args.plan == "thunderbolt-hold":
-        steps = thunderbolt_hold_plan(config)
-    else:
-        steps = thunderbolt_release_plan(config)
-    if args.execute:
-        return execute_plan_steps(steps)
-    print(format_plan_steps(steps))
-    return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+for _plan_cls in (
+    HardwarePlan,
+    BuildAndProgramPlan,
+    RecoveryPlan,
+    ThunderboltHoldPlan,
+    ThunderboltReleasePlan,
+    FlashPlan,
+    ValidateBitstreamPlan,
+    LocalBuildAndProgramPlan,
+):
+    _plan_cls.model_rebuild()
