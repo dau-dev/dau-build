@@ -5,13 +5,8 @@ spec_path: null
 spec: ${oc.select:spec,null}
 board: ${oc.select:board,null}
 backend: ${oc.select:backend,null}
-module: ???
-simulator: svparser
+module: ""
 output_root: null
-profile: null
-profile_manifest: []
-testbench_path: null
-top_module: null
-expect_stdout: null
-verilator: verilator
-extra_args: ""
+# the simulator is the composed simulator group (default svparser);
+# select+configure with simulator=simulators/verilator simulator.profile=...
+simulator: ${oc.select:simulator,null}

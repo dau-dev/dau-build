@@ -8,6 +8,7 @@ from ccflow import CallableModel
 
 from dau_build.build_spec import main
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
+from dau_build.config import run_request_config
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
@@ -18,7 +19,8 @@ def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path:
 
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_request(("task=tasks/sim/simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"))
+    # default simulator is svparser (no simulator= group override)
+    result = execute_override_request(("task=tasks/sim/simulate", "module=dau_identity_top", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="simulate",
@@ -29,7 +31,13 @@ def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path:
 def test_execute_override_task_accepts_public_cocotb_simulate_surface(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_task(("task=tasks/sim/simulate", "simulator=cocotb", "module=dau_identity_top", f"spec_path={spec_path}"))
+    # the simulator is the composed simulator group
+    result = run_request_config(
+        "task",
+        "tasks/sim/simulate",
+        overrides=["simulator=simulators/cocotb"],
+        model_values={"module": "dau_identity_top", "spec_path": str(spec_path)},
+    )
 
     assert result == BuildStepResult(
         step="simulate",
@@ -41,7 +49,7 @@ def test_execute_override_task_requires_selected_module_to_match_spec(tmp_path: 
     spec_path = _write_spec(tmp_path)
 
     with pytest.raises(BuildStepError, match="module 'missing' is not provided by spec"):
-        execute_override_task(("task=tasks/sim/simulate", "simulator=svparser", "module=missing", f"spec_path={spec_path}"))
+        execute_override_task(("task=tasks/sim/simulate", "module=missing", f"spec_path={spec_path}"))
 
 
 def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
@@ -362,7 +370,7 @@ def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: P
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main(["task=tasks/sim/simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"])
+    exit_code = main(["task=tasks/sim/simulate", "module=dau_identity_top", f"spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [

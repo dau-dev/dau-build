@@ -1,0 +1,7 @@
+# @package simulator
+
+# simulator=simulators/cocotb — validate, or run a registered cocotb profile
+_target_: dau_build.build_steps.CocotbSimulator
+name: cocotb
+profile: null
+profile_manifest: []

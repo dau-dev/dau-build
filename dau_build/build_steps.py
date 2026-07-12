@@ -310,13 +310,58 @@ class ValidateTask(SpecPathModel):
         return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_label}")
 
 
-class SimulateTask(ModuleSelectionModel):
-    # spec_path/module are optional for profile-only Verilator runs, where a
-    # registered profile already carries its sources and top module
-    spec_path: Path | None = None
-    module: str = ""
-    simulator: Literal["cocotb", "svparser", "verilator"] = "svparser"
-    output_root: Path | None = None
+class Simulator(BaseModel):
+    """A simulator selected from the ``simulator`` config group. Each is a
+    polymorphic, hydra-configurable model (``simulator=simulators/verilator
+    simulator.profile=...``); ``SimulateTask`` delegates to ``simulate`` —
+    there is no simulator ``Literal`` or dispatch ``if`` on the task."""
+
+    name: str
+
+    def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
+        raise NotImplementedError
+
+
+class SvparserSimulator(Simulator):
+    name: str = "svparser"
+
+    def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
+        return task._validate_and_generate(self.name)
+
+
+class CocotbSimulator(Simulator):
+    name: str = "cocotb"
+    profile: str | None = None
+    profile_manifest: tuple[Path, ...] = ()
+
+    @field_validator("profile_manifest", mode="before")
+    @classmethod
+    def _split_profile_manifest_paths(cls, value):
+        return _split_path_tuple(value)
+
+    def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
+        if self.profile and task._no_spec():
+            from dau_sim.integrations.cocotb import run_cocotb_testbench
+
+            from dau_build.simulation_profiles import resolve_profile
+
+            profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
+            # the cocotb runner raises on any failing test
+            run_cocotb_testbench(
+                sources=profile.sources,
+                hdl_toplevel=profile.hdl_toplevel,
+                test_module=profile.test_module,
+                build_dir=task._profile_work_dir(profile.name),
+            )
+            return BuildStepResult(
+                step="simulate",
+                message=f"dau-build-simulate\ttask=simulate simulator=cocotb profile={profile.name} status=passed",
+            )
+        return task._validate_and_generate(self.name)
+
+
+class VerilatorSimulator(Simulator):
+    name: str = "verilator"
     profile: str | None = None
     profile_manifest: tuple[Path, ...] = ()
     testbench_path: Path | None = None
@@ -330,75 +375,94 @@ class SimulateTask(ModuleSelectionModel):
     def _split_profile_manifest_paths(cls, value):
         return _split_path_tuple(value)
 
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
-        no_spec = self.spec is None and self.spec_path is None
-        if self.simulator in ("verilator", "cocotb") and self.profile and no_spec:
-            return self._run_registered_profile()
-        if no_spec or not self.module:
-            raise BuildStepError(
-                "task=simulate requires a spec (spec=<name> or spec_path=<file>) and module (or simulator=verilator profile=<name> for a registered profile)"
-            )
-        spec = self.load_spec_and_validate_module()
-        output_root = self.output_root or self.spec_base_dir / ".dau-build-sim"
-        if self.simulator in {"svparser", "cocotb"}:
-            self._resolved(spec)
-            _build_spec_api().generate_dau_build_artifacts(spec, output_root=output_root)
-            return BuildStepResult(
-                step="simulate",
-                message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_label} status=validated",
-            )
-        step_data: dict[str, Any] = {"spec": self.spec} if self.spec is not None else {"spec_path": str(self.spec_path)}
-        step_data.update(
-            {
-                "output_root": str(output_root),
-                "simulate.engine": "verilator",
-                "simulate.verilator": self.verilator,
-                "simulate.extra_args": self.extra_args,
-            }
+    def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
+        if self.profile and task._no_spec():
+            return self._run_registered_profile(task)
+        spec = task.require_spec_and_module()
+        if self.testbench_path is None:
+            raise BuildStepError("missing required override: simulator.testbench_path")
+        if not self.top_module:
+            raise BuildStepError("missing required override: simulator.top_module")
+        work_dir = task.sim_output_root() / "verilator"
+        _run_verilator_bench(
+            spec,
+            extra_sources=(self.testbench_path,),
+            top_module=self.top_module,
+            expect_stdout=self.expect_stdout,
+            verilator=self.verilator,
+            extra_args=self.extra_args,
+            work_dir=work_dir,
         )
-        if self.profile:
-            step_data["simulate.profile"] = self.profile
-        if self.profile_manifest:
-            step_data["simulate.profile_manifest"] = self._stringify_override_value(self.profile_manifest)
-        if self.testbench_path:
-            step_data["simulate.testbench_path"] = str(self.testbench_path)
-        if self.top_module:
-            step_data["simulate.top_module"] = self.top_module
-        if self.expect_stdout:
-            step_data["simulate.expect_stdout"] = self.expect_stdout
-        result = _execute_callable_model(SimulateStep, step_data, request_kind="step", request_name="simulate")
-        return BuildStepResult(step="simulate", message=f"{result.message} task=simulate simulator=verilator module={self.module}")
+        return BuildStepResult(
+            step="simulate",
+            message=(
+                f"dau-build-simulate\ttask=simulate simulator=verilator module={task.module} spec={task.spec_label} "
+                f"testbench_top={self.top_module} work_dir={work_dir} status=passed"
+            ),
+        )
 
-    def _run_registered_profile(self) -> BuildStepResult:
-        from dau_sim.integrations.cocotb import CocotbProfile, run_cocotb_testbench
+    def _run_registered_profile(self, task: "SimulateTask") -> BuildStepResult:
         from dau_sim.integrations.verilator import run_verilator_testbench
 
         from dau_build.simulation_profiles import resolve_profile
 
         profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
-        work_root = self.output_root or Path.cwd() / ".dau-build-sim"
-        work_dir = work_root / profile.name
-        work_dir.mkdir(parents=True, exist_ok=True)
-        if isinstance(profile, CocotbProfile):
-            # the cocotb runner raises on any failing test
-            run_cocotb_testbench(
-                sources=profile.sources,
-                hdl_toplevel=profile.hdl_toplevel,
-                test_module=profile.test_module,
-                build_dir=work_dir,
-            )
-            return BuildStepResult(
-                step="simulate",
-                message=f"dau-build-simulate	task=simulate simulator=cocotb profile={profile.name} status=passed",
-            )
-        result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=work_dir)
+        result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=task._profile_work_dir(profile.name))
         marker = self.expect_stdout or profile.expect_stdout
         if marker not in result.stdout:
             raise BuildStepError(f"profile {profile.name!r} did not report {marker!r}")
         return BuildStepResult(
             step="simulate",
-            message=f"dau-build-simulate	task=simulate simulator=verilator profile={profile.name} status=passed marker={marker}",
+            message=f"dau-build-simulate\ttask=simulate simulator=verilator profile={profile.name} status=passed marker={marker}",
+        )
+
+
+class SimulateTask(ModuleSelectionModel):
+    # spec_path/module are optional for profile-only Verilator runs, where a
+    # registered profile already carries its sources and top module
+    spec_path: Path | None = None
+    module: str = ""
+    output_root: Path | None = None
+    # the simulator is the composed `simulator` group option; default svparser
+    simulator: Any = None
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        return self._simulator().simulate(task=self)
+
+    def _simulator(self) -> Simulator:
+        if isinstance(self.simulator, Simulator):
+            return self.simulator
+        if self.simulator is None:
+            return SvparserSimulator()
+        raise BuildStepError(f"simulator {getattr(self.simulator, 'name', self.simulator)!r} is not a simulator")
+
+    def _no_spec(self) -> bool:
+        return self.spec is None and self.spec_path is None
+
+    def sim_output_root(self) -> Path:
+        return self.output_root or self.spec_base_dir / ".dau-build-sim"
+
+    def _profile_work_dir(self, profile_name: str) -> Path:
+        work_dir = (self.output_root or Path.cwd() / ".dau-build-sim") / profile_name
+        work_dir.mkdir(parents=True, exist_ok=True)
+        return work_dir
+
+    def require_spec_and_module(self):
+        if self._no_spec() or not self.module:
+            raise BuildStepError(
+                "task=simulate requires a spec (spec=<name> or spec_path=<file>) and module "
+                "(or simulator=simulators/verilator with simulator.profile=<name> for a registered profile)"
+            )
+        return self.load_spec_and_validate_module()
+
+    def _validate_and_generate(self, simulator_name: str) -> BuildStepResult:
+        spec = self.require_spec_and_module()
+        self._resolved(spec)
+        _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.sim_output_root())
+        return BuildStepResult(
+            step="simulate",
+            message=f"dau-build-simulate\ttask=simulate simulator={simulator_name} module={self.module} spec={self.spec_label} status=validated",
         )
 
 
@@ -1168,6 +1232,29 @@ def _unique_paths(paths: Iterable[Path | str]) -> tuple[Path, ...]:
     for path in paths:
         unique[Path(path)] = None
     return tuple(unique.keys())
+
+
+def _run_verilator_bench(spec, *, extra_sources, top_module, expect_stdout, verilator, extra_args, work_dir):
+    """Run a Verilator testbench over the spec sources plus extra sources;
+    raise BuildStepError on failure or missing expected stdout."""
+    try:
+        from dau_sim.integrations.verilator import VerilatorExecutionError, VerilatorUnavailableError, run_verilator_testbench
+    except ModuleNotFoundError as exc:
+        raise BuildStepError("verilator simulation requires dau-sim to be importable") from exc
+    all_sources = _unique_paths((*spec.sources, *extra_sources))
+    try:
+        result = run_verilator_testbench(
+            sources=all_sources,
+            top_module=top_module,
+            work_dir=work_dir,
+            verilator=verilator,
+            extra_args=tuple(shlex.split(extra_args)),
+        )
+    except (FileNotFoundError, ValueError, VerilatorExecutionError, VerilatorUnavailableError) as exc:
+        raise BuildStepError(str(exc)) from exc
+    if expect_stdout and expect_stdout not in result.stdout:
+        raise BuildStepError(f"verilator stdout did not contain expected text {expect_stdout!r}")
+    return result
 
 
 def _split_path_tuple(value) -> tuple[Path, ...]:

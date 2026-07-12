@@ -1,0 +1,5 @@
+# @package simulator
+
+# simulator=simulators/svparser — parse-and-validate (no external simulator)
+_target_: dau_build.build_steps.SvparserSimulator
+name: svparser

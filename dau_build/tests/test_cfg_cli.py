@@ -15,11 +15,9 @@ def test_cfg_cli_runs_profile_only_simulate(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "task=tasks/sim/simulate",
-            "model.simulator=verilator",
-            "model.spec_path=null",
-            "model.module=''",
-            "model.profile=counter-profile",
-            f"model.profile_manifest={manifest_path}",
+            "simulator=simulators/verilator",
+            "simulator.profile=counter-profile",
+            f"simulator.profile_manifest=[{manifest_path}]",
             f"model.output_root={tmp_path}",
         ]
     )
@@ -37,10 +35,8 @@ def test_profile_only_simulate_falls_back_to_manifest_registry() -> None:
         main(
             [
                 "task=tasks/sim/simulate",
-                "model.simulator=verilator",
-                "model.spec_path=null",
-                "model.module=''",
-                "model.profile=not-a-registered-profile",
+                "simulator=simulators/verilator",
+                "simulator.profile=not-a-registered-profile",
             ]
         )
 
@@ -68,9 +64,10 @@ def test_cfg_cli_open_registration_via_config_dir_overlay(tmp_path: Path, capsys
                 "_target_: dau_build.build_steps.SimulateTask",
                 "spec_path: null",
                 "module: ''",
-                "simulator: verilator",
-                "profile: counter-profile",
-                f"profile_manifest: [{manifest_path}]",
+                "simulator:",
+                "  _target_: dau_build.build_steps.VerilatorSimulator",
+                "  profile: counter-profile",
+                f"  profile_manifest: [{manifest_path}]",
                 f"output_root: {tmp_path / 'work'}",
             )
         )

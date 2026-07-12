@@ -88,7 +88,6 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
     result = execute_override_request(
         (
             "task=tasks/sim/simulate",
-            "simulator=svparser",
             "module=dau_identity_top",
             "spec_path=examples/identity/dau-build.yaml",
         )
@@ -103,15 +102,8 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
         "board": None,
         "backend": None,
         "module": "dau_identity_top",
-        "simulator": "svparser",
         "output_root": None,
-        "profile": None,
-        "profile_manifest": [],
-        "testbench_path": None,
-        "top_module": None,
-        "expect_stdout": None,
-        "verilator": "verilator",
-        "extra_args": "",
+        "simulator": None,
     }
 
 
