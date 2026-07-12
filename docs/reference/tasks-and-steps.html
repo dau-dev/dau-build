@@ -281,10 +281,14 @@ asset with its originating manifest). Reads the spec via <code class="docutils l
 </section>
 <section id="tasks-sim-simulate-simulatetask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code><a class="headerlink" href="#tasks-sim-simulate-simulatetask" title="Link to this heading">¶</a></h3>
-<p>Validates or simulates a module against the build spec. Required: <code class="docutils literal notranslate"><span class="pre">module</span></code>.
-Default <code class="docutils literal notranslate"><span class="pre">simulator:</span> <span class="pre">svparser</span></code> (validation only); <code class="docutils literal notranslate"><span class="pre">simulator=cocotb</span></code> runs a cocotb
-bench; <code class="docutils literal notranslate"><span class="pre">simulator=verilator</span></code> compiles and runs a Verilator testbench via a named
-<code class="docutils literal notranslate"><span class="pre">profile</span></code> or explicit <code class="docutils literal notranslate"><span class="pre">testbench_path</span></code>/<code class="docutils literal notranslate"><span class="pre">top_module</span></code>. Mode: <strong>run</strong>.</p>
+<p>Validates or simulates a module, delegating to the simulator composed from the
+<code class="docutils literal notranslate"><span class="pre">simulator</span></code> group (default <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code>). <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code> and
+<code class="docutils literal notranslate"><span class="pre">simulators/cocotb</span></code> validate the module against the spec; <code class="docutils literal notranslate"><span class="pre">simulators/verilator</span></code>
+runs a Verilator testbench (via <code class="docutils literal notranslate"><span class="pre">simulator.testbench_path</span></code>/<code class="docutils literal notranslate"><span class="pre">simulator.top_module</span></code>)
+or a registered profile (<code class="docutils literal notranslate"><span class="pre">simulator.profile</span></code>). Select+configure the simulator
+with, e.g., <code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code>. Mode:
+<strong>run</strong>. See the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the simulator
+models.</p>
 </section>
 <section id="tasks-build-synthesize-synthesizetask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code><a class="headerlink" href="#tasks-build-synthesize-synthesizetask" title="Link to this heading">¶</a></h3>
