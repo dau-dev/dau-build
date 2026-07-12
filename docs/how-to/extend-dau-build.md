@@ -7,8 +7,9 @@ This guide shows the three things you are most likely to add: a new task from
 your own package, a new board or platform, and a new synthesis backend.
 
 For the concepts behind the search path and the config groups, see
-[the architecture explanation](../explanation/architecture.md). For an ad-hoc
-overlay without packaging, jump to [the last section](#try-it-without-packaging).
+[the architecture explanation](../explanation/architecture.md). To test an
+overlay without packaging, see **Try it without packaging** at the end of this
+guide.
 
 ## Register your config tree on the search path
 
@@ -91,12 +92,12 @@ add `mypkg/config/platform/platforms/<vendor>/<board>.yaml` targeting
 `dau_build.platforms.PlatformDefinition`. Select them with
 `board=boards/<vendor>/<board>` and `platform=platforms/<vendor>/<board>`.
 
-## Add a synthesis backend {#add-a-synthesis-backend}
+## Add a synthesis backend
 
 Adding a *real* backend (for example a yosys/nextpnr flow) is more than a config
 file, because today `BackendConfig` is only a label and synthesis codegen is
 hard-wired to Vivado. Read
-[the backend section of the architecture explanation](../explanation/architecture.md#backends)
+[the backend section of the architecture explanation](../explanation/architecture.md)
 first — it describes exactly what is a label and what is wired.
 
 A new backend requires four things:
@@ -134,7 +135,7 @@ A new backend requires four things:
 Everything except step 3 composes purely from your package via the search path.
 Until a backend implements steps 2–4, selecting its label runs no real codegen.
 
-## Try it without packaging {#try-it-without-packaging}
+## Try it without packaging
 
 To test a config overlay before packaging it, point the argparse CLI at a
 directory with `--config-dir`:

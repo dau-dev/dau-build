@@ -71,7 +71,7 @@ Validates a spec (`--spec`) or a generated artifact bundle (`--manifest`). `--sp
 dau-build-steps step=<path> [field=value ...]
 ```
 
-Dispatches a low-level step (see [steps](tasks-and-steps.md#steps)). Fields carry no `model.` prefix. Steps are development/plumbing operations; user-facing workflows use tasks.
+Dispatches a low-level step (see [steps](tasks-and-steps.md)). Fields carry no `model.` prefix. Steps are development/plumbing operations; user-facing workflows use tasks.
 
 ## `dau-build-cfg`
 

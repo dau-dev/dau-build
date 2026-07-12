@@ -175,6 +175,14 @@ section-order = [
 title = "dau-build"
 root = "README.md"
 pages = [
+    "docs/tutorial/first-build.md",
+    "docs/how-to/run-a-build.md",
+    "docs/how-to/program-hardware.md",
+    "docs/how-to/extend-dau-build.md",
+    "docs/reference/commands.md",
+    "docs/reference/config-groups.md",
+    "docs/reference/tasks-and-steps.md",
+    "docs/explanation/architecture.md",
 ]
 use-autoapi = false
 

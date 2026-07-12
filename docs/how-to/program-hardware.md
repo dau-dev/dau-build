@@ -14,7 +14,7 @@ host. Run these on the machine physically attached to the board.
 The named plans are `local-build-and-program`, `build-and-program`,
 `validate-bitstream`, `recovery`, `flash`, `thunderbolt-hold`, and
 `thunderbolt-release`. Full field lists are in the
-[task catalog](../reference/tasks-and-steps.md#tasks).
+[task catalog](../reference/tasks-and-steps.md).
 
 > **Programming can wedge the PCIe link.** Removing and reprogramming an endpoint
 > while the host holds it can hang a rescan hard enough to need a power cycle. On

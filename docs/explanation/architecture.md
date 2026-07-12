@@ -135,7 +135,7 @@ They are independent groups, composed together into a task's
 physical dpv1 definition can be reused regardless of which backend produced a
 bitstream.
 
-## Backends: Vivado today, others later {#backends}
+## Backends: Vivado today, others later
 
 **Only the Vivado backend is real today.** Understanding the current shape makes
 clear what adding another backend involves.
@@ -161,5 +161,5 @@ say, a yosys/nextpnr flow is a second *implementation*: a backend module
 paralleling `vivado_backend.py`, a widened `engine` literal with real dispatch,
 and its task configs. There is no yosys, nextpnr, or other backend scaffolding in
 the tree today — not a stub, not a config file. That is a deliberate honesty about
-the current state, not an oversight. [Extending dau-build](../how-to/extend-dau-build.md#add-a-synthesis-backend)
+the current state, not an oversight. [Extending dau-build](../how-to/extend-dau-build.md)
 walks through exactly what a new backend requires.
