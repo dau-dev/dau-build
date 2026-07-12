@@ -261,8 +261,8 @@ the tree they expose.</p>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_spec:main</span></code></p></td>
-<td><p>subcommands, or flat <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code></p></td>
-<td><p>Spec operations and flat task dispatch</p></td>
+<td><p>flat <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code></p></td>
+<td><p>Flat task dispatch</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_spec:main_callable_steps</span></code></p></td>
@@ -291,118 +291,15 @@ the tree they expose.</p>
 <p>The full set of task and step names and their fields is in the <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The config groups selectable with <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 <section id="dau-build">
 <h2><code class="docutils literal notranslate"><span class="pre">dau-build</span></code><a class="headerlink" href="#dau-build" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build &lt;subcommand&gt; [options]
-dau-build task=&lt;path&gt; [field=value ...]
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=&lt;path&gt; [field=value ...]
 </pre></div>
 </div>
-<p>If the first argument contains <code class="docutils literal notranslate"><span class="pre">=</span></code>, the command dispatches a flat task request through the registry (equivalent to <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> without the <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix). Otherwise it runs one of three subcommands that operate directly on a build spec file.</p>
-<blockquote>
-<div><p><strong>Deprecated.</strong> The <code class="docutils literal notranslate"><span class="pre">build</span></code>, <code class="docutils literal notranslate"><span class="pre">inspect</span></code>, and <code class="docutils literal notranslate"><span class="pre">validate</span></code> subcommands are superseded by the <code class="docutils literal notranslate"><span class="pre">tasks/spec/*</span></code> tasks and print a deprecation warning. Use the task form instead:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Subcommand</p></th>
-<th class="head"><p>Task equivalent</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">inspect</span> <span class="pre">--spec</span> <span class="pre">X</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/inspect</span> <span class="pre">spec_path=X</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">build</span> <span class="pre">--spec</span> <span class="pre">X</span> <span class="pre">--out</span> <span class="pre">D</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/build</span> <span class="pre">spec_path=X</span> <span class="pre">output_root=D</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">validate</span> <span class="pre">--spec</span> <span class="pre">X</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/validate</span> <span class="pre">spec_path=X</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">validate</span> <span class="pre">--manifest</span> <span class="pre">M</span> <span class="pre">--root</span> <span class="pre">D</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/validate</span> <span class="pre">manifest_path=M</span> <span class="pre">root=D</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div></blockquote>
-<section id="build">
-<h3><code class="docutils literal notranslate"><span class="pre">build</span></code><a class="headerlink" href="#build" title="Link to this heading">¶</a></h3>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build build --spec &lt;spec.yaml&gt; --out &lt;dir&gt;
+<p>Dispatches a task through the registry from the flat surface — equivalent to <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> without the <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix on field overrides. Exits non-zero with a usage message if the first argument is not a <code class="docutils literal notranslate"><span class="pre">key=value</span></code> override. For example, the spec operations (inspect, build, and validate a spec or generated bundle):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/build     spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
+dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
 </pre></div>
 </div>
-<p>Resolves the spec and writes the generated top-level SystemVerilog, DAU manifest, and <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundle under <code class="docutils literal notranslate"><span class="pre">--out</span></code>. Prints <code class="docutils literal notranslate"><span class="pre">dau-build-artifacts\tmanifest=&lt;path&gt;</span> <span class="pre">top_sv=&lt;path&gt;</span></code>.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Option</p></th>
-<th class="head"><p>Required</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--spec</span></code></p></td>
-<td><p>yes</p></td>
-<td><p>Path to a DAU build YAML spec.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--out</span></code></p></td>
-<td><p>yes</p></td>
-<td><p>Output directory for artifacts.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="inspect">
-<h3><code class="docutils literal notranslate"><span class="pre">inspect</span></code><a class="headerlink" href="#inspect" title="Link to this heading">¶</a></h3>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build inspect --spec &lt;spec.yaml&gt;
-</pre></div>
-</div>
-<p>Prints the resolved build-spec summary, including each source, metadata file, and binary asset with its originating manifest.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Option</p></th>
-<th class="head"><p>Required</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--spec</span></code></p></td>
-<td><p>yes</p></td>
-<td><p>Path to a DAU build YAML spec.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="validate">
-<h3><code class="docutils literal notranslate"><span class="pre">validate</span></code><a class="headerlink" href="#validate" title="Link to this heading">¶</a></h3>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build validate (--spec &lt;spec.yaml&gt; | --manifest &lt;manifest&gt; [--root &lt;dir&gt;])
-</pre></div>
-</div>
-<p>Validates a spec (<code class="docutils literal notranslate"><span class="pre">--spec</span></code>) or a generated artifact bundle (<code class="docutils literal notranslate"><span class="pre">--manifest</span></code>). <code class="docutils literal notranslate"><span class="pre">--spec</span></code> and <code class="docutils literal notranslate"><span class="pre">--manifest</span></code> are mutually exclusive and one is required.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Option</p></th>
-<th class="head"><p>Required</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--spec</span></code></p></td>
-<td><p>one of two</p></td>
-<td><p>Validate a build spec.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--manifest</span></code></p></td>
-<td><p>one of two</p></td>
-<td><p>Validate a generated artifact manifest.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--root</span></code></p></td>
-<td><p>no</p></td>
-<td><p>Artifact bundle root; defaults to the manifest’s parent dir.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
 </section>
 <section id="dau-build-steps">
 <h2><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code><a class="headerlink" href="#dau-build-steps" title="Link to this heading">¶</a></h2>
@@ -509,12 +406,7 @@ dau-build task=&lt;path&gt; [field=value ...]
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Command reference</a><ul>
-<li><a class="reference internal" href="#dau-build"><code class="docutils literal notranslate"><span class="pre">dau-build</span></code></a><ul>
-<li><a class="reference internal" href="#build"><code class="docutils literal notranslate"><span class="pre">build</span></code></a></li>
-<li><a class="reference internal" href="#inspect"><code class="docutils literal notranslate"><span class="pre">inspect</span></code></a></li>
-<li><a class="reference internal" href="#validate"><code class="docutils literal notranslate"><span class="pre">validate</span></code></a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#dau-build"><code class="docutils literal notranslate"><span class="pre">dau-build</span></code></a></li>
 <li><a class="reference internal" href="#dau-build-steps"><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code></a></li>
 <li><a class="reference internal" href="#dau-build-cfg"><code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code></a></li>
 <li><a class="reference internal" href="#dau-build-cfg-explain"><code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code></a></li>
