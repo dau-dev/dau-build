@@ -12,6 +12,7 @@ from dau_build.packaging import load_artifact_manifest
 from dau_build.shell_build import (
     SHELL_BUILD_MANIFEST_NAME,
     ShellBuildError,
+    ShellBuildStatus,
     parse_shell_build_console,
     run_shell_project_build,
     shell_build_manifest,
@@ -39,9 +40,9 @@ def _fake_vivado(tmp_path: Path) -> Path:
 
 
 def test_parse_console_markers() -> None:
-    assert parse_shell_build_console("noise\nDAU_MM_JOB_BUILD_OK wns=0.321\n") == {"build_status": "built", "wns_ns": 0.321}
-    assert parse_shell_build_console("DAU_MM_JOB_BUILD_FAILED synthesis\n") == {"build_status": "failed", "failed_stage": "synthesis"}
-    assert parse_shell_build_console("vivado died\n") == {"build_status": "unknown"}
+    assert parse_shell_build_console("noise\nDAU_MM_JOB_BUILD_OK wns=0.321\n") == ShellBuildStatus(build_status="built", wns_ns=0.321)
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_FAILED synthesis\n") == ShellBuildStatus(build_status="failed", failed_stage="synthesis")
+    assert parse_shell_build_console("vivado died\n") == ShellBuildStatus(build_status="unknown")
 
 
 def test_manifest_packages_outputs_with_digests(tmp_path: Path) -> None:
@@ -75,8 +76,8 @@ def test_run_build_with_stub_vivado(tmp_path: Path) -> None:
     output_root.mkdir()
     (output_root / "build_mm_job.tcl").write_text("# generated\n")
     status = run_shell_project_build(output_root, vivado_executable=str(_fake_vivado(tmp_path)))
-    assert status["build_status"] == "built"
-    assert status["wns_ns"] == 0.123
+    assert status.build_status == "built"
+    assert status.wns_ns == 0.123
     assert (output_root / "dau_mm_job.bit").is_file()
 
 

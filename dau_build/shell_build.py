@@ -15,15 +15,17 @@ import hashlib
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from artlink import Artifact, Digest
+from ccflow import BaseModel
 
 from .packaging import ArtifactManifest
 
 __all__ = (
     "SHELL_BUILD_MANIFEST_NAME",
     "ShellBuildError",
+    "ShellBuildStatus",
     "run_shell_project_build",
     "parse_shell_build_console",
     "shell_build_manifest",
@@ -39,13 +41,22 @@ class ShellBuildError(ValueError):
     pass
 
 
+class ShellBuildStatus(BaseModel):
+    """The outcome of a shell project build, parsed from the Vivado console."""
+
+    build_status: Literal["built", "failed", "unknown"]
+    wns_ns: float | None = None
+    failed_stage: str | None = None
+    return_code: int | None = None
+
+
 def run_shell_project_build(
     output_root: Path,
     *,
     script: str = "build_mm_job.tcl",
     vivado_executable: str = "vivado",
     console_log: str = "console.log",
-) -> dict[str, Any]:
+) -> ShellBuildStatus:
     """Execute the generated project script in batch mode from inside the
     output root (the scripts resolve their artifacts relative to
     themselves) and return the parsed build status."""
@@ -62,26 +73,26 @@ def run_shell_project_build(
             check=False,
         )
     status = parse_shell_build_console(log_path.read_text(encoding="utf-8"))
-    status["return_code"] = completed.returncode
-    if completed.returncode != 0 or status["build_status"] != "built":
+    status.return_code = completed.returncode
+    if completed.returncode != 0 or status.build_status != "built":
         raise ShellBuildError(
-            f"shell build failed (exit {completed.returncode}, status {status['build_status']}"
-            + (f", stage {status['failed_stage']}" if status.get("failed_stage") else "")
+            f"shell build failed (exit {completed.returncode}, status {status.build_status}"
+            + (f", stage {status.failed_stage}" if status.failed_stage else "")
             + f"): see {log_path.as_posix()}"
         )
     return status
 
 
-def parse_shell_build_console(console_text: str) -> dict[str, Any]:
+def parse_shell_build_console(console_text: str) -> ShellBuildStatus:
     """Extract the build outcome the generated scripts print: the
     DAU_MM_JOB_BUILD_OK/FAILED marker and the routed worst negative slack."""
     ok = _BUILD_OK_PATTERN.search(console_text)
     if ok:
-        return {"build_status": "built", "wns_ns": float(ok.group("wns"))}
+        return ShellBuildStatus(build_status="built", wns_ns=float(ok.group("wns")))
     failed = _BUILD_FAILED_PATTERN.search(console_text)
     if failed:
-        return {"build_status": "failed", "failed_stage": failed.group("stage")}
-    return {"build_status": "unknown"}
+        return ShellBuildStatus(build_status="failed", failed_stage=failed.group("stage"))
+    return ShellBuildStatus(build_status="unknown")
 
 
 def _digest(path: Path) -> Digest:
