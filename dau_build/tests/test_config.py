@@ -100,6 +100,8 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
     assert captured["model_values"] == {
         "spec": None,
         "spec_path": "examples/identity/dau-build.yaml",
+        "board": None,
+        "backend": None,
         "module": "dau_identity_top",
         "simulator": "svparser",
         "output_root": None,
@@ -203,3 +205,24 @@ def test_dau_build_registers_a_hydra_searchpath_entry_point() -> None:
 
     registered = {ep.name: ep.value for ep in entry_points(group="hydra.lernaplugins")}
     assert registered.get("dau-build") == "pkg:dau_build.config"
+
+
+def test_board_and_backend_groups_override_spec_derived_resolved_config() -> None:
+    # board=/backend= compose into the task and win over the spec-derived view
+    spec = "examples/identity/dau-build.yaml"
+    base = ["step=steps/resolved-config", f"model.spec_path={spec}"]
+    derived = cfg_run(
+        base_load_config(root_config_dir=str(_CONFIG_DIR), root_config_name="base", overrides=base, basepath=str(_CONFIG_DIR), debug=False).cfg
+    )
+    composed = cfg_run(
+        base_load_config(
+            root_config_dir=str(_CONFIG_DIR),
+            root_config_name="base",
+            overrides=[*base, "board=boards/dau/dpv1", "backend=backends/vivado"],
+            basepath=str(_CONFIG_DIR),
+            debug=False,
+        ).cfg
+    )
+    assert "board\tname=vivado-xdma" in derived.message  # spec-derived: board name = platform
+    assert "board\tname=dpv1" in composed.message  # composed board wins
+    assert "backend\tname=vivado invocation=standard" in composed.message  # composed backend wins

@@ -3,6 +3,8 @@
 _target_: dau_build.build_steps.SimulateTask
 spec_path: null
 spec: ${oc.select:spec,null}
+board: ${oc.select:board,null}
+backend: ${oc.select:backend,null}
 module: ???
 simulator: svparser
 output_root: null
