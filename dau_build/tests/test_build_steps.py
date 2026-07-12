@@ -104,27 +104,19 @@ def test_execute_write_step_persists_artifacts(tmp_path: Path) -> None:
 def test_resolved_config_step_reports_typed_board_driver_operator_and_memory_models(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(
-        (
-            "step=resolved-config",
-            f"spec_path={spec_path}",
-            "board.name=lab-fpga",
-            "driver.os=linux",
-            "operator.set=int32-aggregation",
-            "memory.host_staging_bytes=4096",
-        )
-    )
+    # the resolved config is a view over the spec — no bespoke override dict
+    result = execute_override_step(("step=resolved-config", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="resolved-config",
         message="\n".join(
             (
                 "dau-build-resolved-config",
-                "board\tname=lab-fpga platform=vivado-xdma shell=xdma-ddr",
+                "board\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr",
                 "backend\tname=none invocation=dry-run",
-                "driver\tos=linux transport=xdma",
-                "operators\tset=int32-aggregation names=identity",
-                "memory\thost_staging_bytes=4096 device_staging_bytes=0",
+                "driver\tos=host transport=xdma",
+                "operators\tset=spec names=identity",
+                "memory\thost_staging_bytes=0 device_staging_bytes=0",
             )
         ),
     )
@@ -219,12 +211,12 @@ def test_synthesis_step_writes_local_artifacts_for_backend_handoff(tmp_path: Pat
 def test_explain_step_describes_resolved_plan(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(("step=explain", f"spec_path={spec_path}", "board.name=lab-fpga"))
+    result = execute_override_step(("step=explain", f"spec_path={spec_path}"))
 
     assert result.message.splitlines() == [
         "dau-build-explain",
         f"spec\tpath={spec_path} name=identity-pipeline top=dau_identity_top",
-        "board\tname=lab-fpga platform=vivado-xdma shell=xdma-ddr",
+        "board\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr",
         "actions\tvalidate=local simulate=local synthesis=local-handoff artifacts=generate-or-write",
     ]
 

@@ -38,22 +38,15 @@ def test_memory_config_rejects_negative() -> None:
 
 
 @pytest.mark.skipif(not _EXAMPLE_SPEC.is_file(), reason="example spec not present")
-def test_resolve_build_config_builds_pydantic_models() -> None:
+def test_resolve_build_config_is_a_view_over_the_spec() -> None:
     spec = load_dau_build_spec(_EXAMPLE_SPEC)
-    resolved = resolve_build_config(spec, {"memory.host_staging_bytes": "4096", "backend.name": "vivado"})
+    resolved = resolve_build_config(spec)
     assert isinstance(resolved, ResolvedBuildConfig)
     assert isinstance(resolved.board, BoardConfig) and isinstance(resolved.memory, MemoryConfig)
+    # board/operators/backend derive from the spec (no bespoke override dict)
     assert resolved.board.platform == spec.platform and resolved.board.shell == spec.shell
-    assert resolved.backend.name == "vivado"  # override wins over the spec default
-    assert resolved.memory.host_staging_bytes == 4096
+    assert resolved.backend.name == spec.backend
     assert resolved.operators.names == spec.operators
     assert resolved.to_text().splitlines()[0] == "dau-build-resolved-config"
-
-
-@pytest.mark.skipif(not _EXAMPLE_SPEC.is_file(), reason="example spec not present")
-def test_resolve_build_config_rejects_bad_overrides() -> None:
-    spec = load_dau_build_spec(_EXAMPLE_SPEC)
-    with pytest.raises(ValueError, match="must be an integer"):
-        resolve_build_config(spec, {"memory.host_staging_bytes": "not-a-number"})
-    with pytest.raises(ValueError, match="cannot be negative"):
-        resolve_build_config(spec, {"memory.device_staging_bytes": "-8"})
+    # a task may select the synthesis engine
+    assert resolve_build_config(spec, backend_name="vivado").backend.name == "vivado"
