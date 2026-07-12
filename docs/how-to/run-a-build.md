@@ -13,8 +13,8 @@ synthesize task instead (`backend=backends/yosys`; see the
 [task catalog](../reference/tasks-and-steps.md)).
 
 Field lists for each task are in the [task catalog](../reference/tasks-and-steps.md).
-To see the full resolved config for any command before running it, prefix it with
-`dau-build-cfg-explain`.
+To see the full resolved config for any command before running it, add `--explain`
+(e.g. `dau-build --explain task=tasks/build/synthesize ...`).
 
 ## Synthesize the handoff
 
@@ -23,7 +23,7 @@ handoff. This writes a manifest at `build_status=planned` and does **not** invok
 Vivado:
 
 ```bash
-dau-build-cfg task=tasks/build/synthesize \
+dau-build task=tasks/build/synthesize \
   spec=specs/identity \
   model.module=dau_identity_top \
   model.output_root=outputs/identity
@@ -44,19 +44,19 @@ stage/build/validate command contract, use `stage-vivado-project`:
 
 ```bash
 dau-build task=tasks/stage/stage-vivado-project \
-  source_shell_root=/path/to/vivado-shell-seed \
-  work_root=outputs/vivado \
-  dau_core_root=/path/to/dau-core \
-  dau_driver_root=/path/to/dau-driver \
-  artifact_stem=dau-vivado
+  model.source_shell_root=/path/to/vivado-shell-seed \
+  model.work_root=outputs/vivado \
+  model.dau_core_root=/path/to/dau-core \
+  model.dau_driver_root=/path/to/dau-driver \
+  model.artifact_stem=dau-vivado
 ```
 
 If you only need the overlay artifacts, use `tasks/stage/stage-vivado-overlay`
-instead (it requires `work_root` and `dau_core_root`). To fold a DAU artifact
-bundle into the overlay, add `dau_artifact_bundle=<bundle.yaml>`. If your Vivado
-runs through a wrapper that only accepts a Tcl source path, add
-`vivado_invocation=source-only`, and if that wrapper mounts the current directory
-in a container, also add `vivado_mount_root=/path/to/dau`.
+instead (it requires `model.work_root` and `model.dau_core_root`). To fold a DAU
+artifact bundle into the overlay, add `model.dau_artifact_bundle=<bundle.yaml>`. If
+your Vivado runs through a wrapper that only accepts a Tcl source path, add
+`model.vivado_invocation=source-only`, and if that wrapper mounts the current
+directory in a container, also add `model.vivado_mount_root=/path/to/dau`.
 
 ## Validate before you synthesize
 
@@ -66,8 +66,8 @@ Xilinx tools:
 
 ```bash
 dau-build task=tasks/validate/validate-vivado-artifacts \
-  work_root=outputs/vivado \
-  project_manifest_path=dau-vivado.project
+  model.work_root=outputs/vivado \
+  model.project_manifest_path=dau-vivado.project
 ```
 
 Do this on your development machine before moving to the Vivado host. A failure
@@ -81,9 +81,9 @@ so it is gated behind `execute=true`:
 
 ```bash
 dau-build task=tasks/build/build-vivado-artifacts \
-  work_root=outputs/vivado \
-  artifact_stem=dau-vivado \
-  execute=true
+  model.work_root=outputs/vivado \
+  model.artifact_stem=dau-vivado \
+  model.execute=true
 ```
 
 Once the bitstream, resource report, timing report, and Vivado log exist, this

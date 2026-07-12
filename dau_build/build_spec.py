@@ -269,46 +269,6 @@ def dau_artifact_manifest(spec: DauBuildSpec, *, design: Design, top_sv_path: Pa
     return ArtifactManifest(name=spec.name, intent="output", artifacts=artifacts)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """``dau-build``: dispatch a task through the registry from the flat
-    ``task=<path> field=value`` surface (see docs/reference/commands.md)."""
-    import sys
-
-    from dau_build.build_steps import BuildStepError, execute_override_request
-
-    arguments = sys.argv[1:] if argv is None else argv
-    if not arguments or not _looks_like_override_request(arguments[0]):
-        print("usage: dau-build task=<path> [field=value ...]  (see docs/reference/commands.md)", file=sys.stderr)
-        return 2
-    try:
-        result = execute_override_request(arguments)
-    except (BuildStepError, DauBuildSpecError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    print(result.message)
-    return 0
-
-
-def main_callable_steps(argv: list[str] | None = None) -> int:
-    import sys
-
-    from dau_build.build_steps import BuildStepError, execute_override_step
-
-    arguments = sys.argv[1:] if argv is None else argv
-    try:
-        result = execute_override_step(arguments)
-    except (BuildStepError, DauBuildSpecError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    print(result.message)
-    return 0
-
-
-def _looks_like_override_request(argument: str) -> bool:
-    normalized_argument = argument[1:] if argument.startswith("+") else argument
-    return "=" in normalized_argument
-
-
 def dau_build_spec_summary(spec: DauBuildSpec) -> str:
     summary = (
         "dau-build-spec\t"
@@ -527,7 +487,3 @@ def _bundle_path(root: Path, path: Path) -> Path:
     if path.is_absolute():
         return path
     return root / path
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

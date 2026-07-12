@@ -18,10 +18,10 @@ Two synthesis engines are supported: Vivado (the FPGA bitstream flow) and yosys 
 Build the checked-in identity example — no board or vendor tools required:
 
 ```bash
-dau-build task=tasks/spec/inspect  spec_path=examples/identity/dau-build.yaml
-dau-build task=tasks/spec/build     spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
-dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
-dau-build task=tasks/sim/simulate   module=dau_identity_top spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/inspect  model.spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/build     model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
+dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
+dau-build task=tasks/sim/simulate   model.module=dau_identity_top model.spec_path=examples/identity/dau-build.yaml
 ```
 
 Task and step names are path-style, mirroring the config tree (`task=tasks/spec/inspect`, `step=steps/inspect`).
