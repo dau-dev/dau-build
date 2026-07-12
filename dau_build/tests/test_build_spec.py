@@ -223,7 +223,7 @@ def test_generate_dau_build_artifacts_emits_stream_job_top_boundary_for_stream_m
 def test_cli_build_emits_dau_native_artifact_bundle(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main(["build", "--spec", str(spec_path), "--out", str(tmp_path / "out")])
+    exit_code = main(["task=tasks/spec/build", f"spec_path={spec_path}", f"output_root={tmp_path / 'out'}"])
 
     assert exit_code == 0
     assert (tmp_path / "out" / "generated" / "dau_identity_top.sv").is_file()
@@ -285,7 +285,7 @@ def test_generate_dau_build_artifacts_rejects_unknown_requested_module(tmp_path:
 def test_cli_inspect_reports_spec_without_generating_outputs(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = _main_exit_code(["inspect", "--spec", str(spec_path)])
+    exit_code = _main_exit_code(["task=tasks/spec/inspect", f"spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
@@ -297,9 +297,11 @@ def test_cli_inspect_reports_spec_without_generating_outputs(tmp_path: Path, cap
 def test_cli_validate_accepts_spec_and_artifact_bundle(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    spec_exit_code = _main_exit_code(["validate", "--spec", str(spec_path)])
-    build_exit_code = main(["build", "--spec", str(spec_path), "--out", str(tmp_path / "out")])
-    bundle_exit_code = _main_exit_code(["validate", "--manifest", str(tmp_path / "out" / "dau-identity.manifest"), "--root", str(tmp_path / "out")])
+    spec_exit_code = _main_exit_code(["task=tasks/spec/validate", f"spec_path={spec_path}"])
+    build_exit_code = main(["task=tasks/spec/build", f"spec_path={spec_path}", f"output_root={tmp_path / 'out'}"])
+    bundle_exit_code = _main_exit_code(
+        ["task=tasks/spec/validate", f"manifest_path={tmp_path / 'out' / 'dau-identity.manifest'}", f"root={tmp_path / 'out'}"]
+    )
 
     assert spec_exit_code == 0
     assert build_exit_code == 0
@@ -515,7 +517,7 @@ def test_cli_inspect_reports_manifest_input_origins(tmp_path: Path, capsys) -> N
         encoding="utf-8",
     )
 
-    exit_code = _main_exit_code(["inspect", "--spec", str(spec_path)])
+    exit_code = _main_exit_code(["task=tasks/spec/inspect", f"spec_path={spec_path}"])
 
     assert exit_code == 0
     origin = package_manifest_path.resolve().as_posix()

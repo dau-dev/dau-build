@@ -7,7 +7,7 @@ the tree they expose.
 
 | Command                 | Entry point                                | Argument style                                 | Purpose                                            |
 | ----------------------- | ------------------------------------------ | ---------------------------------------------- | -------------------------------------------------- |
-| `dau-build`             | `dau_build.build_spec:main`                | subcommands, or flat `task=<path> field=value` | Spec operations and flat task dispatch             |
+| `dau-build`             | `dau_build.build_spec:main`                | flat `task=<path> field=value`                 | Flat task dispatch                                 |
 | `dau-build-steps`       | `dau_build.build_spec:main_callable_steps` | flat `step=<path> field=value`                 | Low-level step dispatch                            |
 | `dau-build-cfg`         | `dau_build.cli:main`                       | `[--config-dir DIR] task=<path> model.<f>=v`   | Compose and run a task through the registry        |
 | `dau-build-cfg-explain` | `dau_build.cli:explain`                    | same as `dau-build-cfg`                        | Print the resolved config; do not run              |
@@ -20,59 +20,16 @@ The full set of task and step names and their fields is in the [task and step ca
 ## `dau-build`
 
 ```text
-dau-build <subcommand> [options]
 dau-build task=<path> [field=value ...]
 ```
 
-If the first argument contains `=`, the command dispatches a flat task request through the registry (equivalent to `dau-build-cfg` without the `model.` prefix). Otherwise it runs one of three subcommands that operate directly on a build spec file.
-
-> **Deprecated.** The `build`, `inspect`, and `validate` subcommands are superseded by the `tasks/spec/*` tasks and print a deprecation warning. Use the task form instead:
->
-> | Subcommand                                 | Task equivalent                                             |
-> | ------------------------------------------ | ----------------------------------------------------------- |
-> | `dau-build inspect --spec X`               | `dau-build task=tasks/spec/inspect spec_path=X`             |
-> | `dau-build build --spec X --out D`         | `dau-build task=tasks/spec/build spec_path=X output_root=D` |
-> | `dau-build validate --spec X`              | `dau-build task=tasks/spec/validate spec_path=X`            |
-> | `dau-build validate --manifest M --root D` | `dau-build task=tasks/spec/validate manifest_path=M root=D` |
-
-### `build`
+Dispatches a task through the registry from the flat surface — equivalent to `dau-build-cfg` without the `model.` prefix on field overrides. Exits non-zero with a usage message if the first argument is not a `key=value` override. For example, the spec operations (inspect, build, and validate a spec or generated bundle):
 
 ```text
-dau-build build --spec <spec.yaml> --out <dir>
+dau-build task=tasks/spec/inspect  spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/build     spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
+dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
 ```
-
-Resolves the spec and writes the generated top-level SystemVerilog, DAU manifest, and `artlink.manifest/v0` artifact bundle under `--out`. Prints `dau-build-artifacts\tmanifest=<path> top_sv=<path>`.
-
-| Option   | Required | Description                     |
-| -------- | -------- | ------------------------------- |
-| `--spec` | yes      | Path to a DAU build YAML spec.  |
-| `--out`  | yes      | Output directory for artifacts. |
-
-### `inspect`
-
-```text
-dau-build inspect --spec <spec.yaml>
-```
-
-Prints the resolved build-spec summary, including each source, metadata file, and binary asset with its originating manifest.
-
-| Option   | Required | Description                    |
-| -------- | -------- | ------------------------------ |
-| `--spec` | yes      | Path to a DAU build YAML spec. |
-
-### `validate`
-
-```text
-dau-build validate (--spec <spec.yaml> | --manifest <manifest> [--root <dir>])
-```
-
-Validates a spec (`--spec`) or a generated artifact bundle (`--manifest`). `--spec` and `--manifest` are mutually exclusive and one is required.
-
-| Option       | Required   | Description                                                  |
-| ------------ | ---------- | ------------------------------------------------------------ |
-| `--spec`     | one of two | Validate a build spec.                                       |
-| `--manifest` | one of two | Validate a generated artifact manifest.                      |
-| `--root`     | no         | Artifact bundle root; defaults to the manifest's parent dir. |
 
 ## `dau-build-steps`
 
