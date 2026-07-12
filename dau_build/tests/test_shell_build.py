@@ -142,7 +142,7 @@ def test_flash_task_rejects_unbuilt_manifest(tmp_path: Path) -> None:
 def test_task_reachable_from_config_tree() -> None:
     from dau_build.build_steps import available_task_names
 
-    assert "build-shell-project" in available_task_names()
+    assert "tasks/build/build-shell-project" in available_task_names()
 
 
 def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None:

@@ -178,7 +178,7 @@ def dpv1_platform() -> PlatformDefinition:
     """The dpv1 (NiteFury XC7A200T) platform, resolved from its config
     (``config/platform/dpv1.yaml``) — the single source for the part,
     budget, memory, and the 47-parameter XDMA personality the shell builds
-    with. A convenience wrapper over ``resolve_platform("dpv1")``."""
+    with. A convenience wrapper over ``resolve_platform("platforms/dau/dpv1")``."""
     from dau_build.config import resolve_platform
 
-    return resolve_platform("dpv1")
+    return resolve_platform("platforms/dau/dpv1")

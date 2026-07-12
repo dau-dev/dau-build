@@ -36,7 +36,7 @@ def dpv1_xdma_personality():
     """The dpv1 XDMA personality, resolved from the platform config."""
     from dau_build.config import resolve_platform
 
-    return resolve_platform("dpv1").host_link.xdma_personality
+    return resolve_platform("platforms/dau/dpv1").host_link.xdma_personality
 
 
 class MmJobShellRequest(BaseModel):

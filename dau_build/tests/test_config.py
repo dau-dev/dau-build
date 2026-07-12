@@ -19,7 +19,7 @@ def test_spec_hydra_group_composes_a_buildspec() -> None:
     result = base_load_config(
         root_config_dir=str(_CONFIG_DIR),
         root_config_name="base",
-        overrides=["step=inspect", "spec=identity"],
+        overrides=["step=steps/inspect", "spec=specs/identity"],
         basepath=str(_CONFIG_DIR),
         debug=False,
     )
@@ -60,7 +60,7 @@ def test_packaged_base_config_runs_selected_callable_with_ccflow_cfg_run(tmp_pat
     result = base_load_config(
         root_config_dir=str(_CONFIG_DIR),
         root_config_name="base",
-        overrides=["task=simulate", f"model.spec_path={spec_path}", "model.module=dau_identity_top"],
+        overrides=["task=tasks/sim/simulate", f"model.spec_path={spec_path}", "model.module=dau_identity_top"],
         basepath=str(_CONFIG_DIR),
         debug=False,
     )
@@ -87,7 +87,7 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
 
     result = execute_override_request(
         (
-            "task=simulate",
+            "task=tasks/sim/simulate",
             "simulator=svparser",
             "module=dau_identity_top",
             "spec_path=examples/identity/dau-build.yaml",
@@ -96,7 +96,7 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
 
     assert result == BuildStepResult(step="simulate", message="configured")
     assert captured["request_kind"] == "task"
-    assert captured["request_name"] == "simulate"
+    assert captured["request_name"] == "tasks/sim/simulate"
     assert captured["model_values"] == {
         "spec": None,
         "spec_path": "examples/identity/dau-build.yaml",
@@ -114,7 +114,8 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
 
 
 def _config_group_names(kind: str) -> tuple[str, ...]:
-    return tuple(sorted(path.stem for path in (_CONFIG_DIR / kind).glob("*.yaml")))
+    group_dir = _CONFIG_DIR / kind
+    return tuple(sorted(path.relative_to(group_dir).with_suffix("").as_posix() for path in group_dir.rglob("*.yaml")))
 
 
 def _target(model_type: type) -> str:
@@ -141,12 +142,12 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
         "synthesize": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top", f"model.output_root={tmp_path / 'out'}"),
         "validate-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
     }
-    return base[name]
+    return base[name.split("/")[-1]]
 
 
 def _step_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
     overrides = [("model.spec_path=placeholder.yaml",)]
-    if name in {"generate", "synthesis", "write"}:
+    if name.split("/")[-1] in {"generate", "synthesis", "write"}:
         overrides.append((f"model.output_root={tmp_path / name}",))
     return tuple(item for group in overrides for item in group)
 

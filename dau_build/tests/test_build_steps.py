@@ -22,30 +22,39 @@ _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 
 def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
-    assert available_step_names() == ("explain", "generate", "inspect", "resolved-config", "simulate", "synthesis", "validate", "write")
+    assert available_step_names() == (
+        "steps/explain",
+        "steps/generate",
+        "steps/inspect",
+        "steps/resolved-config",
+        "steps/simulate",
+        "steps/synthesis",
+        "steps/validate",
+        "steps/write",
+    )
     assert available_task_names() == (
-        "build-shell-project",
-        "build-vivado-artifacts",
-        "flash",
-        "hardware-plan",
-        "overlay-build",
-        "simulate",
-        "smoke-test",
-        "stage-shell",
-        "stage-vivado-overlay",
-        "stage-vivado-project",
-        "synthesize",
-        "validate-vivado-artifacts",
+        "tasks/build/build-shell-project",
+        "tasks/build/build-vivado-artifacts",
+        "tasks/build/overlay-build",
+        "tasks/build/synthesize",
+        "tasks/flash/flash",
+        "tasks/flash/smoke-test",
+        "tasks/hardware/hardware-plan",
+        "tasks/sim/simulate",
+        "tasks/stage/stage-shell",
+        "tasks/stage/stage-vivado-overlay",
+        "tasks/stage/stage-vivado-project",
+        "tasks/validate/validate-vivado-artifacts",
     )
     assert all(issubclass(model_type, CallableModel) for model_type in STEP_MODEL_TYPES.values())
     assert all(issubclass(model_type, CallableModel) for model_type in TASK_MODEL_TYPES.values())
 
 
 def test_parse_override_dict_accepts_hydra_style_keys() -> None:
-    overrides = parse_override_dict(("step=inspect", "spec_path=examples/identity/dau-build.yaml", "+driver.os=linux"))
+    overrides = parse_override_dict(("step=steps/inspect", "spec_path=examples/identity/dau-build.yaml", "+driver.os=linux"))
 
     assert overrides == {
-        "step": "inspect",
+        "step": "steps/inspect",
         "spec_path": "examples/identity/dau-build.yaml",
         "driver.os": "linux",
     }
@@ -59,7 +68,7 @@ def test_parse_override_dict_rejects_non_override_tokens() -> None:
 def test_execute_inspect_step_from_override_dict(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(("step=inspect", f"spec_path={spec_path}"))
+    result = execute_override_step(("step=steps/inspect", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="inspect",
@@ -70,7 +79,7 @@ def test_execute_inspect_step_from_override_dict(tmp_path: Path) -> None:
 def test_execute_validate_step_from_override_dict(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(("step=validate", f"spec_path={spec_path}"))
+    result = execute_override_step(("step=steps/validate", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={spec_path}")
 
@@ -79,7 +88,7 @@ def test_execute_generate_step_returns_unwritten_artifact_paths(tmp_path: Path) 
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"
 
-    result = execute_override_step(("step=generate", f"spec_path={spec_path}", f"output_root={output_root}"))
+    result = execute_override_step(("step=steps/generate", f"spec_path={spec_path}", f"output_root={output_root}"))
 
     assert result == BuildStepResult(
         step="generate",
@@ -92,7 +101,7 @@ def test_execute_write_step_persists_artifacts(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"
 
-    result = execute_override_step(("step=write", f"spec_path={spec_path}", f"output_root={output_root}"))
+    result = execute_override_step(("step=steps/write", f"spec_path={spec_path}", f"output_root={output_root}"))
 
     assert result == BuildStepResult(
         step="write",
@@ -105,7 +114,7 @@ def test_resolved_config_step_reports_typed_board_driver_operator_and_memory_mod
     spec_path = _write_spec(tmp_path)
 
     # the resolved config is a view over the spec — no bespoke override dict
-    result = execute_override_step(("step=resolved-config", f"spec_path={spec_path}"))
+    result = execute_override_step(("step=steps/resolved-config", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="resolved-config",
@@ -125,7 +134,7 @@ def test_resolved_config_step_reports_typed_board_driver_operator_and_memory_mod
 def test_simulate_step_validates_sources_and_reports_local_simulation_inputs(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(("step=simulate", f"spec_path={spec_path}"))
+    result = execute_override_step(("step=steps/simulate", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="simulate",
@@ -142,7 +151,7 @@ def test_simulate_step_can_run_verilator_testbench(tmp_path: Path) -> None:
 
     result = execute_override_step(
         (
-            "step=simulate",
+            "step=steps/simulate",
             f"spec_path={spec_path}",
             "simulate.engine=verilator",
             f"simulate.testbench_path={testbench_path}",
@@ -172,7 +181,7 @@ def test_simulate_step_can_run_verilator_profile_from_artlink_manifest(tmp_path:
 
     result = execute_override_step(
         (
-            "step=simulate",
+            "step=steps/simulate",
             f"spec_path={spec_path}",
             "simulate.engine=verilator",
             "simulate.profile=counter-profile",
@@ -195,7 +204,7 @@ def test_synthesis_step_writes_local_artifacts_for_backend_handoff(tmp_path: Pat
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"
 
-    result = execute_override_step(("step=synthesis", f"spec_path={spec_path}", f"output_root={output_root}"))
+    result = execute_override_step(("step=steps/synthesis", f"spec_path={spec_path}", f"output_root={output_root}"))
 
     assert result == BuildStepResult(
         step="synthesis",
@@ -211,7 +220,7 @@ def test_synthesis_step_writes_local_artifacts_for_backend_handoff(tmp_path: Pat
 def test_explain_step_describes_resolved_plan(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_step(("step=explain", f"spec_path={spec_path}"))
+    result = execute_override_step(("step=steps/explain", f"spec_path={spec_path}"))
 
     assert result.message.splitlines() == [
         "dau-build-explain",
@@ -240,13 +249,13 @@ def test_public_build_docs_and_tests_do_not_name_internal_hardware_hosts() -> No
 
 def test_execute_step_validates_required_overrides(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="a spec is required"):
-        execute_override_step(("step=inspect",))
+        execute_override_step(("step=steps/inspect",))
 
 
 def test_callable_steps_entrypoint_prints_result(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main_callable_steps(["step=validate", f"spec_path={spec_path}"])
+    exit_code = main_callable_steps(["step=steps/validate", f"spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [f"dau-build-spec-valid\tspec={spec_path}"]

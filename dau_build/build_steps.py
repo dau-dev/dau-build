@@ -930,13 +930,16 @@ def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallable
     import yaml
 
     model_types: dict[str, type[BuildCallableModel]] = {}
-    for path in sorted((Path(__file__).parent / "config" / kind).glob("*.yaml")):
+    group_dir = Path(__file__).parent / "config" / kind
+    for path in sorted(group_dir.rglob("*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         target = raw.get("_target_") if isinstance(raw, Mapping) else None
         if not isinstance(target, str) or not target:
-            raise BuildStepError(f"config {kind}/{path.name} must declare _target_")
+            raise BuildStepError(f"config {kind}/{path.relative_to(group_dir)} must declare _target_")
         module_name, _, attribute = target.rpartition(".")
-        model_types[path.stem] = getattr(importlib.import_module(module_name), attribute)
+        # path-style key: config/task/tasks/build/synthesize.yaml -> tasks/build/synthesize
+        key = path.relative_to(group_dir).with_suffix("").as_posix()
+        model_types[key] = getattr(importlib.import_module(module_name), attribute)
     return MappingProxyType(model_types)
 
 

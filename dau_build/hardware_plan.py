@@ -438,7 +438,7 @@ def validate_vivado_artifacts_step(
     command_prefix = [executable] if isinstance(executable, str) else list(executable)
     argv = [
         *command_prefix,
-        "task=validate-vivado-artifacts",
+        "task=tasks/validate/validate-vivado-artifacts",
         f"work_root={config.work_root}",
         f"manifest_path={manifest_path}",
         f"command_plan_path={command_plan_path}",
