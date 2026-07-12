@@ -3,11 +3,26 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dau_sim.integrations.verilator_profiles import VerilatorProfile
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest, load_yaml_mapping
+
+
+class _ProfileEntry(BaseModel):
+    """Validates the scalar fields of a simulation-profile mapping (sources
+    are resolved separately against the artifact registry)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(min_length=1)
+    simulator: Literal["verilator", "cocotb"]
+    top_module: str = Field(min_length=1)
+    expect_stdout: str | None = None
+    test_module: str | None = None
+
 
 SIMULATION_PROFILE_SCHEMA = "dau.simulation-profile/v0"
 SIMULATION_PROFILE_ROLE = "simulation-profile"
@@ -108,26 +123,21 @@ def _verilator_profile_from_mapping(
     artifacts_by_id: Mapping[str, Artifact],
     root: Path,
 ):
-    name = _required_str(profile, "name")
-    simulator = _required_str(profile, "simulator")
+    try:
+        entry = _ProfileEntry.model_validate(profile)
+    except ValidationError as exc:
+        raise SimulationProfileError(str(exc)) from exc
     sources = _profile_sources(profile.get("sources", ()), artifacts_by_id=artifacts_by_id, root=root)
-    if simulator == "verilator":
-        return VerilatorProfile(
-            name=name,
-            sources=sources,
-            top_module=_required_str(profile, "top_module"),
-            expect_stdout=_required_str(profile, "expect_stdout"),
-        )
-    if simulator == "cocotb":
-        from dau_sim.integrations.cocotb import CocotbProfile
+    if entry.simulator == "verilator":
+        if not entry.expect_stdout:
+            raise SimulationProfileError(f"profile {entry.name!r} (verilator) requires expect_stdout")
+        return VerilatorProfile(name=entry.name, sources=sources, top_module=entry.top_module, expect_stdout=entry.expect_stdout)
 
-        return CocotbProfile(
-            name=name,
-            sources=sources,
-            hdl_toplevel=_required_str(profile, "top_module"),
-            test_module=_required_str(profile, "test_module"),
-        )
-    raise SimulationProfileError(f"profile {name!r} uses unsupported simulator {simulator!r}; expected verilator or cocotb")
+    from dau_sim.integrations.cocotb import CocotbProfile
+
+    if not entry.test_module:
+        raise SimulationProfileError(f"profile {entry.name!r} (cocotb) requires test_module")
+    return CocotbProfile(name=entry.name, sources=sources, hdl_toplevel=entry.top_module, test_module=entry.test_module)
 
 
 def _profile_sources(value: Any, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> tuple[Path, ...]:
