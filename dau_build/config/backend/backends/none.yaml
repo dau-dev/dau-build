@@ -1,0 +1,6 @@
+# @package backend
+
+# backend=backends/none (dry-run, no vendor toolchain)
+_target_: dau_build.build_config.BackendConfig
+name: none
+invocation: dry-run

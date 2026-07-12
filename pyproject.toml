@@ -67,6 +67,15 @@ dau-build = "dau_build.build_spec:main"
 dau-build-steps = "dau_build.build_spec:main_callable_steps"
 dau-build-cfg = "dau_build.cli:main"
 dau-build-cfg-explain = "dau_build.cli:explain"
+dau-build-run = "dau_build.cli:run"
+
+# Register dau-build's config tree on the Hydra search path (via the lerna
+# bridge). Its config groups become discoverable to the CLI and to any other
+# package/user that composes with the search path — the extension mechanism:
+# a package registers its own `pkg:<name>.config` to add boards, backends,
+# designs, or tasks without touching dau-build.
+[project.entry-points."hydra.lernaplugins"]
+dau-build = "pkg:dau_build.config"
 
 [project.urls]
 Repository = "https://github.com/dau-dev/dau-build"

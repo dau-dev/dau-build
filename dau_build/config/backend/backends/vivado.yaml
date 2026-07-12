@@ -1,0 +1,6 @@
+# @package backend
+
+# backend=backends/vivado
+_target_: dau_build.build_config.BackendConfig
+name: vivado
+invocation: standard
