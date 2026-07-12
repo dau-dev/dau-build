@@ -28,7 +28,7 @@ Task and step names are path-style, mirroring the config tree (`task=tasks/sim/s
 
 ## Documentation
 
-Full documentation is in [docs/](docs/index.md):
+The documentation is organized into four sections:
 
 - **Tutorial** — [Build the identity example](docs/tutorial/first-build.md).
 - **How-to** — [Run a build end to end](docs/how-to/run-a-build.md) · [Program a bitstream on dpv1](docs/how-to/program-hardware.md) · [Extend dau-build](docs/how-to/extend-dau-build.md).

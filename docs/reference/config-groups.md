@@ -59,7 +59,7 @@ tasks/stage/stage-vivado-project
 tasks/validate/validate-vivado-artifacts
 ```
 
-Fields per task are in the [task and step catalog](tasks-and-steps.md#tasks).
+Fields per task are in the [task and step catalog](tasks-and-steps.md).
 
 ## `step`
 
@@ -76,7 +76,7 @@ steps/validate
 steps/write
 ```
 
-Fields per step are in the [task and step catalog](tasks-and-steps.md#steps).
+Fields per step are in the [task and step catalog](tasks-and-steps.md).
 
 ## `spec`
 
@@ -111,7 +111,7 @@ shell: xdma-ddr
 
 `BackendConfig` fields: `name` (str), `invocation` (str). Vivado is the only
 backend with a real implementation. See
-[the architecture explanation](../explanation/architecture.md#backends) for
+[the architecture explanation](../explanation/architecture.md) for
 current-vs-future backend support.
 
 ## `platform`
