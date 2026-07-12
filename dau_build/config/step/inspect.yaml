@@ -1,4 +1,5 @@
 # @package model
 
 _target_: dau_build.build_steps.InspectStep
-spec_path: ???
+spec_path: null
+spec: ${oc.select:spec,null}

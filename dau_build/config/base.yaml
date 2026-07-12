@@ -5,6 +5,7 @@ defaults:
   - optional task: null
   - optional step: null
   - optional platform: null
+  - optional spec: null
   - callable: callable
 
 context: {}

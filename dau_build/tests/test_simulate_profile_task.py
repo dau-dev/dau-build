@@ -24,7 +24,7 @@ def test_profile_only_simulate_runs(tmp_path):
 
 
 def test_simulate_without_spec_or_profile_fails_typed(tmp_path):
-    with pytest.raises(BuildStepError, match="requires spec_path and module"):
+    with pytest.raises(BuildStepError, match="requires a spec"):
         execute_override_task(["task=simulate", "simulator=verilator"])
 
 

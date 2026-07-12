@@ -47,6 +47,22 @@ class ResolvedBuildConfig(BaseModel):
     operators: OperatorConfig
     memory: MemoryConfig
 
+    @classmethod
+    def from_spec(cls, spec: DauBuildSpec, *, backend_name: str | None = None) -> ResolvedBuildConfig:
+        """The build config as a view over the spec. Board, driver,
+        operators, and memory derive from the spec directly (Hydra field
+        overrides on the composed spec are how a user changes them — no
+        bespoke override dict). ``backend_name`` selects the synthesis
+        engine."""
+        return cls(
+            spec=spec,
+            board=BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
+            backend=BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
+            driver=DriverConfig(os="host", transport="xdma"),
+            operators=OperatorConfig(set_name="spec", names=spec.operators),
+            memory=MemoryConfig(),
+        )
+
     def to_text(self) -> str:
         return "\n".join(
             (
@@ -58,18 +74,3 @@ class ResolvedBuildConfig(BaseModel):
                 f"memory\thost_staging_bytes={self.memory.host_staging_bytes} device_staging_bytes={self.memory.device_staging_bytes}",
             )
         )
-
-
-def resolve_build_config(spec: DauBuildSpec, *, backend_name: str | None = None) -> ResolvedBuildConfig:
-    """The build config as a view over the spec. Board, driver, operators,
-    and memory derive from the spec directly (Hydra field overrides on the
-    composed spec are how a user changes them — no bespoke override dict).
-    ``backend_name`` lets a task select the synthesis engine."""
-    return ResolvedBuildConfig(
-        spec=spec,
-        board=BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
-        backend=BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
-        driver=DriverConfig(os="host", transport="xdma"),
-        operators=OperatorConfig(set_name="spec", names=spec.operators),
-        memory=MemoryConfig(),
-    )

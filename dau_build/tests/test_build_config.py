@@ -12,9 +12,8 @@ from dau_build.build_config import (
     MemoryConfig,
     OperatorConfig,
     ResolvedBuildConfig,
-    resolve_build_config,
 )
-from dau_build.build_spec import load_dau_build_spec
+from dau_build.build_spec import BuildSpec
 
 _EXAMPLE_SPEC = Path(__file__).resolve().parents[2] / "examples" / "identity" / "dau-build.yaml"
 
@@ -39,8 +38,8 @@ def test_memory_config_rejects_negative() -> None:
 
 @pytest.mark.skipif(not _EXAMPLE_SPEC.is_file(), reason="example spec not present")
 def test_resolve_build_config_is_a_view_over_the_spec() -> None:
-    spec = load_dau_build_spec(_EXAMPLE_SPEC)
-    resolved = resolve_build_config(spec)
+    spec = BuildSpec.from_file(_EXAMPLE_SPEC).resolve()
+    resolved = ResolvedBuildConfig.from_spec(spec)
     assert isinstance(resolved, ResolvedBuildConfig)
     assert isinstance(resolved.board, BoardConfig) and isinstance(resolved.memory, MemoryConfig)
     # board/operators/backend derive from the spec (no bespoke override dict)
@@ -49,4 +48,4 @@ def test_resolve_build_config_is_a_view_over_the_spec() -> None:
     assert resolved.operators.names == spec.operators
     assert resolved.to_text().splitlines()[0] == "dau-build-resolved-config"
     # a task may select the synthesis engine
-    assert resolve_build_config(spec, backend_name="vivado").backend.name == "vivado"
+    assert ResolvedBuildConfig.from_spec(spec, backend_name="vivado").backend.name == "vivado"

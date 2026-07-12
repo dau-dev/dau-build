@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from dau_build.build_spec import generate_dau_build_artifacts, load_dau_build_spec
+from dau_build.build_spec import BuildSpec, generate_dau_build_artifacts
 from dau_build.packaging import artifact_modules, load_artifact_manifest
 
 _EXAMPLE_DIR = Path(__file__).parents[2] / "examples" / "identity"
 
 
 def test_identity_example_build_spec_loads_and_generates_artifacts(tmp_path: Path) -> None:
-    spec = load_dau_build_spec(_EXAMPLE_DIR / "dau-build.yaml")
+    spec = BuildSpec.from_file(_EXAMPLE_DIR / "dau-build.yaml").resolve()
     artifacts = generate_dau_build_artifacts(spec, output_root=tmp_path / "out")
 
     assert spec.name == "identity-pipeline"

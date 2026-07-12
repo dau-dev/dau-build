@@ -13,6 +13,21 @@ _CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 
+def test_spec_hydra_group_composes_a_buildspec() -> None:
+    # the packaged `spec=identity` group composes a BuildSpec into model.spec
+    # — the Hydra-native replacement for a hand-passed spec_path
+    result = base_load_config(
+        root_config_dir=str(_CONFIG_DIR),
+        root_config_name="base",
+        overrides=["step=inspect", "spec=identity"],
+        basepath=str(_CONFIG_DIR),
+        debug=False,
+    )
+    output = cfg_run(result.cfg)
+    assert output.step == "inspect"
+    assert "name=identity-pipeline" in output.message
+
+
 def test_packaged_task_and_step_config_targets_follow_callable_registries() -> None:
     assert _config_group_names("task") == tuple(sorted(TASK_MODEL_TYPES))
     assert _config_group_names("step") == tuple(sorted(STEP_MODEL_TYPES))
@@ -83,6 +98,7 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
     assert captured["request_kind"] == "task"
     assert captured["request_name"] == "simulate"
     assert captured["model_values"] == {
+        "spec": None,
         "spec_path": "examples/identity/dau-build.yaml",
         "module": "dau_identity_top",
         "simulator": "svparser",
