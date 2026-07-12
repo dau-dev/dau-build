@@ -36,11 +36,11 @@ def _build_spec_api():
     return build_spec
 
 
-def _resolve_build_config(spec, *, board=None, backend=None, backend_name=None):
+def _resolve_build_config(spec, *, board=None, backend=None, backend_name=None, driver=None, memory=None):
     """Deferred for the same reason: build_config imports build_spec."""
     from dau_build.build_config import ResolvedBuildConfig
 
-    return ResolvedBuildConfig.from_spec(spec, board=board, backend=backend, backend_name=backend_name)
+    return ResolvedBuildConfig.from_spec(spec, board=board, backend=backend, backend_name=backend_name, driver=driver, memory=memory)
 
 
 class BuildStepError(ValueError):
@@ -77,9 +77,11 @@ class SpecPathModel(BuildCallableModel):
     spec_path: Path | None = None
     board: Any = None
     backend: Any = None
+    driver: Any = None
+    memory: Any = None
 
     def _resolved(self, spec, *, backend_name=None):
-        return _resolve_build_config(spec, board=self.board, backend=self.backend, backend_name=backend_name)
+        return _resolve_build_config(spec, board=self.board, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory)
 
     def load_spec(self):
         build_spec = self.spec

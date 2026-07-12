@@ -1,0 +1,6 @@
+# @package driver
+
+# driver=drivers/host — the host-side driver (OS + transport)
+_target_: dau_build.build_config.DriverConfig
+os: host
+transport: xdma

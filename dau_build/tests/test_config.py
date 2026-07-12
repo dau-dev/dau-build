@@ -101,6 +101,8 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
         "spec_path": "examples/identity/dau-build.yaml",
         "board": None,
         "backend": None,
+        "driver": None,
+        "memory": None,
         "module": "dau_identity_top",
         "output_root": None,
         "simulator": None,
@@ -223,3 +225,25 @@ def test_board_and_backend_groups_override_spec_derived_resolved_config() -> Non
     assert "board\tname=vivado-xdma" in derived.message  # spec-derived: board name = platform
     assert "board\tname=dpv1" in composed.message  # composed board wins
     assert "backend\tname=vivado invocation=standard" in composed.message  # composed backend wins
+
+
+def test_driver_and_memory_config_groups_compose_and_override() -> None:
+    # driver=/memory= compose into the resolved config; fields are overridable
+    spec = "examples/identity/dau-build.yaml"
+    result = cfg_run(
+        base_load_config(
+            root_config_dir=str(_CONFIG_DIR),
+            root_config_name="base",
+            overrides=[
+                "step=steps/resolved-config",
+                f"model.spec_path={spec}",
+                "driver=drivers/host",
+                "memory=memories/default",
+                "memory.host_staging_bytes=4096",
+            ],
+            basepath=str(_CONFIG_DIR),
+            debug=False,
+        ).cfg
+    )
+    assert "driver\tos=host transport=xdma" in result.message
+    assert "memory\thost_staging_bytes=4096 device_staging_bytes=0" in result.message

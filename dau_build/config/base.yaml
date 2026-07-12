@@ -7,6 +7,8 @@ defaults:
   - optional platform: null
   - optional board: null
   - optional backend: null
+  - optional driver: null
+  - optional memory: null
   - optional simulator: null
   - optional spec: null
   - optional plan: null
