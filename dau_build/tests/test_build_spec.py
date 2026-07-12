@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 
 from dau_build.build_spec import (
+    BuildSpec,
     DauBuildSpec,
+    build_spec_from_mapping,
     design_manifest_items,
     generate_dau_build_artifacts,
     load_dau_build_spec,
@@ -56,6 +58,41 @@ def _write_spec(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return spec_path
+
+
+def test_build_spec_is_hydra_instantiable() -> None:
+    # a spec is Hydra-composable config: instantiate it from a _target_ mapping
+    from hydra.utils import instantiate
+
+    spec = instantiate(
+        {
+            "_target_": "dau_build.build_spec.BuildSpec",
+            "name": "x",
+            "top_name": "t",
+            "platform": "p",
+            "shell": "s",
+            "artifact_stem": "a",
+            "register_map_version": "0.1",
+            "stream_protocol_version": "0.1",
+            "clock": "clk",
+            "reset": "rst",
+            "operators": ["identity"],
+            "modules": ["m"],
+        }
+    )
+    assert isinstance(spec, BuildSpec)
+    assert spec.name == "x" and spec.backend == "none"
+
+
+def test_build_spec_resolve_equals_the_loader(tmp_path: Path) -> None:
+    # load_dau_build_spec delegates to BuildSpec.resolve(); prove the composed
+    # config path produces the identical resolved DauBuildSpec
+    spec_path = _write_spec(tmp_path)
+    from dau_build.build_spec import _load_yaml_mapping
+
+    composed = build_spec_from_mapping(_load_yaml_mapping(spec_path), base_dir=spec_path.parent)
+    assert isinstance(composed, BuildSpec)
+    assert composed.resolve() == load_dau_build_spec(spec_path)
 
 
 def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Path) -> None:

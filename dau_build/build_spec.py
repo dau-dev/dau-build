@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ccflow import BaseModel
+
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
 from dau_build.svparser import Design
@@ -60,43 +62,91 @@ class DauBuildArtifacts:
     artifact_manifest_text: str
 
 
-def load_dau_build_spec(path: Path) -> DauBuildSpec:
-    spec_root = path.parent
-    raw = _load_yaml_mapping(path)
-    name = _required_str(raw, "name")
-    backend = str(raw.get("backend", "none"))
-    if backend not in SUPPORTED_BACKENDS:
-        raise DauBuildSpecError(f"unsupported backend: {backend}")
-    artifact_manifests = _optional_paths(raw, "artifact_manifests", spec_root, "artifact manifest")
-    direct_sources = _optional_paths(raw, "sources", spec_root, "source")
-    direct_metadata = _optional_paths(raw, "metadata", spec_root, "metadata")
-    direct_binary_assets = _optional_paths(raw, "binary_assets", spec_root, "binary asset")
-    direct_artifacts = (
-        *(_direct_source_artifact(source) for source in direct_sources),
-        *(_direct_metadata_artifact(metadata) for metadata in direct_metadata),
-        *(_direct_binary_artifact(binary) for binary in direct_binary_assets),
-    )
-    try:
-        artifact_bundle = load_artifact_bundle(artifact_manifests, direct_artifacts=tuple(direct_artifacts), name=name)
-    except ArtifactBundleError as exc:
-        raise DauBuildSpecError(str(exc)) from exc
-    manifest_artifacts = tuple(entry.artifact for entry in artifact_bundle.entries if entry.manifest_path is not None)
-    manifest_sources = tuple(artifact.path for artifact in manifest_artifacts if artifact.path is not None and is_hdl_source_artifact(artifact))
-    sources = _unique_paths((*direct_sources, *manifest_sources))
-    if not sources:
-        if artifact_manifests:
-            raise DauBuildSpecError(
-                "artifact manifest input(s) do not provide HDL source artifacts: " + ", ".join(path.as_posix() for path in artifact_manifests)
-            )
-        raise DauBuildSpecError("sources or artifact_manifests must provide at least one HDL source")
-    metadata = _unique_paths(
-        (*direct_metadata, *(artifact.path for artifact in manifest_artifacts if artifact.path is not None and artifact.kind == "metadata"))
-    )
-    binary_assets = _unique_paths(
-        (*direct_binary_assets, *(artifact.path for artifact in manifest_artifacts if artifact.path is not None and artifact.kind == "binary"))
-    )
-    return DauBuildSpec(
-        name=name,
+class BuildSpec(BaseModel):
+    """The user-authored build spec as Hydra-composable config (a `spec=`
+    config group entry). Scalar fields plus source/metadata/manifest path
+    lists resolved against ``base_dir``. ``resolve()`` performs the domain
+    resolution — artifact-bundle loading, source dedup — into the
+    ``DauBuildSpec`` the build tasks consume; the two are deliberately
+    separate (config vs domain object)."""
+
+    name: str
+    top_name: str
+    platform: str
+    shell: str
+    artifact_stem: str
+    register_map_version: str
+    stream_protocol_version: str
+    clock: str
+    reset: str
+    operators: tuple[str, ...]
+    modules: tuple[str, ...]
+    sources: tuple[str, ...] = ()
+    metadata: tuple[str, ...] = ()
+    binary_assets: tuple[str, ...] = ()
+    artifact_manifests: tuple[str, ...] = ()
+    backend: str = "none"
+    base_dir: Path = Path(".")
+
+    def resolve(self) -> DauBuildSpec:
+        if self.backend not in SUPPORTED_BACKENDS:
+            raise DauBuildSpecError(f"unsupported backend: {self.backend}")
+        spec_root = self.base_dir
+        artifact_manifests = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.artifact_manifests), "artifact manifest")
+        direct_sources = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.sources), "source")
+        direct_metadata = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.metadata), "metadata")
+        direct_binary_assets = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.binary_assets), "binary asset")
+        direct_artifacts = (
+            *(_direct_source_artifact(source) for source in direct_sources),
+            *(_direct_metadata_artifact(metadata) for metadata in direct_metadata),
+            *(_direct_binary_artifact(binary) for binary in direct_binary_assets),
+        )
+        try:
+            artifact_bundle = load_artifact_bundle(artifact_manifests, direct_artifacts=tuple(direct_artifacts), name=self.name)
+        except ArtifactBundleError as exc:
+            raise DauBuildSpecError(str(exc)) from exc
+        manifest_artifacts = tuple(entry.artifact for entry in artifact_bundle.entries if entry.manifest_path is not None)
+        manifest_sources = tuple(artifact.path for artifact in manifest_artifacts if artifact.path is not None and is_hdl_source_artifact(artifact))
+        sources = _unique_paths((*direct_sources, *manifest_sources))
+        if not sources:
+            if artifact_manifests:
+                raise DauBuildSpecError(
+                    "artifact manifest input(s) do not provide HDL source artifacts: " + ", ".join(path.as_posix() for path in artifact_manifests)
+                )
+            raise DauBuildSpecError("sources or artifact_manifests must provide at least one HDL source")
+        metadata = _unique_paths(
+            (*direct_metadata, *(artifact.path for artifact in manifest_artifacts if artifact.path is not None and artifact.kind == "metadata"))
+        )
+        binary_assets = _unique_paths(
+            (*direct_binary_assets, *(artifact.path for artifact in manifest_artifacts if artifact.path is not None and artifact.kind == "binary"))
+        )
+        return DauBuildSpec(
+            name=self.name,
+            top_name=self.top_name,
+            platform=self.platform,
+            shell=self.shell,
+            artifact_stem=self.artifact_stem,
+            register_map_version=self.register_map_version,
+            stream_protocol_version=self.stream_protocol_version,
+            clock=self.clock,
+            reset=self.reset,
+            operators=self.operators,
+            sources=sources,
+            metadata=metadata,
+            binary_assets=binary_assets,
+            artifact_manifests=artifact_manifests,
+            artifacts=manifest_artifacts,
+            artifact_bundle=artifact_bundle,
+            modules=self.modules,
+            backend=self.backend,
+        )
+
+
+def build_spec_from_mapping(raw: dict[str, Any], *, base_dir: Path) -> BuildSpec:
+    """Construct a ``BuildSpec`` from a raw config mapping (a loaded spec
+    yaml), pulling the known keys — the config half of the old loader."""
+    return BuildSpec(
+        name=_required_str(raw, "name"),
         top_name=_required_str(raw, "top_name"),
         platform=_required_str(raw, "platform"),
         shell=_required_str(raw, "shell"),
@@ -106,15 +156,21 @@ def load_dau_build_spec(path: Path) -> DauBuildSpec:
         clock=_required_str(raw, "clock"),
         reset=_required_str(raw, "reset"),
         operators=_required_str_tuple(raw, "operators"),
-        sources=sources,
-        metadata=metadata,
-        binary_assets=binary_assets,
-        artifact_manifests=artifact_manifests,
-        artifacts=manifest_artifacts,
-        artifact_bundle=artifact_bundle,
         modules=_required_str_tuple(raw, "modules"),
-        backend=backend,
+        sources=_optional_str_tuple(raw, "sources"),
+        metadata=_optional_str_tuple(raw, "metadata"),
+        binary_assets=_optional_str_tuple(raw, "binary_assets"),
+        artifact_manifests=_optional_str_tuple(raw, "artifact_manifests"),
+        backend=str(raw.get("backend", "none")),
+        base_dir=base_dir,
     )
+
+
+def load_dau_build_spec(path: Path) -> DauBuildSpec:
+    """Back-compatible loader: parse the spec yaml into a ``BuildSpec`` and
+    resolve it. New code composes ``BuildSpec`` through the ``spec`` Hydra
+    config group instead of parsing a path."""
+    return build_spec_from_mapping(_load_yaml_mapping(path), base_dir=path.parent).resolve()
 
 
 def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> DauBuildArtifacts:
