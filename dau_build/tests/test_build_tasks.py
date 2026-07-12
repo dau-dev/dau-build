@@ -387,9 +387,7 @@ def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys)
 def test_dau_build_cfg_dispatches_hardware_plan_via_group(capsys) -> None:
     from dau_build.cli import main as cfg_main
 
-    exit_code = cfg_main(
-        ["task=tasks/hardware/hardware-plan", "plan=plans/thunderbolt-release", "model.work_root=/repo/projects/vivado-shell"]
-    )
+    exit_code = cfg_main(["task=tasks/hardware/hardware-plan", "plan=plans/thunderbolt-release", "model.work_root=/repo/projects/vivado-shell"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
