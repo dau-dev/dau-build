@@ -354,9 +354,12 @@ Required: <code class="docutils literal notranslate"><span class="pre">work_root
 </section>
 <section id="tasks-hardware-hardware-plan-hardwareplantask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code> — <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code><a class="headerlink" href="#tasks-hardware-hardware-plan-hardwareplantask" title="Link to this heading">¶</a></h3>
-<p>Produces a live hardware-session command sequence for a named <code class="docutils literal notranslate"><span class="pre">plan</span></code> (e.g.
-<code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code>, <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>). Required:
-<code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong> (pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the hardware host).</p>
+<p>Produces a live hardware-session command sequence for the plan composed from the
+<code class="docutils literal notranslate"><span class="pre">plan</span></code> group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>). The task holds the shared toolchain fields
+(<code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>, …); each plan owns its own
+fields (e.g. <code class="docutils literal notranslate"><span class="pre">plan.dau_core_root</span></code>). Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>
+(pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the hardware host). See the
+<a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the plan models.</p>
 </section>
 <section id="tasks-flash-flash-flashtask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code> — <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code><a class="headerlink" href="#tasks-flash-flash-flashtask" title="Link to this heading">¶</a></h3>
