@@ -371,7 +371,10 @@ def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
         "dau-build-steps": "dau_build.build_spec:main_callable_steps",
         "dau-build-cfg": "dau_build.cli:main",
         "dau-build-cfg-explain": "dau_build.cli:explain",
+        "dau-build-run": "dau_build.cli:run",
     }
+    # the config tree is registered on the Hydra search path for extension
+    assert pyproject["project"]["entry-points"]["hydra.lernaplugins"]["dau-build"] == "pkg:dau_build.config"
 
 
 def _write_spec(tmp_path: Path) -> Path:

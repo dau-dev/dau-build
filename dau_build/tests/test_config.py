@@ -178,3 +178,27 @@ def _write_spec(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return spec_path
+
+
+def test_nested_board_and_backend_config_groups_compose() -> None:
+    # path-style group selection: board=boards/dau/dpv1 backend=backends/vivado
+    from hydra import compose, initialize_config_module
+    from hydra.utils import instantiate
+
+    from dau_build.build_config import BackendConfig, BoardConfig
+
+    with initialize_config_module(config_module="dau_build.config", version_base=None):
+        cfg = compose(config_name="base", overrides=["board=boards/dau/dpv1", "backend=backends/vivado"])
+    board = instantiate(cfg.board)
+    backend = instantiate(cfg.backend)
+    assert isinstance(board, BoardConfig) and board.name == "dpv1" and board.platform == "vivado-xdma"
+    assert isinstance(backend, BackendConfig) and backend.name == "vivado"
+
+
+def test_dau_build_registers_a_hydra_searchpath_entry_point() -> None:
+    # the config tree is on the Hydra search path (lerna bridge) so packages
+    # and users can extend it; dau-build must register itself
+    from importlib.metadata import entry_points
+
+    registered = {ep.name: ep.value for ep in entry_points(group="hydra.lernaplugins")}
+    assert registered.get("dau-build") == "pkg:dau_build.config"

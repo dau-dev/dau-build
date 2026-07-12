@@ -63,5 +63,30 @@ def explain(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _hydra_run(cfg):
+    from ccflow.utils.hydra import cfg_run
+
+    outcome = cfg_run(cfg)
+    if isinstance(outcome, BuildStepResult):
+        print(outcome.message)
+    elif outcome is not None:
+        print(outcome)
+    return outcome
+
+
+def run(argv: list[str] | None = None):
+    """The single ccflow-etl-style CLI: a Hydra app over ``dau_build/config``
+    with the search path active, so packaged and search-path-registered
+    config groups compose uniformly:
+
+        dau-build-run task=tasks/... board=boards/dau/dpv1 backend=backends/vivado
+
+    Search-path packages (their own ``hydra.lernaplugins`` entry point) add
+    boards/backends/designs/tasks without editing dau-build."""
+    import hydra
+
+    return hydra.main(config_path="config", config_name="base", version_base=None)(_hydra_run)()
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

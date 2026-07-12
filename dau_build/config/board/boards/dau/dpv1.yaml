@@ -1,0 +1,8 @@
+# @package board
+
+# board=boards/dau/dpv1 — the dpv1 board's build-config view. Boards live
+# under boards/<vendor>/<board>; drop your own via a search-path package.
+_target_: dau_build.build_config.BoardConfig
+name: dpv1
+platform: vivado-xdma
+shell: xdma-ddr
