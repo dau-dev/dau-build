@@ -1,0 +1,6 @@
+# @package memory
+
+# memory=memories/default — build-time staging buffers (bytes)
+_target_: dau_build.build_config.MemoryConfig
+host_staging_bytes: 0
+device_staging_bytes: 0

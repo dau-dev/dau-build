@@ -55,12 +55,15 @@ class ResolvedBuildConfig(BaseModel):
         board: BoardConfig | None = None,
         backend: BackendConfig | None = None,
         backend_name: str | None = None,
+        driver: DriverConfig | None = None,
+        memory: MemoryConfig | None = None,
     ) -> ResolvedBuildConfig:
         """The build config as a view over the spec. Board, driver,
         operators, and memory derive from the spec directly. A composed
-        ``board=``/``backend=`` Hydra group wins over the spec-derived
-        default when provided; ``backend_name`` (e.g. a task's synthesis
-        engine) selects the backend when no ``backend=`` group is given.
+        ``board=``/``backend=``/``driver=``/``memory=`` Hydra group wins over
+        the spec-derived default when provided; ``backend_name`` (e.g. a task's
+        synthesis engine) selects the backend when no ``backend=`` group is
+        given.
 
         A composed backend may be a synthesis *engine* model (carrying extra
         fields like a yosys frontend); it is normalized here to the ``name`` +
@@ -69,9 +72,9 @@ class ResolvedBuildConfig(BaseModel):
             spec=spec,
             board=board or BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
             backend=_backend_label(backend, backend_name, spec),
-            driver=DriverConfig(os="host", transport="xdma"),
+            driver=driver or DriverConfig(os="host", transport="xdma"),
             operators=OperatorConfig(set_name="spec", names=spec.operators),
-            memory=MemoryConfig(),
+            memory=memory or MemoryConfig(),
         )
 
     def to_text(self) -> str:

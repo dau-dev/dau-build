@@ -5,5 +5,7 @@ spec_path: null
 spec: ${oc.select:spec,null}
 board: ${oc.select:board,null}
 backend: ${oc.select:backend,null}
+driver: ${oc.select:driver,null}
+memory: ${oc.select:memory,null}
 manifest_path: null
 root: null

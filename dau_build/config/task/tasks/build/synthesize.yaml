@@ -7,5 +7,7 @@ board: ${oc.select:board,null}
 # the synthesis engine is the composed backend group (default vivado);
 # select+configure it with backend=backends/yosys backend.frontend=slang
 backend: ${oc.select:backend,null}
+driver: ${oc.select:driver,null}
+memory: ${oc.select:memory,null}
 module: ???
 output_root: ???
