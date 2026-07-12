@@ -3,4 +3,6 @@
 _target_: dau_build.build_steps.GenerateStep
 spec_path: null
 spec: ${oc.select:spec,null}
+board: ${oc.select:board,null}
+backend: ${oc.select:backend,null}
 output_root: ???

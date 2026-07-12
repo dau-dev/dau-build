@@ -48,16 +48,23 @@ class ResolvedBuildConfig(BaseModel):
     memory: MemoryConfig
 
     @classmethod
-    def from_spec(cls, spec: DauBuildSpec, *, backend_name: str | None = None) -> ResolvedBuildConfig:
+    def from_spec(
+        cls,
+        spec: DauBuildSpec,
+        *,
+        board: BoardConfig | None = None,
+        backend: BackendConfig | None = None,
+        backend_name: str | None = None,
+    ) -> ResolvedBuildConfig:
         """The build config as a view over the spec. Board, driver,
-        operators, and memory derive from the spec directly (Hydra field
-        overrides on the composed spec are how a user changes them — no
-        bespoke override dict). ``backend_name`` selects the synthesis
-        engine."""
+        operators, and memory derive from the spec directly. A composed
+        ``board=``/``backend=`` Hydra group wins over the spec-derived
+        default when provided; ``backend_name`` (e.g. a task's synthesis
+        engine) selects the backend when no ``backend=`` group is given."""
         return cls(
             spec=spec,
-            board=BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
-            backend=BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
+            board=board or BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
+            backend=backend or BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
             driver=DriverConfig(os="host", transport="xdma"),
             operators=OperatorConfig(set_name="spec", names=spec.operators),
             memory=MemoryConfig(),

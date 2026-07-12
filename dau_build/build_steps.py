@@ -42,11 +42,11 @@ def _build_spec_api():
     return build_spec
 
 
-def _resolve_build_config(spec, *, backend_name=None):
+def _resolve_build_config(spec, *, board=None, backend=None, backend_name=None):
     """Deferred for the same reason: build_config imports build_spec."""
     from dau_build.build_config import ResolvedBuildConfig
 
-    return ResolvedBuildConfig.from_spec(spec, backend_name=backend_name)
+    return ResolvedBuildConfig.from_spec(spec, board=board, backend=backend, backend_name=backend_name)
 
 
 class BuildStepError(ValueError):
@@ -75,10 +75,17 @@ class BuildCallableModel(CallableModel):
 
 class SpecPathModel(BuildCallableModel):
     # `spec` is composed by the Hydra `spec=` group (a BuildSpec); `spec_path`
-    # is file input for the CLI/tests. Typed Any, not BuildSpec, so importing
+    # is file input for the CLI/tests. `board`/`backend` are composed by the
+    # `board=`/`backend=` groups (BoardConfig/BackendConfig) and win over the
+    # spec-derived defaults. Typed Any, not the models, so importing
     # build_steps stays light — build_spec pulls the SV-parser stack (F51).
     spec: Any = None
     spec_path: Path | None = None
+    board: Any = None
+    backend: Any = None
+
+    def _resolved(self, spec, *, backend_name=None):
+        return _resolve_build_config(spec, board=self.board, backend=self.backend, backend_name=backend_name)
 
     def load_spec(self):
         build_spec = self.spec
@@ -146,7 +153,7 @@ class WriteStep(SpecPathModel):
 class ResolvedConfigStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        resolved = _resolve_build_config(self.load_spec())
+        resolved = self._resolved(self.load_spec())
         return BuildStepResult(step="resolved-config", message=resolved.to_text())
 
 
@@ -169,7 +176,7 @@ class SimulateStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        _resolve_build_config(spec)
+        self._resolved(spec)
         _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_base_dir / ".dau-build-sim")
         if self.simulate_engine == "verilator":
             return self._run_verilator(spec)
@@ -244,7 +251,7 @@ class SynthesisStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = _resolve_build_config(spec)
+        resolved = self._resolved(spec)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         return BuildStepResult(
             step="synthesis",
@@ -259,7 +266,7 @@ class ExplainStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = _resolve_build_config(spec)
+        resolved = self._resolved(spec)
         return BuildStepResult(
             step="explain",
             message="\n".join(
@@ -305,7 +312,7 @@ class SimulateTask(ModuleSelectionModel):
         spec = self.load_spec_and_validate_module()
         output_root = self.output_root or self.spec_base_dir / ".dau-build-sim"
         if self.simulator in {"svparser", "cocotb"}:
-            _resolve_build_config(spec)
+            self._resolved(spec)
             _build_spec_api().generate_dau_build_artifacts(spec, output_root=output_root)
             return BuildStepResult(
                 step="simulate",
@@ -372,7 +379,7 @@ class SynthesizeTask(ModuleSelectionModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec_and_validate_module()
-        resolved = _resolve_build_config(spec, backend_name=self.engine)
+        resolved = self._resolved(spec, backend_name=self.engine)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         backend_artifacts = _write_vivado_backend_handoff(
             spec,
