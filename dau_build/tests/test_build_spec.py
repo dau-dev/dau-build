@@ -1,4 +1,3 @@
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -96,9 +95,13 @@ def test_build_spec_resolve_equals_the_loader(tmp_path: Path) -> None:
 
 
 def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Path) -> None:
+    from dau_build.artifact_bundle import ArtifactBundle
+
     spec = load_dau_build_spec(_write_spec(tmp_path))
 
-    assert spec == DauBuildSpec(
+    # the artifact_bundle is derived from the sources; compare the declared
+    # identity fields by normalizing it out
+    assert spec.model_copy(update={"artifact_bundle": ArtifactBundle(name="", entries=())}) == DauBuildSpec(
         name="identity-pipeline",
         top_name="dau_identity_top",
         platform="vivado-xdma",
@@ -118,17 +121,17 @@ def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Pat
 
 
 def test_design_manifest_items_advertise_one_aggregation_unit(tmp_path: Path) -> None:
-    spec = replace(load_dau_build_spec(_write_spec(tmp_path)), operators=("int32-arrow-lite-aggregation",))
+    spec = load_dau_build_spec(_write_spec(tmp_path)).model_copy(update={"operators": ("int32-arrow-lite-aggregation",)})
 
     assert design_manifest_items(spec) == (
         ("design_name", "identity-pipeline"),
         ("units", "aggregation:1:min|max|sum|count:int32"),
     )
 
-    sum_only = replace(spec, operators=("sum_i64",))
+    sum_only = spec.model_copy(update={"operators": ("sum_i64",)})
     assert design_manifest_items(sum_only)[1] == ("units", "aggregation:1:sum:int32")
 
-    no_ops = replace(spec, operators=("identity",))
+    no_ops = spec.model_copy(update={"operators": ("identity",)})
     assert design_manifest_items(no_ops)[1] == ("units", "")
 
 

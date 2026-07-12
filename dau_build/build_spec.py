@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ccflow import BaseModel
+from pydantic import Field
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
@@ -30,8 +30,7 @@ class DauBuildSpecError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
-class DauBuildSpec:
+class DauBuildSpec(BaseModel):
     name: str
     top_name: str
     platform: str
@@ -48,12 +47,11 @@ class DauBuildSpec:
     binary_assets: tuple[Path, ...] = ()
     artifact_manifests: tuple[Path, ...] = ()
     artifacts: tuple[Artifact, ...] = ()
-    artifact_bundle: ArtifactBundle = field(default_factory=lambda: ArtifactBundle(name="", entries=()), compare=False)
+    artifact_bundle: ArtifactBundle = Field(default_factory=lambda: ArtifactBundle(name="", entries=()))
     backend: str = "none"
 
 
-@dataclass(frozen=True)
-class DauBuildArtifacts:
+class DauBuildArtifacts(BaseModel):
     manifest_path: Path
     top_sv_path: Path
     artifact_manifest_path: Path

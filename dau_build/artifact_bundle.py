@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from artlink import Artifact
+from ccflow import BaseModel
 
 from dau_build.packaging import ArtifactManifestError, artifact_modules, artifact_path, load_artifact_manifest
 
@@ -27,15 +27,13 @@ class ArtifactBundleError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
-class ArtifactBundleEntry:
+class ArtifactBundleEntry(BaseModel):
     artifact: Artifact
     origin: str
     manifest_path: Path | None = None
 
 
-@dataclass(frozen=True)
-class ArtifactBundle:
+class ArtifactBundle(BaseModel):
     name: str
     entries: tuple[ArtifactBundleEntry, ...]
     manifest_paths: tuple[Path, ...] = ()
