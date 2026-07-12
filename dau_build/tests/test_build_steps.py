@@ -6,7 +6,6 @@ from shutil import which
 import pytest
 from ccflow import CallableModel
 
-from dau_build.build_spec import main_callable_steps
 from dau_build.build_steps import (
     STEP_MODEL_TYPES,
     TASK_MODEL_TYPES,
@@ -17,6 +16,7 @@ from dau_build.build_steps import (
     execute_override_step,
     parse_override_dict,
 )
+from dau_build.cli import main
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
@@ -258,7 +258,7 @@ def test_execute_step_validates_required_overrides(tmp_path: Path) -> None:
 def test_callable_steps_entrypoint_prints_result(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main_callable_steps(["step=steps/validate", f"spec_path={spec_path}"])
+    exit_code = main(["step=steps/validate", f"model.spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [f"dau-build-spec-valid\tspec={spec_path}"]

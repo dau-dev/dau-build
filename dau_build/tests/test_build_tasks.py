@@ -6,8 +6,8 @@ import pytest
 import tomllib
 from ccflow import CallableModel
 
-from dau_build.build_spec import main
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
+from dau_build.cli import main
 from dau_build.config import run_request_config
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
@@ -376,7 +376,7 @@ def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: P
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main(["task=tasks/sim/simulate", "module=dau_identity_top", f"spec_path={spec_path}"])
+    exit_code = main(["task=tasks/sim/simulate", "model.module=dau_identity_top", f"model.spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
@@ -400,13 +400,9 @@ def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
     scripts = pyproject["project"]["scripts"]
 
     assert "dau-hardware-plan" not in scripts
-    assert scripts == {
-        "dau-build": "dau_build.build_spec:main",
-        "dau-build-steps": "dau_build.build_spec:main_callable_steps",
-        "dau-build-cfg": "dau_build.cli:main",
-        "dau-build-cfg-explain": "dau_build.cli:explain",
-        "dau-build-run": "dau_build.cli:run",
-    }
+    # one CLI: dau-build is the hydra composition entry point. Steps, config
+    # explain, and the hydra.main variant are gone (step=/--explain cover them).
+    assert scripts == {"dau-build": "dau_build.cli:main"}
     # the config tree is registered on the Hydra search path for extension
     assert pyproject["project"]["entry-points"]["hydra.lernaplugins"]["dau-build"] == "pkg:dau_build.config"
 

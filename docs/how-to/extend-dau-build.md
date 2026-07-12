@@ -60,14 +60,14 @@ A task is a config file plus the `ccflow.CallableModel` it targets.
    tree, so there is nothing else to register — the `_target_` may point at any
    importable module.
 
-1. Run it through dau-build's Hydra CLI:
+1. Run it through the `dau-build` CLI:
 
    ```bash
-   dau-build-run task=tasks/<category>/<name> model.some_field=value
+   dau-build task=tasks/<category>/<name> model.some_field=value
    ```
 
 The private `dau` package does exactly this to add `task=dpv1-shell`: with `dau`
-installed, `dau-build-run task=dpv1-shell model.shell=... model.output_root=...`
+installed, `dau-build task=dpv1-shell design=designs/bar-noc model.output_root=...`
 resolves a task defined entirely in `dau`, with no `--config-dir` overlay.
 
 ## Add a board or platform
@@ -132,11 +132,11 @@ you extend the packaged set.
 
 ## Try it without packaging
 
-To test a config overlay before packaging it, point the argparse CLI at a
-directory with `--config-dir`:
+To test a config overlay before packaging it, point the CLI at a directory with
+`--config-dir`:
 
 ```bash
-dau-build-cfg --config-dir ./my-configs task=tasks/<category>/<name> model.some_field=value
+dau-build --config-dir ./my-configs task=tasks/<category>/<name> model.some_field=value
 ```
 
 The overlay's groups merge into the tree for that run, and its `_target_` models

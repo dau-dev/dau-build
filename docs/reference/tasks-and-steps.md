@@ -8,13 +8,13 @@ and its default execution mode.
 The complete field set with defaults for any task or step is self-describing:
 
 ```text
-dau-build-cfg-explain task=<path>
-dau-build-cfg-explain step=<path>
+dau-build --explain task=<path>
+dau-build --explain step=<path>
 ```
 
-Fields marked **required** have no default and must be overridden. On the Hydra
-CLIs (`dau-build-cfg`, `dau-build-run`) fields carry a `model.` prefix; on the
-flat CLIs (`dau-build`, `dau-build-steps`) they do not.
+Fields marked **required** have no default and must be overridden. Field
+overrides carry a `model.` prefix (`model.<field>=value`), since the selected
+task or step is composed into the `model` key.
 
 Tasks whose default is **plan** carry `execute: false` and produce plans,
 manifests, and staged files without invoking a vendor toolchain or touching

@@ -12,7 +12,7 @@ authors = [
 description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-version = "0.3.0"
+version = "0.4.0"
 requires-python = ">=3.10"
 keywords = []
 
@@ -63,11 +63,7 @@ develop = [
 ]
 
 [project.scripts]
-dau-build = "dau_build.build_spec:main"
-dau-build-steps = "dau_build.build_spec:main_callable_steps"
-dau-build-cfg = "dau_build.cli:main"
-dau-build-cfg-explain = "dau_build.cli:explain"
-dau-build-run = "dau_build.cli:run"
+dau-build = "dau_build.cli:main"
 
 # Register dau-build's config tree on the Hydra search path (via the lerna
 # bridge). Its config groups become discoverable to the CLI and to any other
@@ -82,7 +78,7 @@ Repository = "https://github.com/dau-dev/dau-build"
 Homepage = "https://github.com/dau-dev/dau-build"
 
 [tool.bumpversion]
-current_version = "0.3.0"
+current_version = "0.4.0"
 commit = true
 tag = true
 commit_args = "-s"

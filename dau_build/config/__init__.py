@@ -89,7 +89,7 @@ def compose_config(
 ) -> ConfigLoadResult:
     """Compose the dau-build hydra config with raw overrides (group selection,
     field overrides, user --config-dir overlays). The public entry for the
-    dau-build-cfg CLI surface."""
+    dau-build CLI surface."""
     return _load_base_config(overrides, config_dir=config_dir, version_base=version_base)
 
 

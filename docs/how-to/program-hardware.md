@@ -27,11 +27,10 @@ Always look at the sequence first. Omit `execute=true` and the task prints the
 ordered steps without touching the board:
 
 The plan is a config group (`plan=plans/<name>`); its own fields are
-`plan.<field>=` overrides and the shared toolchain fields are `model.<field>=`,
-so use the composing CLI (`dau-build-cfg` or `dau-build-run`):
+`plan.<field>=` overrides and the shared toolchain fields are `model.<field>=`:
 
 ```bash
-dau-build-cfg task=tasks/hardware/hardware-plan \
+dau-build task=tasks/hardware/hardware-plan \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -49,7 +48,7 @@ Read the printed steps. When they look right, re-run the same command with
 programs and verifies the device. Add `execute=true` to run it on the host:
 
 ```bash
-dau-build-cfg task=tasks/hardware/hardware-plan \
+dau-build task=tasks/hardware/hardware-plan \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -76,7 +75,7 @@ To program a specific bitstream and run the full endpoint-and-smoke check withou
 building anything, use `validate-bitstream`:
 
 ```bash
-dau-build-cfg task=tasks/hardware/hardware-plan \
+dau-build task=tasks/hardware/hardware-plan \
   plan=plans/validate-bitstream \
   plan.dau_core_root=/path/to/dau-core \
   plan.dau_driver_root=/path/to/dau-driver \
@@ -97,7 +96,7 @@ the safe order: hold power management, remove the endpoint via sysfs, program a
 known-good volatile bitstream, then rescan and re-check:
 
 ```bash
-dau-build-cfg task=tasks/hardware/hardware-plan \
+dau-build task=tasks/hardware/hardware-plan \
   plan=plans/recovery \
   model.work_root=outputs/vivado \
   model.execute=true
@@ -113,8 +112,8 @@ To flash and to run a smoke test against a `built` shell-build manifest, use the
 bitstream digest before touching the board):
 
 ```bash
-dau-build task=tasks/flash/flash manifest_path=outputs/vivado/shell-build.artifacts.yaml
-dau-build task=tasks/flash/smoke-test test=identity
+dau-build task=tasks/flash/flash model.manifest_path=outputs/vivado/shell-build.artifacts.yaml
+dau-build task=tasks/flash/smoke-test model.test=identity
 ```
 
 Both require `build_status=built` when given a manifest, and both emit a safe plan

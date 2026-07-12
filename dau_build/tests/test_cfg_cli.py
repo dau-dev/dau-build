@@ -5,7 +5,7 @@ from shutil import which
 
 import pytest
 
-from dau_build.cli import explain, main
+from dau_build.cli import main
 from dau_build.tests.test_simulate_profile_task import _write_self_contained_counter_manifest
 
 
@@ -42,7 +42,7 @@ def test_profile_only_simulate_falls_back_to_manifest_registry() -> None:
 
 
 def test_cfg_explain_prints_resolved_config(capsys) -> None:
-    exit_code = explain(["task=tasks/build/synthesize", "model.spec_path=spec.yaml", "model.module=m", "model.output_root=out"])
+    exit_code = main(["--explain", "task=tasks/build/synthesize", "model.spec_path=spec.yaml", "model.module=m", "model.output_root=out"])
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "_target_: dau_build.build_steps.SynthesizeTask" in captured.out
