@@ -403,14 +403,19 @@ class SimulateTask(ModuleSelectionModel):
 
 
 class SynthesizeTask(ModuleSelectionModel):
-    engine: Literal["vivado"]
+    engine: Literal["vivado", "yosys"]
     output_root: Path
+    # yosys-only: the SystemVerilog frontend and executable
+    frontend: Literal["verilog", "slang"] = "verilog"
+    yosys: str = "yosys"
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec_and_validate_module()
         resolved = self._resolved(spec, backend_name=self.engine)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
+        if self.engine == "yosys":
+            return self._synthesize_with_yosys(spec, artifacts)
         backend_artifacts = _write_vivado_backend_handoff(
             spec,
             selected_module=self.module,
@@ -426,6 +431,33 @@ class SynthesizeTask(ModuleSelectionModel):
                 f"dau-build-synthesize\ttask=synthesize engine={self.engine} module={self.module} spec={self.spec_label} "
                 f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} "
                 f"backend_manifest={backend_artifacts.manifest_path} command_plan={backend_artifacts.command_plan_path} status=handoff-written"
+            ),
+        )
+
+    def _synthesize_with_yosys(self, spec, artifacts) -> BuildStepResult:
+        # yosys is runnable (unlike the Vivado plan), so this actually
+        # elaborates and synthesizes the generated top — a real check
+        from dau_build.yosys_backend import YosysBackendError, YosysBackendRequest, run_yosys_synthesis
+
+        request = YosysBackendRequest(
+            top_module=spec.top_name,
+            sources=(artifacts.top_sv_path, *spec.sources),
+            output_root=self.output_root,
+            frontend=self.frontend,
+            yosys=self.yosys,
+        )
+        try:
+            result = run_yosys_synthesis(request)
+        except YosysBackendError as exc:
+            raise BuildStepError(str(exc)) from exc
+        if not result.passed:
+            raise BuildStepError(f"yosys synthesis failed for {spec.top_name} (frontend={self.frontend}); see {result.log_path}")
+        return BuildStepResult(
+            step="synthesize",
+            message=(
+                f"dau-build-synthesize\ttask=synthesize engine=yosys frontend={self.frontend} module={self.module} "
+                f"spec={self.spec_label} top={spec.top_name} output_root={self.output_root} "
+                f"script={result.script_path} cells={result.cell_count} status=synthesized"
             ),
         )
 

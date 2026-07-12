@@ -94,46 +94,41 @@ add `mypkg/config/platform/platforms/<vendor>/<board>.yaml` targeting
 
 ## Add a synthesis backend
 
-Adding a *real* backend (for example a yosys/nextpnr flow) is more than a config
-file, because today `BackendConfig` is only a label and synthesis codegen is
-hard-wired to Vivado. Read
+Adding a *real* backend is more than a config file, because `BackendConfig` is
+only a label — the engine that runs codegen is `SynthesizeTask.engine`. The
+yosys backend is the worked example of a second engine; read
 [the backend section of the architecture explanation](../explanation/architecture.md)
-first — it describes exactly what is a label and what is wired.
-
-A new backend requires four things:
+first, then use `yosys_backend.py` as the template. A new backend requires:
 
 1. **A backend label**, so it is selectable. Add
-   `<pkg>/config/backend/backends/yosys.yaml` reusing the existing model:
+   `<pkg>/config/backend/backends/<name>.yaml` reusing the existing model
+   (this is exactly `backends/yosys.yaml`):
 
    ```yaml
    # @package backend
 
    _target_: dau_build.build_config.BackendConfig
-   name: yosys
+   name: nextpnr
    invocation: standard
    ```
 
    By itself this only changes the reported metadata in the resolved config.
 
-1. **A backend module** that generates the flow's artifacts, paralleling
-   `dau_build/vivado_backend.py`: its own request/artifact `ccflow.BaseModel`s
-   and `generate_*`/`validate_*` entry points, emitting whatever scripts and
-   manifests the yosys/nextpnr flow needs, with a backend identity string
-   analogous to `dau_build.vivado_backend.vivado_overlay`.
+1. **A backend module.** Parallel `dau_build/yosys_backend.py` (or
+   `vivado_backend.py`): its own request/result `ccflow.BaseModel`s and entry
+   points that either generate a plan (Vivado's Tcl/manifests) or generate and
+   run a tool (yosys's script + `run_yosys_synthesis`).
 
-1. **Real engine dispatch.** `SynthesizeTask.engine` is currently
-   `Literal["vivado"]` and the task calls the Vivado handoff unconditionally.
-   Widen the literal to include your engine and replace that unconditional call
-   with a branch on `engine`. This is the change that must land *in dau-build*
-   (or in a fork), since the dispatch lives there — the other pieces can live in
-   your package.
+1. **Engine dispatch.** `SynthesizeTask.engine` is `Literal["vivado", "yosys"]`
+   and the task branches on it (`_synthesize_with_yosys`). Widen the literal and
+   add a branch for your engine. This is the change that lands *in dau-build*
+   (or a fork), since the dispatch lives there.
 
-1. **Build and validate tasks**, paralleling `build-vivado-artifacts.yaml` and
-   `validate-vivado-artifacts.yaml`, each targeting a new build-step
-   `ccflow.CallableModel` for your backend.
+1. **Any build/validate tasks** your flow needs, paralleling the Vivado ones,
+   each targeting a new `ccflow.CallableModel`.
 
-Everything except step 3 composes purely from your package via the search path.
-Until a backend implements steps 2–4, selecting its label runs no real codegen.
+The config label composes purely from your package via the search path; the
+engine branch is the one piece that lives in dau-build.
 
 ## Try it without packaging
 

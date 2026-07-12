@@ -42,6 +42,16 @@ jobs:
     - name: Install dependencies
       run: make develop
 
+    - name: Install synthesis tools (yosys + yosys-slang)
+      run: |
+        gh release download v0.0.13 --repo dau-dev/tools --pattern 'yosys_*.deb' --pattern 'yosys-slang_*.deb' --dir /tmp/tools
+        sudo apt-get update
+        sudo apt-get install -y /tmp/tools/yosys_*.deb /tmp/tools/yosys-slang_*.deb
+        yosys --version
+        yosys -m slang -p 'help read_slang' >/dev/null && echo "yosys-slang plugin OK"
+      env:
+        GH_TOKEN: ${{ github.token }}
+
     - name: Lint
       run: make lint
 
