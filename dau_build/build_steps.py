@@ -42,11 +42,11 @@ def _build_spec_api():
     return build_spec
 
 
-def _resolve_build_config(spec, overrides):
+def _resolve_build_config(spec, *, backend_name=None):
     """Deferred for the same reason: build_config imports build_spec."""
     from dau_build.build_config import resolve_build_config
 
-    return resolve_build_config(spec, overrides)
+    return resolve_build_config(spec, backend_name=backend_name)
 
 
 class BuildStepError(ValueError):
@@ -64,11 +64,6 @@ BuildCallableModelType = TypeVar("BuildCallableModelType", bound="BuildCallableM
 class BuildCallableModel(CallableModel):
     _STRINGIFY_SEPARATOR: ClassVar[str] = ","
 
-    def override_mapping(self) -> dict[str, str]:
-        raw = self.model_dump(mode="python", by_alias=True, exclude_none=True, exclude={"meta", "type_"})
-        raw.pop("_target_", None)
-        return {key: self._stringify_override_value(value) for key, value in raw.items()}
-
     @classmethod
     def _stringify_override_value(cls, value) -> str:
         if isinstance(value, Path):
@@ -78,39 +73,7 @@ class BuildCallableModel(CallableModel):
         return str(value)
 
 
-class ConfigOverrideModel(BuildCallableModel):
-    board_name: str | None = Field(default=None, alias="board.name")
-    board_platform: str | None = Field(default=None, alias="board.platform")
-    board_shell: str | None = Field(default=None, alias="board.shell")
-    backend_name: str | None = Field(default=None, alias="backend.name")
-    backend_invocation: str | None = Field(default=None, alias="backend.invocation")
-    driver_os: str | None = Field(default=None, alias="driver.os")
-    driver_transport: str | None = Field(default=None, alias="driver.transport")
-    operator_set: str | None = Field(default=None, alias="operator.set")
-    memory_host_staging_bytes: int | None = Field(default=None, alias="memory.host_staging_bytes")
-    memory_device_staging_bytes: int | None = Field(default=None, alias="memory.device_staging_bytes")
-
-    def config_overrides(self) -> dict[str, str]:
-        return {
-            key: value
-            for key, value in self.override_mapping().items()
-            if key
-            in {
-                "board.name",
-                "board.platform",
-                "board.shell",
-                "backend.name",
-                "backend.invocation",
-                "driver.os",
-                "driver.transport",
-                "operator.set",
-                "memory.host_staging_bytes",
-                "memory.device_staging_bytes",
-            }
-        }
-
-
-class SpecPathModel(ConfigOverrideModel):
+class SpecPathModel(BuildCallableModel):
     spec_path: Path
 
     def load_spec(self):
@@ -166,7 +129,7 @@ class WriteStep(SpecPathModel):
 class ResolvedConfigStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        resolved = _resolve_build_config(self.load_spec(), self.override_mapping())
+        resolved = _resolve_build_config(self.load_spec())
         return BuildStepResult(step="resolved-config", message=resolved.to_text())
 
 
@@ -189,7 +152,7 @@ class SimulateStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        _resolve_build_config(spec, self.override_mapping())
+        _resolve_build_config(spec)
         _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_path.parent / ".dau-build-sim")
         if self.simulate_engine == "verilator":
             return self._run_verilator(spec)
@@ -264,7 +227,7 @@ class SynthesisStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = _resolve_build_config(spec, self.override_mapping())
+        resolved = _resolve_build_config(spec)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         return BuildStepResult(
             step="synthesis",
@@ -279,7 +242,7 @@ class ExplainStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
-        resolved = _resolve_build_config(spec, self.override_mapping())
+        resolved = _resolve_build_config(spec)
         return BuildStepResult(
             step="explain",
             message="\n".join(
@@ -322,13 +285,13 @@ class SimulateTask(ModuleSelectionModel):
         spec = self.load_spec_and_validate_module()
         output_root = self.output_root or self.spec_path.parent / ".dau-build-sim"
         if self.simulator in {"svparser", "cocotb"}:
-            _resolve_build_config(spec, self.override_mapping())
+            _resolve_build_config(spec)
             _build_spec_api().generate_dau_build_artifacts(spec, output_root=output_root)
             return BuildStepResult(
                 step="simulate",
                 message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_path} status=validated",
             )
-        step_data = self.config_overrides()
+        step_data: dict[str, str] = {}
         step_data.update(
             {
                 "spec_path": str(self.spec_path),
@@ -390,9 +353,7 @@ class SynthesizeTask(ModuleSelectionModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec_and_validate_module()
-        task_overrides = self.override_mapping()
-        task_overrides["backend.name"] = self.engine
-        resolved = _resolve_build_config(spec, task_overrides)
+        resolved = _resolve_build_config(spec, backend_name=self.engine)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
         backend_artifacts = _write_vivado_backend_handoff(
             spec,

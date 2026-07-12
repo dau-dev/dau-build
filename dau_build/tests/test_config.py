@@ -83,16 +83,6 @@ def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> Non
     assert captured["request_kind"] == "task"
     assert captured["request_name"] == "simulate"
     assert captured["model_values"] == {
-        "board_name": None,
-        "board_platform": None,
-        "board_shell": None,
-        "backend_name": None,
-        "backend_invocation": None,
-        "driver_os": None,
-        "driver_transport": None,
-        "operator_set": None,
-        "memory_host_staging_bytes": None,
-        "memory_device_staging_bytes": None,
         "spec_path": "examples/identity/dau-build.yaml",
         "module": "dau_identity_top",
         "simulator": "svparser",

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from ccflow import BaseModel
 from pydantic import field_validator
 
@@ -62,38 +60,16 @@ class ResolvedBuildConfig(BaseModel):
         )
 
 
-def resolve_build_config(spec: DauBuildSpec, overrides: Mapping[str, str]) -> ResolvedBuildConfig:
+def resolve_build_config(spec: DauBuildSpec, *, backend_name: str | None = None) -> ResolvedBuildConfig:
+    """The build config as a view over the spec. Board, driver, operators,
+    and memory derive from the spec directly (Hydra field overrides on the
+    composed spec are how a user changes them — no bespoke override dict).
+    ``backend_name`` lets a task select the synthesis engine."""
     return ResolvedBuildConfig(
         spec=spec,
-        board=BoardConfig(
-            name=overrides.get("board.name", spec.platform),
-            platform=overrides.get("board.platform", spec.platform),
-            shell=overrides.get("board.shell", spec.shell),
-        ),
-        backend=BackendConfig(
-            name=overrides.get("backend.name", spec.backend),
-            invocation=overrides.get("backend.invocation", "dry-run"),
-        ),
-        driver=DriverConfig(
-            os=overrides.get("driver.os", "host"),
-            transport=overrides.get("driver.transport", "xdma"),
-        ),
-        operators=OperatorConfig(
-            set_name=overrides.get("operator.set", "spec"),
-            names=spec.operators,
-        ),
-        memory=MemoryConfig(
-            host_staging_bytes=_int_override(overrides, "memory.host_staging_bytes", 0),
-            device_staging_bytes=_int_override(overrides, "memory.device_staging_bytes", 0),
-        ),
+        board=BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
+        backend=BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
+        driver=DriverConfig(os="host", transport="xdma"),
+        operators=OperatorConfig(set_name="spec", names=spec.operators),
+        memory=MemoryConfig(),
     )
-
-
-def _int_override(overrides: Mapping[str, str], key: str, default: int) -> int:
-    raw = overrides.get(key)
-    if raw is None:
-        return default
-    try:
-        return int(raw, 0)
-    except ValueError as exc:
-        raise ValueError(f"override {key} must be an integer") from exc
