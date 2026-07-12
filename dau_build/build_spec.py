@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from ccflow import BaseModel
-from pydantic import Field
+from pydantic import Field, StringConstraints, ValidationError
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
 from dau_build.svparser import Design
+
+_NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
 SUPPORTED_BACKENDS = frozenset(("none", "vivado"))
 
@@ -67,30 +69,34 @@ class BuildSpec(BaseModel):
     ``DauBuildSpec`` the build tasks consume; the two are deliberately
     separate (config vs domain object)."""
 
-    name: str
-    top_name: str
-    platform: str
-    shell: str
-    artifact_stem: str
-    register_map_version: str
-    stream_protocol_version: str
-    clock: str
-    reset: str
-    operators: tuple[str, ...]
-    modules: tuple[str, ...]
-    sources: tuple[str, ...] = ()
-    metadata: tuple[str, ...] = ()
-    binary_assets: tuple[str, ...] = ()
-    artifact_manifests: tuple[str, ...] = ()
+    name: _NonEmptyStr
+    top_name: _NonEmptyStr
+    platform: _NonEmptyStr
+    shell: _NonEmptyStr
+    artifact_stem: _NonEmptyStr
+    register_map_version: _NonEmptyStr
+    stream_protocol_version: _NonEmptyStr
+    clock: _NonEmptyStr
+    reset: _NonEmptyStr
+    operators: Annotated[tuple[_NonEmptyStr, ...], Field(min_length=1)]
+    modules: Annotated[tuple[_NonEmptyStr, ...], Field(min_length=1)]
+    sources: tuple[_NonEmptyStr, ...] = ()
+    metadata: tuple[_NonEmptyStr, ...] = ()
+    binary_assets: tuple[_NonEmptyStr, ...] = ()
+    artifact_manifests: tuple[_NonEmptyStr, ...] = ()
     backend: str = "none"
     base_dir: Path = Path(".")
 
     @classmethod
     def from_file(cls, path: Path) -> BuildSpec:
         """Parse a spec yaml file into a ``BuildSpec`` (sources resolve
-        against the file's directory). File input for the CLI/tests; the
-        Hydra ``spec=`` group composes a ``BuildSpec`` the same way."""
-        return build_spec_from_mapping(_load_yaml_mapping(path), base_dir=path.parent)
+        against the file's directory) via pydantic validation — the same
+        validation the Hydra ``spec=`` group gets. File input for the CLI/tests."""
+        raw = _load_yaml_mapping(path)
+        try:
+            return cls.model_validate({**raw, "base_dir": path.parent})
+        except ValidationError as exc:
+            raise DauBuildSpecError(f"invalid build spec {path.as_posix()}: {exc}") from exc
 
     def resolve(self) -> DauBuildSpec:
         if self.backend not in SUPPORTED_BACKENDS:
@@ -144,30 +150,6 @@ class BuildSpec(BaseModel):
             modules=self.modules,
             backend=self.backend,
         )
-
-
-def build_spec_from_mapping(raw: dict[str, Any], *, base_dir: Path) -> BuildSpec:
-    """Construct a ``BuildSpec`` from a raw config mapping (a loaded spec
-    yaml), pulling the known keys — the config half of the old loader."""
-    return BuildSpec(
-        name=_required_str(raw, "name"),
-        top_name=_required_str(raw, "top_name"),
-        platform=_required_str(raw, "platform"),
-        shell=_required_str(raw, "shell"),
-        artifact_stem=_required_str(raw, "artifact_stem"),
-        register_map_version=_required_str(raw, "register_map_version"),
-        stream_protocol_version=_required_str(raw, "stream_protocol_version"),
-        clock=_required_str(raw, "clock"),
-        reset=_required_str(raw, "reset"),
-        operators=_required_str_tuple(raw, "operators"),
-        modules=_required_str_tuple(raw, "modules"),
-        sources=_optional_str_tuple(raw, "sources"),
-        metadata=_optional_str_tuple(raw, "metadata"),
-        binary_assets=_optional_str_tuple(raw, "binary_assets"),
-        artifact_manifests=_optional_str_tuple(raw, "artifact_manifests"),
-        backend=str(raw.get("backend", "none")),
-        base_dir=base_dir,
-    )
 
 
 def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> DauBuildArtifacts:
@@ -383,37 +365,10 @@ def validate_dau_build_artifact_bundle(manifest_path: Path, *, root: Path | None
     return top_sv_path
 
 
-def _required_str(raw: dict[str, Any], key: str) -> str:
-    value = raw.get(key)
-    if not isinstance(value, str) or not value:
-        raise DauBuildSpecError(f"build spec missing required string field: {key}")
-    return value
-
-
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     from dau_build.packaging import load_yaml_mapping
 
     return load_yaml_mapping(path, description="build spec", error_type=DauBuildSpecError)
-
-
-def _required_str_tuple(raw: dict[str, Any], key: str) -> tuple[str, ...]:
-    value = raw.get(key)
-    if not isinstance(value, list):
-        raise DauBuildSpecError(f"{key} must be a non-empty list of strings")
-    if not value:
-        raise DauBuildSpecError(f"{key} must contain at least one entry")
-    if not all(isinstance(item, str) and item for item in value):
-        raise DauBuildSpecError(f"{key} must contain only non-empty strings")
-    return tuple(value)
-
-
-def _optional_str_tuple(raw: dict[str, Any], key: str) -> tuple[str, ...]:
-    value = raw.get(key, [])
-    if not isinstance(value, list):
-        raise DauBuildSpecError(f"{key} must be a list of strings")
-    if not all(isinstance(item, str) and item for item in value):
-        raise DauBuildSpecError(f"{key} must contain only non-empty strings")
-    return tuple(value)
 
 
 def _contract_version_to_u32(version: str) -> int:
@@ -456,14 +411,6 @@ def _operator_bitmap(operators: tuple[str, ...]) -> int:
     for token in _operator_tokens(operators):
         bitmap |= 1 << (_OPERATOR_TOKENS.index(token) + 1)
     return bitmap
-
-
-def _required_paths(raw: dict[str, Any], key: str, spec_root: Path, label: str) -> tuple[Path, ...]:
-    return _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in _required_str_tuple(raw, key)), label)
-
-
-def _optional_paths(raw: dict[str, Any], key: str, spec_root: Path, label: str) -> tuple[Path, ...]:
-    return _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in _optional_str_tuple(raw, key)), label)
 
 
 def _checked_paths(paths: tuple[Path, ...], label: str) -> tuple[Path, ...]:

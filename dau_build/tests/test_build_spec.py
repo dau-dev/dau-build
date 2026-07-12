@@ -5,7 +5,6 @@ import pytest
 from dau_build.build_spec import (
     BuildSpec,
     DauBuildSpec,
-    build_spec_from_mapping,
     design_manifest_items,
     generate_dau_build_artifacts,
     main,
@@ -82,13 +81,13 @@ def test_build_spec_is_hydra_instantiable() -> None:
     assert spec.name == "x" and spec.backend == "none"
 
 
-def test_build_spec_resolve_equals_the_loader(tmp_path: Path) -> None:
-    # load_dau_build_spec delegates to BuildSpec.resolve(); prove the composed
-    # config path produces the identical resolved DauBuildSpec
+def test_build_spec_model_validate_equals_from_file(tmp_path: Path) -> None:
+    # both from_file and a directly composed BuildSpec go through pydantic
+    # validation and produce the identical resolved DauBuildSpec
     spec_path = _write_spec(tmp_path)
     from dau_build.build_spec import _load_yaml_mapping
 
-    composed = build_spec_from_mapping(_load_yaml_mapping(spec_path), base_dir=spec_path.parent)
+    composed = BuildSpec.model_validate({**_load_yaml_mapping(spec_path), "base_dir": spec_path.parent})
     assert isinstance(composed, BuildSpec)
     assert composed.resolve() == BuildSpec.from_file(spec_path).resolve()
 
@@ -253,7 +252,8 @@ def test_load_dau_build_spec_rejects_empty_modules(tmp_path: Path) -> None:
         BuildSpec.from_file(spec_path).resolve()
 
     assert exc_info.type.__name__ == "DauBuildSpecError"
-    assert "modules must contain at least one entry" in str(exc_info.value)
+    # pydantic enforces the non-empty constraint
+    assert "modules" in str(exc_info.value) and "at least 1 item" in str(exc_info.value)
 
 
 def test_load_dau_build_spec_rejects_unsupported_backend(tmp_path: Path) -> None:
