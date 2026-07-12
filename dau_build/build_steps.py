@@ -280,6 +280,36 @@ class ExplainStep(SpecPathModel):
         )
 
 
+class InspectTask(SpecPathModel):
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
+
+
+class BuildArtifactsTask(SpecPathModel):
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        artifacts = _build_spec_api().write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
+        return BuildStepResult(step="build", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
+
+
+class ValidateTask(SpecPathModel):
+    # validates a generated artifact bundle when manifest_path is given,
+    # otherwise validates the spec
+    manifest_path: Path | None = None
+    root: Path | None = None
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        if self.manifest_path is not None:
+            top_sv = _build_spec_api().validate_dau_build_artifact_bundle(self.manifest_path, root=self.root)
+            return BuildStepResult(step="validate", message=f"dau-build-artifacts-valid\tmanifest={self.manifest_path} top_sv={top_sv}")
+        self.load_spec()
+        return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_label}")
+
+
 class SimulateTask(ModuleSelectionModel):
     # spec_path/module are optional for profile-only Verilator runs, where a
     # registered profile already carries its sources and top module

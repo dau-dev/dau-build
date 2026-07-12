@@ -53,6 +53,9 @@ tasks/flash/flash
 tasks/flash/smoke-test
 tasks/hardware/hardware-plan
 tasks/sim/simulate
+tasks/spec/build
+tasks/spec/inspect
+tasks/spec/validate
 tasks/stage/stage-shell
 tasks/stage/stage-vivado-overlay
 tasks/stage/stage-vivado-project

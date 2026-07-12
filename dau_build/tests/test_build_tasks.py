@@ -44,6 +44,28 @@ def test_execute_override_task_requires_selected_module_to_match_spec(tmp_path: 
         execute_override_task(("task=tasks/sim/simulate", "simulator=svparser", "module=missing", f"spec_path={spec_path}"))
 
 
+def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
+    spec_path = _write_spec(tmp_path)
+    output_root = tmp_path / "artifacts"
+
+    inspect = execute_override_task(("task=tasks/spec/inspect", f"spec_path={spec_path}"))
+    assert inspect.step == "inspect"
+    assert "name=identity-pipeline" in inspect.message
+
+    build = execute_override_task(("task=tasks/spec/build", f"spec_path={spec_path}", f"output_root={output_root}"))
+    manifest_path = output_root / "dau-identity.manifest"
+    assert build == BuildStepResult(
+        step="build",
+        message=f"dau-build-artifacts\tmanifest={manifest_path} top_sv={output_root / 'generated' / 'dau_identity_top.sv'}",
+    )
+    assert manifest_path.is_file()
+
+    # the generated bundle validates through the same task (no subcommand)
+    validated = execute_override_task(("task=tasks/spec/validate", f"manifest_path={manifest_path}", f"root={output_root}"))
+    assert validated.step == "validate"
+    assert f"dau-build-artifacts-valid\tmanifest={manifest_path}" in validated.message
+
+
 def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"

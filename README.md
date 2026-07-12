@@ -18,13 +18,13 @@ Vivado is the only synthesis backend today; the config plumbing is backend-agnos
 Build the checked-in identity example — no board or vendor tools required:
 
 ```bash
-dau-build inspect  --spec examples/identity/dau-build.yaml
-dau-build build    --spec examples/identity/dau-build.yaml --out outputs/identity
-dau-build validate --manifest outputs/identity/dau-identity.manifest --root outputs/identity
-dau-build task=tasks/sim/simulate module=dau_identity_top spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/inspect  spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/build     spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
+dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
+dau-build task=tasks/sim/simulate   module=dau_identity_top spec_path=examples/identity/dau-build.yaml
 ```
 
-Task and step names are path-style, mirroring the config tree (`task=tasks/sim/simulate`, `step=steps/inspect`).
+Task and step names are path-style, mirroring the config tree (`task=tasks/spec/inspect`, `step=steps/inspect`).
 
 ## Documentation
 
