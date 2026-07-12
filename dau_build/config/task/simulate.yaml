@@ -1,7 +1,8 @@
 # @package model
 
 _target_: dau_build.build_steps.SimulateTask
-spec_path: ???
+spec_path: null
+spec: ${oc.select:spec,null}
 module: ???
 simulator: svparser
 output_root: null

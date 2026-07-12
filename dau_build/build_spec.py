@@ -86,6 +86,13 @@ class BuildSpec(BaseModel):
     backend: str = "none"
     base_dir: Path = Path(".")
 
+    @classmethod
+    def from_file(cls, path: Path) -> BuildSpec:
+        """Parse a spec yaml file into a ``BuildSpec`` (sources resolve
+        against the file's directory). File input for the CLI/tests; the
+        Hydra ``spec=`` group composes a ``BuildSpec`` the same way."""
+        return build_spec_from_mapping(_load_yaml_mapping(path), base_dir=path.parent)
+
     def resolve(self) -> DauBuildSpec:
         if self.backend not in SUPPORTED_BACKENDS:
             raise DauBuildSpecError(f"unsupported backend: {self.backend}")
@@ -162,13 +169,6 @@ def build_spec_from_mapping(raw: dict[str, Any], *, base_dir: Path) -> BuildSpec
         backend=str(raw.get("backend", "none")),
         base_dir=base_dir,
     )
-
-
-def load_dau_build_spec(path: Path) -> DauBuildSpec:
-    """Back-compatible loader: parse the spec yaml into a ``BuildSpec`` and
-    resolve it. New code composes ``BuildSpec`` through the ``spec`` Hydra
-    config group instead of parsing a path."""
-    return build_spec_from_mapping(_load_yaml_mapping(path), base_dir=path.parent).resolve()
 
 
 def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> DauBuildArtifacts:
@@ -322,14 +322,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     try:
         if args.command == "build":
-            artifacts = write_dau_build_artifacts(load_dau_build_spec(args.spec), output_root=args.out)
+            artifacts = write_dau_build_artifacts(BuildSpec.from_file(args.spec).resolve(), output_root=args.out)
             print(f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
             return 0
         if args.command == "inspect":
-            print(dau_build_spec_summary(load_dau_build_spec(args.spec)))
+            print(dau_build_spec_summary(BuildSpec.from_file(args.spec).resolve()))
             return 0
         if args.command == "validate" and args.spec is not None:
-            load_dau_build_spec(args.spec)
+            BuildSpec.from_file(args.spec).resolve()
             print(f"dau-build-spec-valid\tspec={args.spec}")
             return 0
         if args.command == "validate" and args.manifest is not None:

@@ -8,7 +8,6 @@ from dau_build.build_spec import (
     build_spec_from_mapping,
     design_manifest_items,
     generate_dau_build_artifacts,
-    load_dau_build_spec,
     main,
     write_dau_build_artifacts,
 )
@@ -91,13 +90,13 @@ def test_build_spec_resolve_equals_the_loader(tmp_path: Path) -> None:
 
     composed = build_spec_from_mapping(_load_yaml_mapping(spec_path), base_dir=spec_path.parent)
     assert isinstance(composed, BuildSpec)
-    assert composed.resolve() == load_dau_build_spec(spec_path)
+    assert composed.resolve() == BuildSpec.from_file(spec_path).resolve()
 
 
 def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Path) -> None:
     from dau_build.artifact_bundle import ArtifactBundle
 
-    spec = load_dau_build_spec(_write_spec(tmp_path))
+    spec = BuildSpec.from_file(_write_spec(tmp_path)).resolve()
 
     # the artifact_bundle is derived from the sources; compare the declared
     # identity fields by normalizing it out
@@ -121,7 +120,7 @@ def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Pat
 
 
 def test_design_manifest_items_advertise_one_aggregation_unit(tmp_path: Path) -> None:
-    spec = load_dau_build_spec(_write_spec(tmp_path)).model_copy(update={"operators": ("int32-arrow-lite-aggregation",)})
+    spec = BuildSpec.from_file(_write_spec(tmp_path)).resolve().model_copy(update={"operators": ("int32-arrow-lite-aggregation",)})
 
     assert design_manifest_items(spec) == (
         ("design_name", "identity-pipeline"),
@@ -136,7 +135,7 @@ def test_design_manifest_items_advertise_one_aggregation_unit(tmp_path: Path) ->
 
 
 def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_path: Path) -> None:
-    spec = load_dau_build_spec(_write_spec(tmp_path))
+    spec = BuildSpec.from_file(_write_spec(tmp_path)).resolve()
     artifacts = generate_dau_build_artifacts(spec, output_root=tmp_path / "out")
 
     assert artifacts.top_sv_path == tmp_path / "out" / "generated" / "dau_identity_top.sv"
@@ -165,7 +164,7 @@ def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_pa
 
 
 def test_write_dau_build_artifacts_persists_bundle_without_toolchain_invocation(tmp_path: Path) -> None:
-    spec = load_dau_build_spec(_write_spec(tmp_path))
+    spec = BuildSpec.from_file(_write_spec(tmp_path)).resolve()
     artifacts = write_dau_build_artifacts(spec, output_root=tmp_path / "out")
 
     assert artifacts.top_sv_path.read_text(encoding="utf-8") == artifacts.top_sv_text
@@ -201,7 +200,7 @@ def test_generate_dau_build_artifacts_emits_stream_job_top_boundary_for_stream_m
         encoding="utf-8",
     )
 
-    artifacts = generate_dau_build_artifacts(load_dau_build_spec(spec_path), output_root=tmp_path / "out")
+    artifacts = generate_dau_build_artifacts(BuildSpec.from_file(spec_path).resolve(), output_root=tmp_path / "out")
     top = artifacts.top_sv_text
 
     assert "input wire logic register_read_enable" in top
@@ -240,7 +239,7 @@ def test_load_dau_build_spec_rejects_missing_source_file(tmp_path: Path) -> None
     spec_path.write_text(spec_path.read_text(encoding="utf-8").replace("ff.sv", "missing.sv"), encoding="utf-8")
 
     with pytest.raises(Exception) as exc_info:
-        load_dau_build_spec(spec_path)
+        BuildSpec.from_file(spec_path).resolve()
 
     assert exc_info.type.__name__ == "DauBuildSpecError"
     assert "missing source file" in str(exc_info.value)
@@ -251,7 +250,7 @@ def test_load_dau_build_spec_rejects_empty_modules(tmp_path: Path) -> None:
     spec_path.write_text(spec_path.read_text(encoding="utf-8").replace("modules:\n  - ff\n  - decoder", "modules: []"), encoding="utf-8")
 
     with pytest.raises(Exception) as exc_info:
-        load_dau_build_spec(spec_path)
+        BuildSpec.from_file(spec_path).resolve()
 
     assert exc_info.type.__name__ == "DauBuildSpecError"
     assert "modules must contain at least one entry" in str(exc_info.value)
@@ -262,7 +261,7 @@ def test_load_dau_build_spec_rejects_unsupported_backend(tmp_path: Path) -> None
     spec_path.write_text(spec_path.read_text(encoding="utf-8").replace("backend: vivado", "backend: quartus"), encoding="utf-8")
 
     with pytest.raises(Exception) as exc_info:
-        load_dau_build_spec(spec_path)
+        BuildSpec.from_file(spec_path).resolve()
 
     assert exc_info.type.__name__ == "DauBuildSpecError"
     assert "unsupported backend" in str(exc_info.value)
@@ -274,7 +273,7 @@ def test_generate_dau_build_artifacts_rejects_unknown_requested_module(tmp_path:
         spec_path.read_text(encoding="utf-8").replace("modules:\n  - ff\n  - decoder", "modules:\n  - missing_module"),
         encoding="utf-8",
     )
-    spec = load_dau_build_spec(spec_path)
+    spec = BuildSpec.from_file(spec_path).resolve()
 
     with pytest.raises(Exception) as exc_info:
         generate_dau_build_artifacts(spec, output_root=tmp_path / "out")
@@ -379,7 +378,7 @@ def test_build_spec_consumes_yaml_artifact_manifest_inputs(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    spec = load_dau_build_spec(spec_path)
+    spec = BuildSpec.from_file(spec_path).resolve()
     artifacts = write_dau_build_artifacts(spec, output_root=tmp_path / "out")
     artifact_manifest = load_artifact_manifest(artifacts.artifact_manifest_path, validate_paths=True, root=tmp_path / "out")
 
@@ -445,7 +444,7 @@ def test_build_spec_reports_manifest_inputs_without_hdl(tmp_path: Path) -> None:
     )
 
     with pytest.raises(Exception) as exc_info:
-        load_dau_build_spec(spec_path)
+        BuildSpec.from_file(spec_path).resolve()
 
     assert exc_info.type.__name__ == "DauBuildSpecError"
     assert "artifact manifest input(s) do not provide HDL source artifacts" in str(exc_info.value)

@@ -44,9 +44,9 @@ def _build_spec_api():
 
 def _resolve_build_config(spec, *, backend_name=None):
     """Deferred for the same reason: build_config imports build_spec."""
-    from dau_build.build_config import resolve_build_config
+    from dau_build.build_config import ResolvedBuildConfig
 
-    return resolve_build_config(spec, backend_name=backend_name)
+    return ResolvedBuildConfig.from_spec(spec, backend_name=backend_name)
 
 
 class BuildStepError(ValueError):
@@ -74,10 +74,27 @@ class BuildCallableModel(CallableModel):
 
 
 class SpecPathModel(BuildCallableModel):
-    spec_path: Path
+    # `spec` is composed by the Hydra `spec=` group (a BuildSpec); `spec_path`
+    # is file input for the CLI/tests. Typed Any, not BuildSpec, so importing
+    # build_steps stays light — build_spec pulls the SV-parser stack (F51).
+    spec: Any = None
+    spec_path: Path | None = None
 
     def load_spec(self):
-        return _build_spec_api().load_dau_build_spec(self.spec_path)
+        build_spec = self.spec
+        if build_spec is None:
+            if self.spec_path is None:
+                raise BuildStepError("a spec is required: pass spec=<name> or spec_path=<file>")
+            build_spec = _build_spec_api().BuildSpec.from_file(self.spec_path)
+        return build_spec.resolve()
+
+    @property
+    def spec_base_dir(self) -> Path:
+        return Path(self.spec.base_dir) if self.spec is not None else self.spec_path.parent
+
+    @property
+    def spec_label(self) -> str:
+        return self.spec.name if self.spec is not None else str(self.spec_path)
 
 
 class ModuleSelectionModel(SpecPathModel):
@@ -88,7 +105,7 @@ class ModuleSelectionModel(SpecPathModel):
         provided_modules = (spec.top_name, *spec.modules)
         if self.module not in provided_modules:
             expected = ", ".join(provided_modules)
-            raise BuildStepError(f"module {self.module!r} is not provided by spec {self.spec_path}; expected one of: {expected}")
+            raise BuildStepError(f"module {self.module!r} is not provided by spec {self.spec_label}; expected one of: {expected}")
         return spec
 
 
@@ -102,7 +119,7 @@ class ValidateStep(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         self.load_spec()
-        return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_path}")
+        return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_label}")
 
 
 class GenerateStep(SpecPathModel):
@@ -153,13 +170,13 @@ class SimulateStep(SpecPathModel):
     def __call__(self, context: NullContext) -> BuildStepResult:
         spec = self.load_spec()
         _resolve_build_config(spec)
-        _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_path.parent / ".dau-build-sim")
+        _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_base_dir / ".dau-build-sim")
         if self.simulate_engine == "verilator":
             return self._run_verilator(spec)
         return BuildStepResult(
             step="simulate",
             message=(
-                f"dau-build-simulate\tspec={self.spec_path} top={spec.top_name} modules={','.join(spec.modules)} "
+                f"dau-build-simulate\tspec={self.spec_label} top={spec.top_name} modules={','.join(spec.modules)} "
                 f"sources={len(spec.sources)} engine=svparser status=validated"
             ),
         )
@@ -194,7 +211,7 @@ class SimulateStep(SpecPathModel):
             expected_stdout = self.simulate_expect_stdout
             extra_sources = (testbench_path,)
 
-        work_dir = self.output_root or self.spec_path.parent / ".dau-build-sim" / "verilator"
+        work_dir = self.output_root or self.spec_base_dir / ".dau-build-sim" / "verilator"
         extra_args = tuple(shlex.split(self.simulate_extra_args))
         all_sources = _unique_paths((*spec.sources, *extra_sources))
         try:
@@ -215,7 +232,7 @@ class SimulateStep(SpecPathModel):
         return BuildStepResult(
             step="simulate",
             message=(
-                f"dau-build-simulate\tspec={self.spec_path} top={spec.top_name} modules={','.join(spec.modules)} sources={len(spec.sources)} "
+                f"dau-build-simulate\tspec={self.spec_label} top={spec.top_name} modules={','.join(spec.modules)} sources={len(spec.sources)} "
                 f"engine=verilator {mode_segment}testbench_top={top_module} work_dir={work_dir} status=passed"
             ),
         )
@@ -248,7 +265,7 @@ class ExplainStep(SpecPathModel):
             message="\n".join(
                 (
                     "dau-build-explain",
-                    f"spec\tpath={self.spec_path} name={spec.name} top={spec.top_name}",
+                    f"spec\tpath={self.spec_label} name={spec.name} top={spec.top_name}",
                     f"board\tname={resolved.board.name} platform={resolved.board.platform} shell={resolved.board.shell}",
                     "actions\tvalidate=local simulate=local synthesis=local-handoff artifacts=generate-or-write",
                 )
@@ -278,23 +295,25 @@ class SimulateTask(ModuleSelectionModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        if self.simulator in ("verilator", "cocotb") and self.profile and self.spec_path is None:
+        no_spec = self.spec is None and self.spec_path is None
+        if self.simulator in ("verilator", "cocotb") and self.profile and no_spec:
             return self._run_registered_profile()
-        if self.spec_path is None or not self.module:
-            raise BuildStepError("task=simulate requires spec_path and module (or simulator=verilator profile=<name> for a registered profile)")
+        if no_spec or not self.module:
+            raise BuildStepError(
+                "task=simulate requires a spec (spec=<name> or spec_path=<file>) and module (or simulator=verilator profile=<name> for a registered profile)"
+            )
         spec = self.load_spec_and_validate_module()
-        output_root = self.output_root or self.spec_path.parent / ".dau-build-sim"
+        output_root = self.output_root or self.spec_base_dir / ".dau-build-sim"
         if self.simulator in {"svparser", "cocotb"}:
             _resolve_build_config(spec)
             _build_spec_api().generate_dau_build_artifacts(spec, output_root=output_root)
             return BuildStepResult(
                 step="simulate",
-                message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_path} status=validated",
+                message=f"dau-build-simulate\ttask=simulate simulator={self.simulator} module={self.module} spec={self.spec_label} status=validated",
             )
-        step_data: dict[str, str] = {}
+        step_data: dict[str, Any] = {"spec": self.spec} if self.spec is not None else {"spec_path": str(self.spec_path)}
         step_data.update(
             {
-                "spec_path": str(self.spec_path),
                 "output_root": str(output_root),
                 "simulate.engine": "verilator",
                 "simulate.verilator": self.verilator,
@@ -367,7 +386,7 @@ class SynthesizeTask(ModuleSelectionModel):
         return BuildStepResult(
             step="synthesize",
             message=(
-                f"dau-build-synthesize\ttask=synthesize engine={self.engine} module={self.module} spec={self.spec_path} "
+                f"dau-build-synthesize\ttask=synthesize engine={self.engine} module={self.module} spec={self.spec_label} "
                 f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} "
                 f"backend_manifest={backend_artifacts.manifest_path} command_plan={backend_artifacts.command_plan_path} status=handoff-written"
             ),

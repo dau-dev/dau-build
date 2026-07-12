@@ -239,7 +239,7 @@ def test_public_build_docs_and_tests_do_not_name_internal_hardware_hosts() -> No
 
 
 def test_execute_step_validates_required_overrides(tmp_path: Path) -> None:
-    with pytest.raises(BuildStepError, match="missing required override"):
+    with pytest.raises(BuildStepError, match="a spec is required"):
         execute_override_step(("step=inspect",))
 
 

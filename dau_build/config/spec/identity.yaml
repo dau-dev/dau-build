@@ -1,0 +1,19 @@
+# @package spec
+
+# The identity example as a Hydra-composed BuildSpec: dau-build task=inspect
+# spec=identity (run from the dau-build repo root so base_dir resolves).
+_target_: dau_build.build_spec.BuildSpec
+name: identity-pipeline
+top_name: dau_identity_top
+platform: vivado-xdma
+shell: xdma-ddr
+artifact_stem: dau-identity
+register_map_version: "0.1"
+stream_protocol_version: "0.1"
+clock: clk
+reset: reset
+operators: [identity]
+modules: [identity]
+artifact_manifests: [package.artifacts.yaml]
+backend: vivado
+base_dir: examples/identity
