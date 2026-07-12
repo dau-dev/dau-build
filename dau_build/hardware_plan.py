@@ -5,8 +5,9 @@ import base64
 import shlex
 import subprocess
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
+
+from ccflow import BaseModel
 
 from dau_build.vivado_backend import (
     VivadoBackendArtifactValidation,
@@ -51,18 +52,19 @@ SHELL_STAGE_EXCLUDES = (
 )
 
 
-@dataclass(frozen=True)
-class ToolStep:
+class ToolStep(BaseModel):
     name: str
     argv: tuple[str, ...]
+
+    def __init__(self, name: str, argv: tuple[str, ...] = ()) -> None:
+        super().__init__(name=name, argv=argv)
 
     @property
     def command_line(self) -> str:
         return shlex.join(self.argv)
 
 
-@dataclass(frozen=True)
-class HardwareToolchainConfig:
+class HardwareToolchainConfig(BaseModel):
     work_root: Path
     bitstream_path: Path | None = None
     vivado_executable: str = "vivado"
@@ -90,6 +92,12 @@ class HardwareToolchainConfig:
     @property
     def lspci_slot(self) -> str:
         return self.endpoint_bdf.removeprefix("0000:")
+
+
+# resolve forward-ref annotations (this module uses `from __future__ import
+# annotations`, so pydantic needs the models rebuilt against module globals)
+ToolStep.model_rebuild()
+HardwareToolchainConfig.model_rebuild()
 
 
 def build_and_program_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:

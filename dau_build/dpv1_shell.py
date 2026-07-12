@@ -17,9 +17,10 @@ XDMA). Hardware rules baked in (see dau-docs GUIDELINES):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+from ccflow import BaseModel
 
 DPV1_PART = "xc7a200tfbg484-2"
 
@@ -38,8 +39,7 @@ def dpv1_xdma_personality():
     return resolve_platform("dpv1").host_link.xdma_personality
 
 
-@dataclass(frozen=True)
-class MmJobShellRequest:
+class MmJobShellRequest(BaseModel):
     """Inputs for generating the MM job shell project. The caller supplies
     the generated binding sources as (filename, text) pairs — dau-build is
     generic platform integration and generates the *project*, never the
@@ -59,8 +59,7 @@ class MmJobShellRequest:
     jobs: int = 12
 
 
-@dataclass(frozen=True)
-class MmDdrJobShellRequest:
+class MmDdrJobShellRequest(BaseModel):
     """Inputs for generating the DDR-staged MM job shell project: the MM
     job shell with the block RAM staging replaced by the memory controller
     (MIG, configured from a caller-supplied .prj) shared between the XDMA
