@@ -170,3 +170,11 @@ section-order = [
     "F403",
 ]
 
+
+[tool.yardang]
+title = "dau-build"
+root = "README.md"
+pages = [
+]
+use-autoapi = false
+
