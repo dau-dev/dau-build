@@ -320,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser.add_argument("--root", type=Path, help="Artifact bundle root; defaults to the manifest parent")
 
     args = parser.parse_args(arguments)
+    _warn_deprecated_subcommand(args.command)
     try:
         if args.command == "build":
             artifacts = write_dau_build_artifacts(BuildSpec.from_file(args.spec).resolve(), output_root=args.out)
@@ -354,6 +355,21 @@ def main_callable_steps(argv: list[str] | None = None) -> int:
         return 1
     print(result.message)
     return 0
+
+
+_SUBCOMMAND_TASK_EQUIVALENT = {
+    "build": "task=tasks/spec/build",
+    "inspect": "task=tasks/spec/inspect",
+    "validate": "task=tasks/spec/validate",
+}
+
+
+def _warn_deprecated_subcommand(command: str) -> None:
+    import sys
+
+    task = _SUBCOMMAND_TASK_EQUIVALENT.get(command)
+    if task is not None:
+        print(f"warning: 'dau-build {command}' is deprecated; use 'dau-build {task} ...' (see docs/reference/commands.md)", file=sys.stderr)
 
 
 def _looks_like_override_request(argument: str) -> bool:

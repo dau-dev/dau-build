@@ -133,6 +133,9 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
         "overlay-build": (f"model.work_root={tmp_path / 'work'}",),
         "simulate": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top"),
         "smoke-test": ("model.test=identity",),
+        "inspect": (),
+        "build": (f"model.output_root={tmp_path / 'artifacts'}",),
+        "validate": (),
         "stage-shell": (f"model.work_root={tmp_path / 'work'}", f"model.source_shell_root={tmp_path / 'shell'}"),
         "stage-vivado-overlay": (f"model.work_root={tmp_path / 'work'}", f"model.dau_core_root={tmp_path / 'dau-core'}"),
         "stage-vivado-project": (

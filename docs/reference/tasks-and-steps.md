@@ -23,6 +23,22 @@ always execute their (non-privileged) operation.
 
 ## Tasks
 
+### `tasks/spec/inspect` — `InspectTask`
+
+Prints the resolved build-spec summary (each source, metadata file, and binary
+asset with its originating manifest). Reads the spec via `spec_path` or a composed
+`spec=` group. Mode: **run**.
+
+### `tasks/spec/build` — `BuildArtifactsTask`
+
+Writes the generated top-level SystemVerilog, DAU manifest, and
+`artlink.manifest/v0` artifact bundle. Required: `output_root`. Mode: **run**.
+
+### `tasks/spec/validate` — `ValidateTask`
+
+Validates a generated artifact bundle when `manifest_path` is given (with optional
+`root`), otherwise validates the spec. Mode: **run**.
+
 ### `tasks/sim/simulate` — `SimulateTask`
 
 Validates or simulates a module against the build spec. Required: `module`.

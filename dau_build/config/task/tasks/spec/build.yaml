@@ -1,0 +1,8 @@
+# @package model
+
+_target_: dau_build.build_steps.BuildArtifactsTask
+spec_path: null
+spec: ${oc.select:spec,null}
+board: ${oc.select:board,null}
+backend: ${oc.select:backend,null}
+output_root: ???

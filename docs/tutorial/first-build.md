@@ -14,7 +14,7 @@ Work from the root of a `dau-build` checkout. Every command here uses the
 First, look at what the example declares. Run:
 
 ```bash
-dau-build inspect --spec examples/identity/dau-build.yaml
+dau-build task=tasks/spec/inspect spec_path=examples/identity/dau-build.yaml
 ```
 
 You should see a summary line followed by the resolved inputs:
@@ -37,7 +37,7 @@ backend — nothing has been generated yet.
 Now generate the build outputs into a fresh directory:
 
 ```bash
-dau-build build --spec examples/identity/dau-build.yaml --out outputs/identity
+dau-build task=tasks/spec/build spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
 ```
 
 The command prints the two headline artifacts it wrote:
@@ -66,7 +66,7 @@ Check that the generated bundle is internally consistent — that every file the
 manifest references exists and every required role is present:
 
 ```bash
-dau-build validate --manifest outputs/identity/dau-identity.manifest --root outputs/identity
+dau-build task=tasks/spec/validate manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
 ```
 
 ```text
@@ -90,16 +90,17 @@ dau-build task=tasks/sim/simulate module=dau_identity_top spec_path=examples/ide
 dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
 ```
 
-`status=validated` means the module checked out against the build spec. This is
-your first task run — `task=tasks/sim/simulate` selected the simulate task from
-the config tree, and the `module=` and `spec_path=` overrides supplied its fields.
+`status=validated` means the module checked out against the build spec. Like the
+previous steps, `task=tasks/sim/simulate` selected a task from the config tree and
+the `module=` and `spec_path=` overrides supplied its fields.
 
 ## What you have done
 
 You have run the identity design through the full plan-first flow: **inspect →
 build → validate → simulate**, and seen the artifacts each stage produces — all
-without a board or a vendor toolchain. Every dau-build task and step works this
-same way: select it from the config tree and override its fields.
+without a board or a vendor toolchain. Every step was the same shape —
+`dau-build task=<path> field=value` — because every dau-build operation is a task
+you select from the config tree and override.
 
 From here:
 
