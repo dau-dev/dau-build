@@ -241,8 +241,9 @@ boards, backends, or platforms, and they compose alongside the packaged ones.
 This guide shows the three things you are most likely to add: a new task from
 your own package, a new board or platform, and a new synthesis backend.</p>
 <p>For the concepts behind the search path and the config groups, see
-<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a>. For an ad-hoc
-overlay without packaging, jump to <a class="reference internal" href="#try-it-without-packaging"><span class="xref myst">the last section</span></a>.</p>
+<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a>. To test an
+overlay without packaging, see <strong>Try it without packaging</strong> at the end of this
+guide.</p>
 <section id="register-your-config-tree-on-the-search-path">
 <h2>Register your config tree on the search path<a class="headerlink" href="#register-your-config-tree-on-the-search-path" title="Link to this heading">¶</a></h2>
 <p>The one-time setup: give your package a <code class="docutils literal notranslate"><span class="pre">config</span></code> directory laid out like
@@ -316,12 +317,12 @@ add <code class="docutils literal notranslate"><span class="pre">mypkg/config/pl
 <code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>. Select them with
 <code class="docutils literal notranslate"><span class="pre">board=boards/&lt;vendor&gt;/&lt;board&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
 </section>
-<section id="add-a-synthesis-backend-add-a-synthesis-backend">
-<h2>Add a synthesis backend {#add-a-synthesis-backend}<a class="headerlink" href="#add-a-synthesis-backend-add-a-synthesis-backend" title="Link to this heading">¶</a></h2>
+<section id="add-a-synthesis-backend">
+<h2>Add a synthesis backend<a class="headerlink" href="#add-a-synthesis-backend" title="Link to this heading">¶</a></h2>
 <p>Adding a <em>real</em> backend (for example a yosys/nextpnr flow) is more than a config
 file, because today <code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> is only a label and synthesis codegen is
 hard-wired to Vivado. Read
-<a class="reference internal" href="../explanation/architecture.html#backends"><span class="std std-ref">the backend section of the architecture explanation</span></a>
+<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the backend section of the architecture explanation</span></a>
 first — it describes exactly what is a label and what is wired.</p>
 <p>A new backend requires four things:</p>
 <ol class="arabic">
@@ -354,8 +355,8 @@ your package.</p></li>
 <p>Everything except step 3 composes purely from your package via the search path.
 Until a backend implements steps 2–4, selecting its label runs no real codegen.</p>
 </section>
-<section id="try-it-without-packaging-try-it-without-packaging">
-<h2>Try it without packaging {#try-it-without-packaging}<a class="headerlink" href="#try-it-without-packaging-try-it-without-packaging" title="Link to this heading">¶</a></h2>
+<section id="try-it-without-packaging">
+<h2>Try it without packaging<a class="headerlink" href="#try-it-without-packaging" title="Link to this heading">¶</a></h2>
 <p>To test a config overlay before packaging it, point the argparse CLI at a
 directory with <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span>--config-dir<span class="w"> </span>./my-configs<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
@@ -408,8 +409,8 @@ task config before wiring up the entry point.</p>
 <li><a class="reference internal" href="#register-your-config-tree-on-the-search-path">Register your config tree on the search path</a></li>
 <li><a class="reference internal" href="#add-a-task">Add a task</a></li>
 <li><a class="reference internal" href="#add-a-board-or-platform">Add a board or platform</a></li>
-<li><a class="reference internal" href="#add-a-synthesis-backend-add-a-synthesis-backend">Add a synthesis backend {#add-a-synthesis-backend}</a></li>
-<li><a class="reference internal" href="#try-it-without-packaging-try-it-without-packaging">Try it without packaging {#try-it-without-packaging}</a></li>
+<li><a class="reference internal" href="#add-a-synthesis-backend">Add a synthesis backend</a></li>
+<li><a class="reference internal" href="#try-it-without-packaging">Try it without packaging</a></li>
 </ul>
 </li>
 </ul>
