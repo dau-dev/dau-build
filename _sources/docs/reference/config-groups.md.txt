@@ -16,6 +16,8 @@ defaults:
   - optional platform: null
   - optional board: null
   - optional backend: null
+  - optional driver: null
+  - optional memory: null
   - optional simulator: null
   - optional spec: null
   - optional plan: null
@@ -25,7 +27,7 @@ defaults:
 
 Every group except `callable` is `optional … null`: nothing is selected unless
 overridden. A run selects exactly one of `task=` or `step=` to populate `model`,
-optionally augmented by `spec=`, `board=`, `backend=`, `simulator=`, `platform=`, and `plan=`.
+optionally augmented by `spec=`, `board=`, `backend=`, `driver=`, `memory=`, `simulator=`, `platform=`, and `plan=`.
 
 Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
@@ -38,6 +40,8 @@ other groups use their singular key (`# @package board`, etc.).
 | `spec`      | `spec`         | `dau_build.build_spec.BuildSpec`          | A composed build spec (Hydra-native alternative to `spec_path`). |
 | `board`     | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                                     |
 | `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
+| `driver`    | `driver`       | `dau_build.build_config.DriverConfig`     | The host driver (OS + transport) in the resolved config.         |
+| `memory`    | `memory`       | `dau_build.build_config.MemoryConfig`     | The build-time staging buffers in the resolved config.           |
 | `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                          |
 | `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
 | `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).                  |
@@ -125,6 +129,16 @@ hydra-configurable — e.g. `backend=backends/yosys backend.frontend=slang` or
 or `slang` (yosys-slang); `yosys` sets the executable. See
 [the architecture explanation](../explanation/architecture.md) for how the two
 engines differ.
+
+## `driver` and `memory`
+
+`driver=drivers/<name>` and `memory=memories/<name>` compose a `DriverConfig`
+(`os`, `transport`) and `MemoryConfig` (`host_staging_bytes`,
+`device_staging_bytes`) into the resolved build config, winning over the
+spec-derived defaults (`drivers/host` = `host`/`xdma`; `memories/default` =
+zeros). They surface in the `resolved-config` step and are the axes a future
+board/platform (dpv2) selects. Overridable like any group, e.g.
+`memory=memories/default memory.host_staging_bytes=4096`.
 
 ## `simulator`
 

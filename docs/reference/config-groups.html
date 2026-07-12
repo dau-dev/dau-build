@@ -258,6 +258,8 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional board</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional backend</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional driver</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional simulator</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional spec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional plan</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
@@ -267,7 +269,7 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 </div>
 <p>Every group except <code class="docutils literal notranslate"><span class="pre">callable</span></code> is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
 overridden. A run selects exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to populate <code class="docutils literal notranslate"><span class="pre">model</span></code>,
-optionally augmented by <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
+optionally augmented by <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
 <p>Each option file begins with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that places its
 content under that top-level key. Tasks and steps use <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>; the
 other groups use their singular key (<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">board</span></code>, etc.).</p>
@@ -305,6 +307,16 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <td><p><code class="docutils literal notranslate"><span class="pre">backend</span></code></p></td>
 <td><p>a <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">VivadoEngine</span></code>)</p></td>
 <td><p>The synthesis engine.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">driver</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">driver</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.DriverConfig</span></code></p></td>
+<td><p>The host driver (OS + transport) in the resolved config.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.MemoryConfig</span></code></p></td>
+<td><p>The build-time staging buffers in the resolved config.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">simulator</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">simulator</span></code></p></td>
@@ -430,6 +442,16 @@ hydra-configurable — e.g. <code class="docutils literal notranslate"><span cla
 or <code class="docutils literal notranslate"><span class="pre">slang</span></code> (yosys-slang); <code class="docutils literal notranslate"><span class="pre">yosys</span></code> sets the executable. See
 <a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a> for how the two
 engines differ.</p>
+</section>
+<section id="driver-and-memory">
+<h2><code class="docutils literal notranslate"><span class="pre">driver</span></code> and <code class="docutils literal notranslate"><span class="pre">memory</span></code><a class="headerlink" href="#driver-and-memory" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">driver=drivers/&lt;name&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">memory=memories/&lt;name&gt;</span></code> compose a <code class="docutils literal notranslate"><span class="pre">DriverConfig</span></code>
+(<code class="docutils literal notranslate"><span class="pre">os</span></code>, <code class="docutils literal notranslate"><span class="pre">transport</span></code>) and <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> (<code class="docutils literal notranslate"><span class="pre">host_staging_bytes</span></code>,
+<code class="docutils literal notranslate"><span class="pre">device_staging_bytes</span></code>) into the resolved build config, winning over the
+spec-derived defaults (<code class="docutils literal notranslate"><span class="pre">drivers/host</span></code> = <code class="docutils literal notranslate"><span class="pre">host</span></code>/<code class="docutils literal notranslate"><span class="pre">xdma</span></code>; <code class="docutils literal notranslate"><span class="pre">memories/default</span></code> =
+zeros). They surface in the <code class="docutils literal notranslate"><span class="pre">resolved-config</span></code> step and are the axes a future
+board/platform (dpv2) selects. Overridable like any group, e.g.
+<code class="docutils literal notranslate"><span class="pre">memory=memories/default</span> <span class="pre">memory.host_staging_bytes=4096</span></code>.</p>
 </section>
 <section id="simulator">
 <h2><code class="docutils literal notranslate"><span class="pre">simulator</span></code><a class="headerlink" href="#simulator" title="Link to this heading">¶</a></h2>
@@ -600,6 +622,7 @@ by default and is not normally overridden.</p>
 <li><a class="reference internal" href="#spec"><code class="docutils literal notranslate"><span class="pre">spec</span></code></a></li>
 <li><a class="reference internal" href="#board"><code class="docutils literal notranslate"><span class="pre">board</span></code></a></li>
 <li><a class="reference internal" href="#backend"><code class="docutils literal notranslate"><span class="pre">backend</span></code></a></li>
+<li><a class="reference internal" href="#driver-and-memory"><code class="docutils literal notranslate"><span class="pre">driver</span></code> and <code class="docutils literal notranslate"><span class="pre">memory</span></code></a></li>
 <li><a class="reference internal" href="#simulator"><code class="docutils literal notranslate"><span class="pre">simulator</span></code></a></li>
 <li><a class="reference internal" href="#platform"><code class="docutils literal notranslate"><span class="pre">platform</span></code></a></li>
 <li><a class="reference internal" href="#plan"><code class="docutils literal notranslate"><span class="pre">plan</span></code></a></li>
