@@ -1,0 +1,12 @@
+# @package simulator
+
+# simulator=simulators/verilator — run a Verilator testbench or registered profile
+_target_: dau_build.build_steps.VerilatorSimulator
+name: verilator
+profile: null
+profile_manifest: []
+testbench_path: null
+top_module: null
+expect_stdout: null
+verilator: verilator
+extra_args: ""

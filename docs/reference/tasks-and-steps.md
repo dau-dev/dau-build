@@ -41,10 +41,14 @@ Validates a generated artifact bundle when `manifest_path` is given (with option
 
 ### `tasks/sim/simulate` — `SimulateTask`
 
-Validates or simulates a module against the build spec. Required: `module`.
-Default `simulator: svparser` (validation only); `simulator=cocotb` runs a cocotb
-bench; `simulator=verilator` compiles and runs a Verilator testbench via a named
-`profile` or explicit `testbench_path`/`top_module`. Mode: **run**.
+Validates or simulates a module, delegating to the simulator composed from the
+`simulator` group (default `simulators/svparser`). `simulators/svparser` and
+`simulators/cocotb` validate the module against the spec; `simulators/verilator`
+runs a Verilator testbench (via `simulator.testbench_path`/`simulator.top_module`)
+or a registered profile (`simulator.profile`). Select+configure the simulator
+with, e.g., `simulator=simulators/verilator simulator.profile=<name>`. Mode:
+**run**. See the [config group reference](config-groups.md) for the simulator
+models.
 
 ### `tasks/build/synthesize` — `SynthesizeTask`
 

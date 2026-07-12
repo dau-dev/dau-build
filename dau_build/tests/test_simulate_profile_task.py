@@ -3,21 +3,23 @@ from shutil import which
 
 import pytest
 
-from dau_build.build_steps import BuildStepError, execute_override_task
+from dau_build.build_steps import BuildStepError
+from dau_build.config import run_request_config
 from dau_build.tests.test_build_steps import _write_counter_testbench
 
 
 @pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
 def test_profile_only_simulate_runs(tmp_path):
     manifest_path = _write_self_contained_counter_manifest(tmp_path)
-    result = execute_override_task(
-        [
-            "task=tasks/sim/simulate",
-            "simulator=verilator",
-            "profile=counter-profile",
-            f"profile_manifest={manifest_path}",
-            f"output_root={tmp_path}",
-        ]
+    result = run_request_config(
+        "task",
+        "tasks/sim/simulate",
+        overrides=[
+            "simulator=simulators/verilator",
+            "simulator.profile=counter-profile",
+            f"simulator.profile_manifest=[{manifest_path}]",
+        ],
+        model_values={"output_root": str(tmp_path)},
     )
     assert "status=passed" in result.message
     assert "profile=counter-profile" in result.message
@@ -25,7 +27,7 @@ def test_profile_only_simulate_runs(tmp_path):
 
 def test_simulate_without_spec_or_profile_fails_typed(tmp_path):
     with pytest.raises(BuildStepError, match="requires a spec"):
-        execute_override_task(["task=tasks/sim/simulate", "simulator=verilator"])
+        run_request_config("task", "tasks/sim/simulate", overrides=["simulator=simulators/verilator"])
 
 
 def _write_self_contained_counter_manifest(tmp_path) -> Path:

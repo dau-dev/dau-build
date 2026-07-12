@@ -85,7 +85,7 @@ def test_cocotb_profile_parses_and_runs_through_simulate_task(tmp_path) -> None:
     import pytest as _pytest
     from dau_sim.integrations.cocotb import CocotbProfile
 
-    from dau_build.build_steps import SimulateTask
+    from dau_build.build_steps import CocotbSimulator, SimulateTask
     from dau_build.simulation_profiles import resolve_profile
 
     profiles_yaml = tmp_path / "profiles.yaml"
@@ -119,9 +119,7 @@ def test_cocotb_profile_parses_and_runs_through_simulate_task(tmp_path) -> None:
     if which("verilator") is None:
         _pytest.skip("verilator not found")
     result = SimulateTask(
-        simulator="cocotb",
-        profile="ready-valid-sum-cocotb",
-        profile_manifest=(manifest_yaml,),
+        simulator=CocotbSimulator(profile="ready-valid-sum-cocotb", profile_manifest=(manifest_yaml,)),
         output_root=tmp_path / "work",
     )(None)
     assert "simulator=cocotb" in result.message and "status=passed" in result.message

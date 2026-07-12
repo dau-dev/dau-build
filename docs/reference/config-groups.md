@@ -16,6 +16,7 @@ defaults:
   - optional platform: null
   - optional board: null
   - optional backend: null
+  - optional simulator: null
   - optional spec: null
   - optional design: null
   - callable: callable
@@ -23,22 +24,23 @@ defaults:
 
 Every group except `callable` is `optional … null`: nothing is selected unless
 overridden. A run selects exactly one of `task=` or `step=` to populate `model`,
-optionally augmented by `spec=`, `board=`, `backend=`, and `platform=`.
+optionally augmented by `spec=`, `board=`, `backend=`, `simulator=`, and `platform=`.
 
 Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
 other groups use their singular key (`# @package board`, etc.).
 
-| Group      | `@package` key | Instantiated model                        | Selects                                                          |
-| ---------- | -------------- | ----------------------------------------- | ---------------------------------------------------------------- |
-| `task`     | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                         |
-| `step`     | `model`        | a `…Step` `ccflow.CallableModel`          | A lower-level plumbing operation.                                |
-| `spec`     | `spec`         | `dau_build.build_spec.BuildSpec`          | A composed build spec (Hydra-native alternative to `spec_path`). |
-| `board`    | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                                     |
-| `backend`  | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
-| `platform` | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
-| `design`   | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
-| `callable` | —              | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
+| Group       | `@package` key | Instantiated model                        | Selects                                                          |
+| ----------- | -------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `task`      | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                         |
+| `step`      | `model`        | a `…Step` `ccflow.CallableModel`          | A lower-level plumbing operation.                                |
+| `spec`      | `spec`         | `dau_build.build_spec.BuildSpec`          | A composed build spec (Hydra-native alternative to `spec_path`). |
+| `board`     | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                                     |
+| `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
+| `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                          |
+| `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
+| `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
+| `callable`  | —              | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
 
 ## `task`
 
@@ -121,6 +123,21 @@ hydra-configurable — e.g. `backend=backends/yosys backend.frontend=slang` or
 or `slang` (yosys-slang); `yosys` sets the executable. See
 [the architecture explanation](../explanation/architecture.md) for how the two
 engines differ.
+
+## `simulator`
+
+`simulator=simulators/<name>` composes a `Simulator` model into the `simulator`
+key; `SimulateTask` uses it as the simulator (default `simulators/svparser`).
+
+| Option                 | Model                | Fields                                                                                                            |
+| ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `simulators/svparser`  | `SvparserSimulator`  | `name`                                                                                                            |
+| `simulators/cocotb`    | `CocotbSimulator`    | `name`, `profile`, `profile_manifest`                                                                             |
+| `simulators/verilator` | `VerilatorSimulator` | `name`, `profile`, `profile_manifest`, `testbench_path`, `top_module`, `expect_stdout`, `verilator`, `extra_args` |
+
+Like the engines, simulators are polymorphic and fully hydra-configurable — e.g.
+`simulator=simulators/verilator simulator.profile=<name>` or
+`+simulator.<field>=...`.
 
 ## `platform`
 
