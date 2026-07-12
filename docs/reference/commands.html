@@ -296,6 +296,32 @@ dau-build task=&lt;path&gt; [field=value ...]
 </pre></div>
 </div>
 <p>If the first argument contains <code class="docutils literal notranslate"><span class="pre">=</span></code>, the command dispatches a flat task request through the registry (equivalent to <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> without the <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix). Otherwise it runs one of three subcommands that operate directly on a build spec file.</p>
+<blockquote>
+<div><p><strong>Deprecated.</strong> The <code class="docutils literal notranslate"><span class="pre">build</span></code>, <code class="docutils literal notranslate"><span class="pre">inspect</span></code>, and <code class="docutils literal notranslate"><span class="pre">validate</span></code> subcommands are superseded by the <code class="docutils literal notranslate"><span class="pre">tasks/spec/*</span></code> tasks and print a deprecation warning. Use the task form instead:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Subcommand</p></th>
+<th class="head"><p>Task equivalent</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">inspect</span> <span class="pre">--spec</span> <span class="pre">X</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/inspect</span> <span class="pre">spec_path=X</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">build</span> <span class="pre">--spec</span> <span class="pre">X</span> <span class="pre">--out</span> <span class="pre">D</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/build</span> <span class="pre">spec_path=X</span> <span class="pre">output_root=D</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">validate</span> <span class="pre">--spec</span> <span class="pre">X</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/validate</span> <span class="pre">spec_path=X</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">validate</span> <span class="pre">--manifest</span> <span class="pre">M</span> <span class="pre">--root</span> <span class="pre">D</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=tasks/spec/validate</span> <span class="pre">manifest_path=M</span> <span class="pre">root=D</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div></blockquote>
 <section id="build">
 <h3><code class="docutils literal notranslate"><span class="pre">build</span></code><a class="headerlink" href="#build" title="Link to this heading">¶</a></h3>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build build --spec &lt;spec.yaml&gt; --out &lt;dir&gt;

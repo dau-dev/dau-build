@@ -26,6 +26,15 @@ dau-build task=<path> [field=value ...]
 
 If the first argument contains `=`, the command dispatches a flat task request through the registry (equivalent to `dau-build-cfg` without the `model.` prefix). Otherwise it runs one of three subcommands that operate directly on a build spec file.
 
+> **Deprecated.** The `build`, `inspect`, and `validate` subcommands are superseded by the `tasks/spec/*` tasks and print a deprecation warning. Use the task form instead:
+>
+> | Subcommand                                 | Task equivalent                                             |
+> | ------------------------------------------ | ----------------------------------------------------------- |
+> | `dau-build inspect --spec X`               | `dau-build task=tasks/spec/inspect spec_path=X`             |
+> | `dau-build build --spec X --out D`         | `dau-build task=tasks/spec/build spec_path=X output_root=D` |
+> | `dau-build validate --spec X`              | `dau-build task=tasks/spec/validate spec_path=X`            |
+> | `dau-build validate --manifest M --root D` | `dau-build task=tasks/spec/validate manifest_path=M root=D` |
+
 ### `build`
 
 ```text

@@ -260,13 +260,13 @@
 <section id="quickstart">
 <h2>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h2>
 <p>Build the checked-in identity example — no board or vendor tools required:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>inspect<span class="w">  </span>--spec<span class="w"> </span>examples/identity/dau-build.yaml
-dau-build<span class="w"> </span>build<span class="w">    </span>--spec<span class="w"> </span>examples/identity/dau-build.yaml<span class="w"> </span>--out<span class="w"> </span>outputs/identity
-dau-build<span class="w"> </span>validate<span class="w"> </span>--manifest<span class="w"> </span>outputs/identity/dau-identity.manifest<span class="w"> </span>--root<span class="w"> </span>outputs/identity
-dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span><span class="nv">module</span><span class="o">=</span>dau_identity_top<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w">  </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w">     </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span><span class="nv">output_root</span><span class="o">=</span>outputs/identity
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w">  </span><span class="nv">manifest_path</span><span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span><span class="nv">root</span><span class="o">=</span>outputs/identity
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w">   </span><span class="nv">module</span><span class="o">=</span>dau_identity_top<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
-<p>Task and step names are path-style, mirroring the config tree (<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>).</p>
+<p>Task and step names are path-style, mirroring the config tree (<code class="docutils literal notranslate"><span class="pre">task=tasks/spec/inspect</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>).</p>
 </section>
 <section id="documentation">
 <h2>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h2>

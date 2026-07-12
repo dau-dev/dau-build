@@ -255,7 +255,7 @@ one produces.</p>
 <section id="step-1-inspect-the-spec">
 <h2>Step 1 — Inspect the spec<a class="headerlink" href="#step-1-inspect-the-spec" title="Link to this heading">¶</a></h2>
 <p>First, look at what the example declares. Run:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>inspect<span class="w"> </span>--spec<span class="w"> </span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
 <p>You should see a summary line followed by the resolved inputs:</p>
@@ -274,7 +274,7 @@ backend — nothing has been generated yet.</p>
 <section id="step-2-generate-the-artifacts">
 <h2>Step 2 — Generate the artifacts<a class="headerlink" href="#step-2-generate-the-artifacts" title="Link to this heading">¶</a></h2>
 <p>Now generate the build outputs into a fresh directory:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>build<span class="w"> </span>--spec<span class="w"> </span>examples/identity/dau-build.yaml<span class="w"> </span>--out<span class="w"> </span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span><span class="nv">output_root</span><span class="o">=</span>outputs/identity
 </pre></div>
 </div>
 <p>The command prints the two headline artifacts it wrote:</p>
@@ -296,7 +296,7 @@ portable inputs a synthesis backend consumes.</p>
 <h2>Step 3 — Validate the bundle<a class="headerlink" href="#step-3-validate-the-bundle" title="Link to this heading">¶</a></h2>
 <p>Check that the generated bundle is internally consistent — that every file the
 manifest references exists and every required role is present:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>validate<span class="w"> </span>--manifest<span class="w"> </span>outputs/identity/dau-identity.manifest<span class="w"> </span>--root<span class="w"> </span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w"> </span><span class="nv">manifest_path</span><span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span><span class="nv">root</span><span class="o">=</span>outputs/identity
 </pre></div>
 </div>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-artifacts-valid	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
@@ -316,16 +316,17 @@ any external simulator:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. This is
-your first task run — <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected the simulate task from
-the config tree, and the <code class="docutils literal notranslate"><span class="pre">module=</span></code> and <code class="docutils literal notranslate"><span class="pre">spec_path=</span></code> overrides supplied its fields.</p>
+<p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. Like the
+previous steps, <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected a task from the config tree and
+the <code class="docutils literal notranslate"><span class="pre">module=</span></code> and <code class="docutils literal notranslate"><span class="pre">spec_path=</span></code> overrides supplied its fields.</p>
 </section>
 <section id="what-you-have-done">
 <h2>What you have done<a class="headerlink" href="#what-you-have-done" title="Link to this heading">¶</a></h2>
 <p>You have run the identity design through the full plan-first flow: <strong>inspect →
 build → validate → simulate</strong>, and seen the artifacts each stage produces — all
-without a board or a vendor toolchain. Every dau-build task and step works this
-same way: select it from the config tree and override its fields.</p>
+without a board or a vendor toolchain. Every step was the same shape —
+<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code> — because every dau-build operation is a task
+you select from the config tree and override.</p>
 <p>From here:</p>
 <ul class="simple">
 <li><p>To drive a real synthesis-and-program sequence, see

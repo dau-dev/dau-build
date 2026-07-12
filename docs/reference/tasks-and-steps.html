@@ -263,6 +263,22 @@ hardware. Pass <code class="docutils literal notranslate"><span class="pre">exec
 always execute their (non-privileged) operation.</p>
 <section id="tasks">
 <h2>Tasks<a class="headerlink" href="#tasks" title="Link to this heading">¶</a></h2>
+<section id="tasks-spec-inspect-inspecttask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code> — <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code><a class="headerlink" href="#tasks-spec-inspect-inspecttask" title="Link to this heading">¶</a></h3>
+<p>Prints the resolved build-spec summary (each source, metadata file, and binary
+asset with its originating manifest). Reads the spec via <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a composed
+<code class="docutils literal notranslate"><span class="pre">spec=</span></code> group. Mode: <strong>run</strong>.</p>
+</section>
+<section id="tasks-spec-build-buildartifactstask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code><a class="headerlink" href="#tasks-spec-build-buildartifactstask" title="Link to this heading">¶</a></h3>
+<p>Writes the generated top-level SystemVerilog, DAU manifest, and
+<code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundle. Required: <code class="docutils literal notranslate"><span class="pre">output_root</span></code>. Mode: <strong>run</strong>.</p>
+</section>
+<section id="tasks-spec-validate-validatetask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code><a class="headerlink" href="#tasks-spec-validate-validatetask" title="Link to this heading">¶</a></h3>
+<p>Validates a generated artifact bundle when <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code> is given (with optional
+<code class="docutils literal notranslate"><span class="pre">root</span></code>), otherwise validates the spec. Mode: <strong>run</strong>.</p>
+</section>
 <section id="tasks-sim-simulate-simulatetask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code><a class="headerlink" href="#tasks-sim-simulate-simulatetask" title="Link to this heading">¶</a></h3>
 <p>Validates or simulates a module against the build spec. Required: <code class="docutils literal notranslate"><span class="pre">module</span></code>.
@@ -459,6 +475,9 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
             <ul>
 <li><a class="reference internal" href="#">Task and step catalog</a><ul>
 <li><a class="reference internal" href="#tasks">Tasks</a><ul>
+<li><a class="reference internal" href="#tasks-spec-inspect-inspecttask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code> — <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-spec-build-buildartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-spec-validate-validatetask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-sim-simulate-simulatetask"><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-synthesize-synthesizetask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-build-shell-project-buildshellprojecttask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code></a></li>
