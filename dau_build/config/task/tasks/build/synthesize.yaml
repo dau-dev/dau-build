@@ -4,10 +4,8 @@ _target_: dau_build.build_steps.SynthesizeTask
 spec_path: null
 spec: ${oc.select:spec,null}
 board: ${oc.select:board,null}
+# the synthesis engine is the composed backend group (default vivado);
+# select+configure it with backend=backends/yosys backend.frontend=slang
 backend: ${oc.select:backend,null}
 module: ???
-engine: vivado
-# yosys-only fields (ignored for engine=vivado)
-frontend: verilog
-yosys: yosys
 output_root: ???

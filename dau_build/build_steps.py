@@ -4,7 +4,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, Literal, TypeVar
 
-from ccflow import CallableModel, Flow, NullContext, ResultBase
+from ccflow import BaseModel, CallableModel, Flow, NullContext, ResultBase
 from pydantic import Field, ValidationError, field_validator
 
 from dau_build.hardware_plan import (
@@ -402,24 +402,28 @@ class SimulateTask(ModuleSelectionModel):
         )
 
 
-class SynthesizeTask(ModuleSelectionModel):
-    engine: Literal["vivado", "yosys"]
-    output_root: Path
-    # yosys-only: the SystemVerilog frontend and executable
-    frontend: Literal["verilog", "slang"] = "verilog"
-    yosys: str = "yosys"
+class SynthesisEngine(BaseModel):
+    """A synthesis engine selected from the ``backend`` config group. Each
+    engine is a polymorphic, fully hydra-configurable model
+    (``backend=backends/yosys backend.frontend=slang``); ``SynthesizeTask``
+    delegates to ``synthesize`` — there is no engine ``Literal`` or dispatch
+    ``if``."""
 
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
-        spec = self.load_spec_and_validate_module()
-        resolved = self._resolved(spec, backend_name=self.engine)
-        artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
-        if self.engine == "yosys":
-            return self._synthesize_with_yosys(spec, artifacts)
+    name: str
+    invocation: str = "standard"
+
+    def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
+        raise NotImplementedError
+
+
+class VivadoEngine(SynthesisEngine):
+    name: str = "vivado"
+
+    def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
         backend_artifacts = _write_vivado_backend_handoff(
             spec,
-            selected_module=self.module,
-            output_root=self.output_root,
+            selected_module=task.module,
+            output_root=task.output_root,
             dau_artifact_bundle_path=artifacts.artifact_manifest_path,
             platform=resolved.board.platform,
             shell=resolved.board.shell,
@@ -428,13 +432,19 @@ class SynthesizeTask(ModuleSelectionModel):
         return BuildStepResult(
             step="synthesize",
             message=(
-                f"dau-build-synthesize\ttask=synthesize engine={self.engine} module={self.module} spec={self.spec_label} "
-                f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} "
+                f"dau-build-synthesize\ttask=synthesize engine={self.name} module={task.module} spec={task.spec_label} "
+                f"output_root={task.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} "
                 f"backend_manifest={backend_artifacts.manifest_path} command_plan={backend_artifacts.command_plan_path} status=handoff-written"
             ),
         )
 
-    def _synthesize_with_yosys(self, spec, artifacts) -> BuildStepResult:
+
+class YosysEngine(SynthesisEngine):
+    name: str = "yosys"
+    frontend: Literal["verilog", "slang"] = "verilog"
+    yosys: str = "yosys"
+
+    def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
         # yosys is runnable (unlike the Vivado plan), so this actually
         # elaborates and synthesizes the generated top — a real check
         from dau_build.yosys_backend import YosysBackendError, YosysBackendRequest, run_yosys_synthesis
@@ -442,7 +452,7 @@ class SynthesizeTask(ModuleSelectionModel):
         request = YosysBackendRequest(
             top_module=spec.top_name,
             sources=(artifacts.top_sv_path, *spec.sources),
-            output_root=self.output_root,
+            output_root=task.output_root,
             frontend=self.frontend,
             yosys=self.yosys,
         )
@@ -455,11 +465,31 @@ class SynthesizeTask(ModuleSelectionModel):
         return BuildStepResult(
             step="synthesize",
             message=(
-                f"dau-build-synthesize\ttask=synthesize engine=yosys frontend={self.frontend} module={self.module} "
-                f"spec={self.spec_label} top={spec.top_name} output_root={self.output_root} "
+                f"dau-build-synthesize\ttask=synthesize engine={self.name} frontend={self.frontend} module={task.module} "
+                f"spec={task.spec_label} top={spec.top_name} output_root={task.output_root} "
                 f"script={result.script_path} cells={result.cell_count} status=synthesized"
             ),
         )
+
+
+class SynthesizeTask(ModuleSelectionModel):
+    output_root: Path
+
+    @Flow.call
+    def __call__(self, context: NullContext) -> BuildStepResult:
+        spec = self.load_spec_and_validate_module()
+        engine = self._engine()
+        resolved = self._resolved(spec, backend_name=engine.name)
+        artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
+        return engine.synthesize(task=self, spec=spec, artifacts=artifacts, resolved=resolved)
+
+    def _engine(self) -> SynthesisEngine:
+        # the engine is the composed `backend` group option; default to Vivado
+        if isinstance(self.backend, SynthesisEngine):
+            return self.backend
+        if self.backend is None:
+            return VivadoEngine()
+        raise BuildStepError(f"backend {getattr(self.backend, 'name', self.backend)!r} is not a synthesis engine")
 
 
 def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:

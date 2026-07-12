@@ -1,6 +1,9 @@
 # @package backend
 
-# backend=backends/yosys (open-source synthesis; runnable in CI)
-_target_: dau_build.build_config.BackendConfig
+# backend=backends/yosys — open-source synthesis engine (runs in CI).
+# Fully configurable, e.g. backend=backends/yosys backend.frontend=slang
+_target_: dau_build.build_steps.YosysEngine
 name: yosys
 invocation: standard
+frontend: verilog
+yosys: yosys

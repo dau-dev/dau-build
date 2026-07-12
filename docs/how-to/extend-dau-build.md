@@ -92,43 +92,43 @@ add `mypkg/config/platform/platforms/<vendor>/<board>.yaml` targeting
 `dau_build.platforms.PlatformDefinition`. Select them with
 `board=boards/<vendor>/<board>` and `platform=platforms/<vendor>/<board>`.
 
-## Add a synthesis backend
+## Add a synthesis engine
 
-Adding a *real* backend is more than a config file, because `BackendConfig` is
-only a label — the engine that runs codegen is `SynthesizeTask.engine`. The
-yosys backend is the worked example of a second engine; read
+The synthesis engine is the `backend` config group: each option instantiates a
+polymorphic `SynthesisEngine` model, and `SynthesizeTask` delegates to
+`engine.synthesize(...)` — there is no dispatch `if` to edit. `YosysEngine` is
+the worked example; read
 [the backend section of the architecture explanation](../explanation/architecture.md)
-first, then use `yosys_backend.py` as the template. A new backend requires:
+first, then use `yosys_backend.py` + `YosysEngine` as the template. A new engine
+requires:
 
-1. **A backend label**, so it is selectable. Add
-   `<pkg>/config/backend/backends/<name>.yaml` reusing the existing model
-   (this is exactly `backends/yosys.yaml`):
+1. **An engine model** — a `SynthesisEngine` subclass with a `synthesize`
+   method and whatever fields it needs (like `YosysEngine.frontend`). Its
+   `synthesize` either generates a plan (Vivado's Tcl/manifests) or generates and
+   runs a tool (yosys's script + `run_yosys_synthesis`). Put its heavy backend
+   logic in a module paralleling `yosys_backend.py`.
+
+1. **A config option** so it is selectable and configurable. Add
+   `<pkg>/config/backend/backends/<name>.yaml` (this is exactly
+   `backends/yosys.yaml`):
 
    ```yaml
    # @package backend
 
-   _target_: dau_build.build_config.BackendConfig
+   _target_: mypkg.engines.NextpnrEngine
    name: nextpnr
    invocation: standard
    ```
 
-   By itself this only changes the reported metadata in the resolved config.
-
-1. **A backend module.** Parallel `dau_build/yosys_backend.py` (or
-   `vivado_backend.py`): its own request/result `ccflow.BaseModel`s and entry
-   points that either generate a plan (Vivado's Tcl/manifests) or generate and
-   run a tool (yosys's script + `run_yosys_synthesis`).
-
-1. **Engine dispatch.** `SynthesizeTask.engine` is `Literal["vivado", "yosys"]`
-   and the task branches on it (`_synthesize_with_yosys`). Widen the literal and
-   add a branch for your engine. This is the change that lands *in dau-build*
-   (or a fork), since the dispatch lives there.
+   It composes as `backend=backends/<name>` and is fully configurable via
+   `backend.<field>=...` — no change to `SynthesizeTask`.
 
 1. **Any build/validate tasks** your flow needs, paralleling the Vivado ones,
    each targeting a new `ccflow.CallableModel`.
 
-The config label composes purely from your package via the search path; the
-engine branch is the one piece that lives in dau-build.
+Because the engine is just a composed model, an engine defined in your own
+package composes purely via the search path — nothing lands in dau-build unless
+you extend the packaged set.
 
 ## Try it without packaging
 

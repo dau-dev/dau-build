@@ -60,11 +60,15 @@ class ResolvedBuildConfig(BaseModel):
         operators, and memory derive from the spec directly. A composed
         ``board=``/``backend=`` Hydra group wins over the spec-derived
         default when provided; ``backend_name`` (e.g. a task's synthesis
-        engine) selects the backend when no ``backend=`` group is given."""
+        engine) selects the backend when no ``backend=`` group is given.
+
+        A composed backend may be a synthesis *engine* model (carrying extra
+        fields like a yosys frontend); it is normalized here to the ``name`` +
+        ``invocation`` label the resolved config reports."""
         return cls(
             spec=spec,
             board=board or BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
-            backend=backend or BackendConfig(name=backend_name or spec.backend, invocation="dry-run"),
+            backend=_backend_label(backend, backend_name, spec),
             driver=DriverConfig(os="host", transport="xdma"),
             operators=OperatorConfig(set_name="spec", names=spec.operators),
             memory=MemoryConfig(),
@@ -81,3 +85,14 @@ class ResolvedBuildConfig(BaseModel):
                 f"memory\thost_staging_bytes={self.memory.host_staging_bytes} device_staging_bytes={self.memory.device_staging_bytes}",
             )
         )
+
+
+def _backend_label(backend, backend_name: str | None, spec: DauBuildSpec) -> BackendConfig:
+    """Normalize a composed backend (a BackendConfig or a synthesis engine
+    model with extra fields) to the name+invocation label the resolved config
+    reports, or derive it from ``backend_name`` / the spec."""
+    if isinstance(backend, BackendConfig):
+        return backend
+    if backend is not None:
+        return BackendConfig(name=backend.name, invocation=getattr(backend, "invocation", "standard"))
+    return BackendConfig(name=backend_name or spec.backend, invocation="dry-run")

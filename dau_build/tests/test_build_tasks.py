@@ -73,7 +73,6 @@ def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_pat
     result = execute_override_task(
         (
             "task=tasks/build/synthesize",
-            "engine=vivado",
             "module=dau_identity_top",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
@@ -101,7 +100,6 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
     synthesize_result = execute_override_task(
         (
             "task=tasks/build/synthesize",
-            "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
@@ -145,7 +143,6 @@ def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) 
     execute_override_task(
         (
             "task=tasks/build/synthesize",
-            "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",
@@ -164,7 +161,6 @@ def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_pat
     execute_override_task(
         (
             "task=tasks/build/synthesize",
-            "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
             f"output_root={output_root}",

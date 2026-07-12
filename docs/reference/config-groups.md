@@ -29,16 +29,16 @@ Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
 other groups use their singular key (`# @package board`, etc.).
 
-| Group      | `@package` key | Instantiated model                       | Selects                                                          |
-| ---------- | -------------- | ---------------------------------------- | ---------------------------------------------------------------- |
-| `task`     | `model`        | a `…Task` `ccflow.CallableModel`         | The unit of work to run.                                         |
-| `step`     | `model`        | a `…Step` `ccflow.CallableModel`         | A lower-level plumbing operation.                                |
-| `spec`     | `spec`         | `dau_build.build_spec.BuildSpec`         | A composed build spec (Hydra-native alternative to `spec_path`). |
-| `board`    | `board`        | `dau_build.build_config.BoardConfig`     | A board's build-config view.                                     |
-| `backend`  | `backend`      | `dau_build.build_config.BackendConfig`   | The synthesis backend.                                           |
-| `platform` | `platform`     | `dau_build.platforms.PlatformDefinition` | The full physical platform definition.                           |
-| `design`   | `design`       | (none packaged)                          | Reserved; registered by extension packages.                      |
-| `callable` | —              | ccflow registry pointer                  | Fixed evaluator wiring; not normally overridden.                 |
+| Group      | `@package` key | Instantiated model                        | Selects                                                          |
+| ---------- | -------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `task`     | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                         |
+| `step`     | `model`        | a `…Step` `ccflow.CallableModel`          | A lower-level plumbing operation.                                |
+| `spec`     | `spec`         | `dau_build.build_spec.BuildSpec`          | A composed build spec (Hydra-native alternative to `spec_path`). |
+| `board`    | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                                     |
+| `backend`  | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
+| `platform` | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
+| `design`   | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
+| `callable` | —              | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
 
 ## `task`
 
@@ -105,16 +105,20 @@ shell: xdma-ddr
 
 ## `backend`
 
-`backend=backends/vivado` composes `BackendConfig` into the `backend` key.
+`backend=backends/<name>` composes a synthesis engine into the `backend` key.
+`SynthesizeTask` uses it as the engine (default `backends/vivado`); other tasks
+use its `name`/`invocation` as the resolved-config backend label.
 
-| Option            | `name`   | `invocation` | Description                         |
-| ----------------- | -------- | ------------ | ----------------------------------- |
-| `backends/vivado` | `vivado` | `standard`   | The Vivado/XDMA backend.            |
-| `backends/yosys`  | `yosys`  | `standard`   | Open-source synthesis (runs in CI). |
-| `backends/none`   | `none`   | `dry-run`    | No vendor toolchain (dry-run).      |
+| Option            | Model           | Fields                                    | Description                           |
+| ----------------- | --------------- | ----------------------------------------- | ------------------------------------- |
+| `backends/vivado` | `VivadoEngine`  | `name`, `invocation`                      | Vivado handoff (FPGA bitstream flow). |
+| `backends/yosys`  | `YosysEngine`   | `name`, `invocation`, `frontend`, `yosys` | Open-source synthesis; runs in CI.    |
+| `backends/none`   | `BackendConfig` | `name`, `invocation`                      | No engine — a dry-run label.          |
 
-`BackendConfig` fields: `name` (str), `invocation` (str). It is a label; the
-engine that runs codegen is `SynthesizeTask.engine` (`vivado` or `yosys`). See
+The engines are polymorphic `SynthesisEngine` models, so they are fully
+hydra-configurable — e.g. `backend=backends/yosys backend.frontend=slang` or
+`+backend.<field>=...`. `YosysEngine.frontend` is `verilog` (`read_verilog -sv`)
+or `slang` (yosys-slang); `yosys` sets the executable. See
 [the architecture explanation](../explanation/architecture.md) for how the two
 engines differ.
 
