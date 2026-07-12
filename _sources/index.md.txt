@@ -38,7 +38,7 @@ Build tools for dau
 
 `dau-build` turns declarative FPGA build specs into concrete artifacts: generated SystemVerilog, `artlink.manifest/v0` artifact bundles, backend handoff manifests, Vivado Tcl, and ordered hardware command plans. Every operation is a typed `ccflow.CallableModel` composed from a Hydra config tree in `dau_build/config`, so the whole pipeline composes, inspects, and tests on a development machine, with the privileged steps (Vivado, JTAG, PCIe) gated behind an explicit `execute=true`.
 
-Vivado is the only synthesis backend today; the config plumbing is backend-agnostic so others (e.g. yosys/nextpnr) can be added later.
+Two synthesis engines are supported: Vivado (the FPGA bitstream flow) and yosys (open-source synthesis that runs in CI). The config plumbing is backend-agnostic, so more can be added.
 
 ## Quickstart
 

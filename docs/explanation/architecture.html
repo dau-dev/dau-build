@@ -371,31 +371,44 @@ design’s resource use against this budget.</p></li>
 physical dpv1 definition can be reused regardless of which backend produced a
 bitstream.</p>
 </section>
-<section id="backends-vivado-today-others-later">
-<h2>Backends: Vivado today, others later<a class="headerlink" href="#backends-vivado-today-others-later" title="Link to this heading">¶</a></h2>
-<p><strong>Only the Vivado backend is real today.</strong> Understanding the current shape makes
-clear what adding another backend involves.</p>
+<section id="backends-vivado-and-yosys">
+<h2>Backends: Vivado and yosys<a class="headerlink" href="#backends-vivado-and-yosys" title="Link to this heading">¶</a></h2>
+<p>Two synthesis engines are real: <strong>Vivado</strong> (the FPGA bitstream flow) and
+<strong>yosys</strong> (open-source synthesis). They differ in an important way that shapes
+how each is used.</p>
 <p><code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> has two fields, <code class="docutils literal notranslate"><span class="pre">name</span></code> and <code class="docutils literal notranslate"><span class="pre">invocation</span></code>, and it is a <em>label</em>, not
 a driver. <code class="docutils literal notranslate"><span class="pre">invocation</span></code> (<code class="docutils literal notranslate"><span class="pre">standard</span></code> vs <code class="docutils literal notranslate"><span class="pre">dry-run</span></code>) is surfaced in the resolved
 config as metadata and is not branched on. The <code class="docutils literal notranslate"><span class="pre">backends/none</span></code> option is that
-label with no toolchain behind it — a dry-run. So selecting <code class="docutils literal notranslate"><span class="pre">backend=backends/...</span></code>
-changes what the resolved config <em>reports</em>, not what codegen runs.</p>
-<p>What actually runs codegen is the synthesis engine. <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is a
-<code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;]</span></code> — it accepts nothing else — and the task unconditionally
-writes the Vivado backend handoff. The real backend implementation lives in
-<code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code>, which generates text artifacts (overlay Tcl, build Tcl, a
-key=value manifest, a command plan) and never spawns Vivado itself; that happens
-in the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> build tasks and in <code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>. There is no dispatch
-table keyed on backend name — the wiring from <code class="docutils literal notranslate"><span class="pre">engine=&quot;vivado&quot;</span></code> to the Vivado
-generator is direct.</p>
-<p>So the config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> indirection, and
-the search-path extension are all backend-agnostic and ready; what is missing for,
-say, a yosys/nextpnr flow is a second <em>implementation</em>: a backend module
-paralleling <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code>, a widened <code class="docutils literal notranslate"><span class="pre">engine</span></code> literal with real dispatch,
-and its task configs. There is no yosys, nextpnr, or other backend scaffolding in
-the tree today — not a stub, not a config file. That is a deliberate honesty about
-the current state, not an oversight. <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>
-walks through exactly what a new backend requires.</p>
+label with no toolchain behind it. So selecting <code class="docutils literal notranslate"><span class="pre">backend=backends/...</span></code> changes
+what the resolved config <em>reports</em>, not what codegen runs.</p>
+<p>What actually runs is the synthesis engine. <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is a
+<code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;,</span> <span class="pre">&quot;yosys&quot;]</span></code>, and the task dispatches on it:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">engine=vivado</span></code></strong> writes a Vivado backend <em>handoff</em> — the real
+implementation in <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code> generates text artifacts (overlay Tcl,
+build Tcl, a key=value manifest, a command plan) but never spawns Vivado;
+that happens later in the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> build tasks and in <code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>.
+Vivado is not present in CI, so this path is plan-only there.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code></strong> <em>runs</em> synthesis. <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> generates a yosys
+script and executes it, so the generated top is actually elaborated and
+synthesized — a real check, not a plan. yosys is open-source and installs in
+CI, which is the point: <code class="docutils literal notranslate"><span class="pre">engine=yosys</span></code> turns synthesis into something the test
+suite can exercise on every run.</p></li>
+</ul>
+<p>The yosys backend supports two SystemVerilog frontends, selected with
+<code class="docutils literal notranslate"><span class="pre">frontend=</span></code>: <code class="docutils literal notranslate"><span class="pre">verilog</span></code> (yosys’s built-in <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>, enough for
+dau-build’s own synthesizable sources) and <code class="docutils literal notranslate"><span class="pre">slang</span></code> (the yosys-slang plugin’s
+<code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code> parser, for the
+full SV surface — packages, interfaces — that the private cores use). The
+frontend is a script-generation detail; the run path is identical.</p>
+<p>There is no dispatch <em>table</em> keyed on backend name — the wiring from each engine
+value to its generator is direct. That is enough for two engines; a third (a
+nextpnr place-and-route flow, another vendor) would add its own module and engine
+branch. The config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code>
+indirection, and the search-path extension are all backend-agnostic, so most of a
+new backend composes from a package without touching dau-build —
+<a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> walks through exactly what a
+new backend requires, using yosys as the worked example.</p>
 </section>
 </section>
 
@@ -454,7 +467,7 @@ walks through exactly what a new backend requires.</p>
 <li><a class="reference internal" href="#the-search-path-makes-the-tree-extensible">The search path makes the tree extensible</a></li>
 <li><a class="reference internal" href="#plans-first-execution-on-the-host">Plans first, execution on the host</a></li>
 <li><a class="reference internal" href="#board-platform-and-backend-are-three-separate-things">Board, platform, and backend are three separate things</a></li>
-<li><a class="reference internal" href="#backends-vivado-today-others-later">Backends: Vivado today, others later</a></li>
+<li><a class="reference internal" href="#backends-vivado-and-yosys">Backends: Vivado and yosys</a></li>
 </ul>
 </li>
 </ul>

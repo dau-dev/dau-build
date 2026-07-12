@@ -329,41 +329,37 @@ add <code class="docutils literal notranslate"><span class="pre">mypkg/config/pl
 </section>
 <section id="add-a-synthesis-backend">
 <h2>Add a synthesis backend<a class="headerlink" href="#add-a-synthesis-backend" title="Link to this heading">¶</a></h2>
-<p>Adding a <em>real</em> backend (for example a yosys/nextpnr flow) is more than a config
-file, because today <code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> is only a label and synthesis codegen is
-hard-wired to Vivado. Read
+<p>Adding a <em>real</em> backend is more than a config file, because <code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code> is
+only a label — the engine that runs codegen is <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code>. The
+yosys backend is the worked example of a second engine; read
 <a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the backend section of the architecture explanation</span></a>
-first — it describes exactly what is a label and what is wired.</p>
-<p>A new backend requires four things:</p>
+first, then use <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> as the template. A new backend requires:</p>
 <ol class="arabic">
 <li><p><strong>A backend label</strong>, so it is selectable. Add
-<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/yosys.yaml</span></code> reusing the existing model:</p>
+<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/&lt;name&gt;.yaml</span></code> reusing the existing model
+(this is exactly <code class="docutils literal notranslate"><span class="pre">backends/yosys.yaml</span></code>):</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package backend</span>
 
 <span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dau_build.build_config.BackendConfig</span>
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">yosys</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nextpnr</span>
 <span class="nt">invocation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standard</span>
 </pre></div>
 </div>
 <p>By itself this only changes the reported metadata in the resolved config.</p>
 </li>
-<li><p><strong>A backend module</strong> that generates the flow’s artifacts, paralleling
-<code class="docutils literal notranslate"><span class="pre">dau_build/vivado_backend.py</span></code>: its own request/artifact <code class="docutils literal notranslate"><span class="pre">ccflow.BaseModel</span></code>s
-and <code class="docutils literal notranslate"><span class="pre">generate_*</span></code>/<code class="docutils literal notranslate"><span class="pre">validate_*</span></code> entry points, emitting whatever scripts and
-manifests the yosys/nextpnr flow needs, with a backend identity string
-analogous to <code class="docutils literal notranslate"><span class="pre">dau_build.vivado_backend.vivado_overlay</span></code>.</p></li>
-<li><p><strong>Real engine dispatch.</strong> <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is currently
-<code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;]</span></code> and the task calls the Vivado handoff unconditionally.
-Widen the literal to include your engine and replace that unconditional call
-with a branch on <code class="docutils literal notranslate"><span class="pre">engine</span></code>. This is the change that must land <em>in dau-build</em>
-(or in a fork), since the dispatch lives there — the other pieces can live in
-your package.</p></li>
-<li><p><strong>Build and validate tasks</strong>, paralleling <code class="docutils literal notranslate"><span class="pre">build-vivado-artifacts.yaml</span></code> and
-<code class="docutils literal notranslate"><span class="pre">validate-vivado-artifacts.yaml</span></code>, each targeting a new build-step
-<code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> for your backend.</p></li>
+<li><p><strong>A backend module.</strong> Parallel <code class="docutils literal notranslate"><span class="pre">dau_build/yosys_backend.py</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code>): its own request/result <code class="docutils literal notranslate"><span class="pre">ccflow.BaseModel</span></code>s and entry
+points that either generate a plan (Vivado’s Tcl/manifests) or generate and
+run a tool (yosys’s script + <code class="docutils literal notranslate"><span class="pre">run_yosys_synthesis</span></code>).</p></li>
+<li><p><strong>Engine dispatch.</strong> <code class="docutils literal notranslate"><span class="pre">SynthesizeTask.engine</span></code> is <code class="docutils literal notranslate"><span class="pre">Literal[&quot;vivado&quot;,</span> <span class="pre">&quot;yosys&quot;]</span></code>
+and the task branches on it (<code class="docutils literal notranslate"><span class="pre">_synthesize_with_yosys</span></code>). Widen the literal and
+add a branch for your engine. This is the change that lands <em>in dau-build</em>
+(or a fork), since the dispatch lives there.</p></li>
+<li><p><strong>Any build/validate tasks</strong> your flow needs, paralleling the Vivado ones,
+each targeting a new <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>.</p></li>
 </ol>
-<p>Everything except step 3 composes purely from your package via the search path.
-Until a backend implements steps 2–4, selecting its label runs no real codegen.</p>
+<p>The config label composes purely from your package via the search path; the
+engine branch is the one piece that lives in dau-build.</p>
 </section>
 <section id="try-it-without-packaging">
 <h2>Try it without packaging<a class="headerlink" href="#try-it-without-packaging" title="Link to this heading">¶</a></h2>
