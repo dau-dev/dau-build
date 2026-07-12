@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import os
 import shlex
-from dataclasses import dataclass
 from pathlib import Path
+
+from ccflow import BaseModel
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
 
 SUPPORTED_VIVADO_INVOCATIONS = frozenset(("standard", "source-only"))
 
 
-@dataclass(frozen=True)
-class VivadoBackendRequest:
+class VivadoBackendRequest(BaseModel):
     dau_core_hdl_root: Path
     build_root: Path
     dau_artifact_bundle_path: Path | None = None
@@ -64,8 +64,7 @@ class VivadoBackendRequest:
         return self.vivado_invocation == "source-only" and self.vivado_mount_root is not None
 
 
-@dataclass(frozen=True)
-class VivadoProjectGenerationRequest:
+class VivadoProjectGenerationRequest(BaseModel):
     source_shell_root: Path
     work_root: Path
     dau_core_root: Path
@@ -137,8 +136,7 @@ class VivadoProjectGenerationRequest:
         )
 
 
-@dataclass(frozen=True)
-class VivadoBackendArtifacts:
+class VivadoBackendArtifacts(BaseModel):
     overlay_tcl_path: Path
     manifest_path: Path
     command_plan_path: Path
@@ -157,15 +155,13 @@ class VivadoBackendArtifacts:
     command_plan_text: str
 
 
-@dataclass(frozen=True)
-class VivadoProjectGenerationArtifacts:
+class VivadoProjectGenerationArtifacts(BaseModel):
     project_manifest_path: Path
     project_manifest_text: str
     backend_artifacts: VivadoBackendArtifacts
 
 
-@dataclass(frozen=True)
-class VivadoBackendArtifactValidation:
+class VivadoBackendArtifactValidation(BaseModel):
     manifest_path: Path
     command_plan_path: Path
     overlay_tcl_path: Path | None
@@ -182,8 +178,7 @@ class VivadoBackendArtifactValidation:
         return not self.errors
 
 
-@dataclass(frozen=True)
-class VivadoProjectArtifactValidation:
+class VivadoProjectArtifactValidation(BaseModel):
     project_manifest_path: Path
     project_manifest_items: tuple[tuple[str, str], ...]
     backend_validation: VivadoBackendArtifactValidation
