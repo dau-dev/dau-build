@@ -26,18 +26,22 @@ The named plans are `local-build-and-program`, `build-and-program`,
 Always look at the sequence first. Omit `execute=true` and the task prints the
 ordered steps without touching the board:
 
+The plan is a config group (`plan=plans/<name>`); its own fields are
+`plan.<field>=` overrides and the shared toolchain fields are `model.<field>=`,
+so use the composing CLI (`dau-build-cfg` or `dau-build-run`):
+
 ```bash
-dau-build task=tasks/hardware/hardware-plan \
-  plan=local-build-and-program \
-  source_shell_root=/path/to/vivado-shell-seed \
-  work_root=outputs/vivado \
-  dau_core_root=/path/to/dau-core \
-  dau_driver_root=/path/to/dau-driver \
-  dau_utils_root=/path/to/dau-utils
+dau-build-cfg task=tasks/hardware/hardware-plan \
+  plan=plans/local-build-and-program \
+  plan.source_shell_root=/path/to/vivado-shell-seed \
+  plan.dau_core_root=/path/to/dau-core \
+  plan.dau_driver_root=/path/to/dau-driver \
+  plan.dau_utils_root=/path/to/dau-utils \
+  model.work_root=outputs/vivado
 ```
 
 Read the printed steps. When they look right, re-run the same command with
-`execute=true` appended.
+`model.execute=true` appended.
 
 ## Program a fresh build
 
@@ -45,14 +49,14 @@ Read the printed steps. When they look right, re-run the same command with
 programs and verifies the device. Add `execute=true` to run it on the host:
 
 ```bash
-dau-build task=tasks/hardware/hardware-plan \
-  plan=local-build-and-program \
-  source_shell_root=/path/to/vivado-shell-seed \
-  work_root=outputs/vivado \
-  dau_core_root=/path/to/dau-core \
-  dau_driver_root=/path/to/dau-driver \
-  dau_utils_root=/path/to/dau-utils \
-  execute=true
+dau-build-cfg task=tasks/hardware/hardware-plan \
+  plan=plans/local-build-and-program \
+  plan.source_shell_root=/path/to/vivado-shell-seed \
+  plan.dau_core_root=/path/to/dau-core \
+  plan.dau_driver_root=/path/to/dau-driver \
+  plan.dau_utils_root=/path/to/dau-utils \
+  model.work_root=outputs/vivado \
+  model.execute=true
 ```
 
 The plan holds runtime power management, writes the overlay/build Tcl, runs the
@@ -63,8 +67,8 @@ magic register and prints `DAU_SMOKE_OK`), and finally releases power management
 If any step fails, the release step still runs.
 
 If you already have a bitstream and only want to program it, use
-`build-and-program` with `bitstream=<path>` instead — it skips staging and the
-Vivado build.
+`plan=plans/build-and-program` with `model.bitstream=<path>` instead — it skips
+staging and the Vivado build.
 
 ## Validate an already-built bitstream
 
@@ -72,14 +76,14 @@ To program a specific bitstream and run the full endpoint-and-smoke check withou
 building anything, use `validate-bitstream`:
 
 ```bash
-dau-build task=tasks/hardware/hardware-plan \
-  plan=validate-bitstream \
-  work_root=outputs/vivado \
-  bitstream=/path/to/Top_wrapper.bit \
-  dau_core_root=/path/to/dau-core \
-  dau_driver_root=/path/to/dau-driver \
-  dau_utils_root=/path/to/dau-utils \
-  execute=true
+dau-build-cfg task=tasks/hardware/hardware-plan \
+  plan=plans/validate-bitstream \
+  plan.dau_core_root=/path/to/dau-core \
+  plan.dau_driver_root=/path/to/dau-driver \
+  plan.dau_utils_root=/path/to/dau-utils \
+  model.work_root=outputs/vivado \
+  model.bitstream=/path/to/Top_wrapper.bit \
+  model.execute=true
 ```
 
 The XDMA kernel module must already be loaded; for a Vivado shell checkout it
@@ -93,10 +97,10 @@ the safe order: hold power management, remove the endpoint via sysfs, program a
 known-good volatile bitstream, then rescan and re-check:
 
 ```bash
-dau-build task=tasks/hardware/hardware-plan \
-  plan=recovery \
-  work_root=outputs/vivado \
-  execute=true
+dau-build-cfg task=tasks/hardware/hardware-plan \
+  plan=plans/recovery \
+  model.work_root=outputs/vivado \
+  model.execute=true
 ```
 
 This recovers the link without a reboot in most cases. If the endpoint still does

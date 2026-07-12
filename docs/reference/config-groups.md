@@ -18,13 +18,14 @@ defaults:
   - optional backend: null
   - optional simulator: null
   - optional spec: null
+  - optional plan: null
   - optional design: null
   - callable: callable
 ```
 
 Every group except `callable` is `optional … null`: nothing is selected unless
 overridden. A run selects exactly one of `task=` or `step=` to populate `model`,
-optionally augmented by `spec=`, `board=`, `backend=`, `simulator=`, and `platform=`.
+optionally augmented by `spec=`, `board=`, `backend=`, `simulator=`, `platform=`, and `plan=`.
 
 Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
@@ -39,6 +40,7 @@ other groups use their singular key (`# @package board`, etc.).
 | `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
 | `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                          |
 | `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
+| `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).                  |
 | `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
 | `callable`  | —              | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
 
@@ -153,6 +155,25 @@ byte-for-byte identical to the known-good core.
 `dsp`), `PlatformMemory` (`kind`, `size_bytes`, `mig_prj`,
 `bandwidth_bytes_per_s`), and `HostLink` (`interface`, `pcie_lanes`,
 `xdma_personality`).
+
+## `plan`
+
+`plan=plans/<name>` composes a `HardwarePlan` model into the `plan` key;
+`HardwarePlanTask` delegates to it. Each plan owns its required fields (so
+pydantic enforces them, rather than a runtime check).
+
+| Option                          | Model                      | Extra fields                                                                                                                |
+| ------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `plans/build-and-program`       | `BuildAndProgramPlan`      | —                                                                                                                           |
+| `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root`, `dau_driver_root` (req), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `python`, `vivado_settings` |
+| `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `dau_core_root`, `dau_driver_root` (req), `dau_utils_root`, `python`                                                        |
+| `plans/flash`                   | `FlashPlan`                | `dau_utils_root`, `python`, `vivado_settings`                                                                               |
+| `plans/recovery`                | `RecoveryPlan`             | —                                                                                                                           |
+| `plans/thunderbolt-hold`        | `ThunderboltHoldPlan`      | —                                                                                                                           |
+| `plans/thunderbolt-release`     | `ThunderboltReleasePlan`   | —                                                                                                                           |
+
+Configure a plan with `plan.<field>=…`; see
+[Program a bitstream on dpv1](../how-to/program-hardware.md).
 
 ## `design`
 

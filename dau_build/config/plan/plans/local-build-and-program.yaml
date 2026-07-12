@@ -1,0 +1,10 @@
+# @package plan
+_target_: dau_build.hardware_plan.LocalBuildAndProgramPlan
+name: local-build-and-program
+dau_core_root: ???
+dau_driver_root: ???
+source_shell_root: null
+dau_utils_root: null
+overlay_tcl: scripts/dau_overlay.tcl
+python: python3
+vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh

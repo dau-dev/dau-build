@@ -8,19 +8,13 @@ from ccflow import BaseModel, CallableModel, Flow, NullContext, ResultBase
 from pydantic import Field, ValidationError, field_validator
 
 from dau_build.hardware_plan import (
+    HardwarePlan,
     HardwareToolchainConfig,
-    build_and_program_plan,
     execute_plan_steps,
-    flash_plan as hardware_flash_plan,
     format_plan_steps,
-    local_build_and_program_plan,
-    recovery_plan,
     stage_shell_plan,
     stage_vivado_overlay_plan,
     stage_vivado_project_plan,
-    thunderbolt_hold_plan,
-    thunderbolt_release_plan,
-    validate_bitstream_plan,
     validate_vivado_artifacts,
     validate_vivado_artifacts_step,
     vivado_overlay_build_step,
@@ -999,17 +993,10 @@ class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
 
 
 class HardwarePlanTask(BuildCallableModel):
-    plan: Literal[
-        "build-and-program",
-        "flash",
-        "local-build-and-program",
-        "recovery",
-        "thunderbolt-hold",
-        "thunderbolt-release",
-        "validate-bitstream",
-    ]
+    # the plan is the composed `plan` group option (a HardwarePlan model that
+    # owns its own required fields); the task holds the shared toolchain config
+    plan: Any = None
     work_root: Path
-    source_shell_root: Path | None = None
     bitstream: Path | None = None
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
@@ -1017,28 +1004,11 @@ class HardwarePlanTask(BuildCallableModel):
     openfpgaloader: str = "openFPGALoader"
     jtag_cable: str = "digilent_hs2"
     endpoint_bdf: str = "0000:04:00.0"
-    dau_core_root: Path | None = None
-    dau_driver_root: Path | None = None
-    dau_utils_root: Path | None = None
-    overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
-    python: str = "python3"
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     execute: bool = False
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        plan_result = self._plan_result()
-        if self.execute:
-            return_code = execute_plan_steps(plan_result)
-            if return_code != 0:
-                raise BuildStepError(f"hardware plan {self.plan!r} failed with exit code {return_code}")
-            return BuildStepResult(
-                step="hardware-plan",
-                message=f"dau-build-hardware-plan\ttask=hardware-plan plan={self.plan} steps={len(plan_result)} status=executed",
-            )
-        return BuildStepResult(step="hardware-plan", message=format_plan_steps(plan_result))
-
-    def _plan_result(self):
+        plan = self._plan()
         config = HardwareToolchainConfig(
             work_root=self.work_root,
             vivado_executable=self.vivado,
@@ -1049,39 +1019,21 @@ class HardwarePlanTask(BuildCallableModel):
             jtag_cable=self.jtag_cable,
             endpoint_bdf=self.endpoint_bdf,
         )
-        composers = {
-            "build-and-program": lambda: build_and_program_plan(config),
-            "local-build-and-program": lambda: local_build_and_program_plan(
-                config,
-                dau_core_root=self._required_path("dau_core_root"),
-                dau_driver_root=self._required_path("dau_driver_root"),
-                source_shell_root=self.source_shell_root,
-                dau_utils_root=self.dau_utils_root,
-                overlay_tcl=self.overlay_tcl,
-                python=self.python,
-                vivado_settings=self.vivado_settings,
-            ),
-            "validate-bitstream": lambda: validate_bitstream_plan(
-                config,
-                dau_core_root=self._required_path("dau_core_root"),
-                dau_driver_root=self._required_path("dau_driver_root"),
-                dau_utils_root=self.dau_utils_root,
-                python=self.python,
-            ),
-            "flash": lambda: hardware_flash_plan(
-                config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings
-            ),
-            "recovery": lambda: recovery_plan(config),
-            "thunderbolt-hold": lambda: thunderbolt_hold_plan(config),
-            "thunderbolt-release": lambda: thunderbolt_release_plan(config),
-        }
-        return composers[self.plan]()
+        plan_result = plan.compose(config)
+        if self.execute:
+            return_code = execute_plan_steps(plan_result)
+            if return_code != 0:
+                raise BuildStepError(f"hardware plan {plan.name!r} failed with exit code {return_code}")
+            return BuildStepResult(
+                step="hardware-plan",
+                message=f"dau-build-hardware-plan\ttask=hardware-plan plan={plan.name} steps={len(plan_result)} status=executed",
+            )
+        return BuildStepResult(step="hardware-plan", message=format_plan_steps(plan_result))
 
-    def _required_path(self, field_name: str) -> Path:
-        value = getattr(self, field_name)
-        if value is None:
-            raise BuildStepError(f"task=hardware-plan plan={self.plan} requires {field_name}")
-        return value
+    def _plan(self) -> HardwarePlan:
+        if isinstance(self.plan, HardwarePlan):
+            return self.plan
+        raise BuildStepError("task=hardware-plan requires plan=plans/<name> (see dau_build/config/plan)")
 
 
 def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallableModel]]:

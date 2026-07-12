@@ -1,9 +1,10 @@
 # @package model
 
 _target_: dau_build.build_steps.HardwarePlanTask
-plan: ???
+# the plan is the composed plan group; select+configure with
+# plan=plans/local-build-and-program plan.dau_core_root=... plan.dau_driver_root=...
+plan: ${oc.select:plan,null}
 work_root: ???
-source_shell_root: null
 bitstream: null
 vivado: vivado
 vivado_invocation: standard
@@ -11,10 +12,4 @@ vivado_mount_root: null
 openfpgaloader: openFPGALoader
 jtag_cable: digilent_hs2
 endpoint_bdf: "0000:04:00.0"
-dau_core_root: null
-dau_driver_root: null
-dau_utils_root: null
-overlay_tcl: scripts/dau_overlay.tcl
-python: python3
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
 execute: false

@@ -1,19 +1,18 @@
 import base64
-import runpy
 import shlex
-import sys
 from pathlib import Path
 
 import pytest
 
 import dau_build.hardware_plan as hardware_plan
 import dau_build.vivado_backend as vivado_backend
+from dau_build.build_steps import BuildStepError
+from dau_build.config import run_request_config
 from dau_build.hardware_plan import (
     HardwareToolchainConfig,
     build_and_program_plan,
     flash_plan,
     local_build_and_program_plan,
-    main,
     recovery_plan,
     stage_shell_plan,
     stage_vivado_overlay_plan,
@@ -34,6 +33,18 @@ from dau_build.vivado_backend import (
     validate_vivado_project_artifact_bundle,
     write_dau_overlay_tcl,
 )
+
+
+def _run_plan(plan: str, *, plan_fields=(), **model_values):
+    """Run the hardware-plan task with plan=plans/<plan>; plan_fields are
+    plan.<k>=<v> overrides, the rest are model.<k> values."""
+    return run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=[f"plan=plans/{plan}", *plan_fields],
+        model_values=model_values,
+    )
+
 
 EXPECTED_PCI_RESCAN_BDFS = (
     "0000:03:01.0",
@@ -667,11 +678,10 @@ def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
     )
 
 
-def test_cli_prints_recovery_plan_without_running_privileged_commands(capsys) -> None:
-    exit_code = main(["recovery", "--work-root", "/repo/projects/vivado-shell"])
+def test_task_prints_recovery_plan_without_running_privileged_commands() -> None:
+    result = _run_plan("recovery", work_root="/repo/projects/vivado-shell")
 
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
+    lines = result.message.splitlines()
     assert lines[0] == "thunderbolt-hold\tdau-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
     assert lines[1:4] == [
         "remove-endpoint\tsh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
@@ -682,25 +692,12 @@ def test_cli_prints_recovery_plan_without_running_privileged_commands(capsys) ->
     assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in lines[4]
 
 
-def test_cli_prints_thunderbolt_release_plan(capsys) -> None:
-    exit_code = main(["thunderbolt-release", "--work-root", "/repo/projects/vivado-shell"])
+def test_task_prints_thunderbolt_release_plan() -> None:
+    result = _run_plan("thunderbolt-release", work_root="/repo/projects/vivado-shell")
 
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
+    lines = result.message.splitlines()
     assert len(lines) == 1
     assert lines[0] == "thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
-
-
-def test_module_entrypoint_prints_plan_for_uninstalled_checkout(capsys, monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["vivado-xdma", "thunderbolt-release", "--work-root", "/repo/projects/vivado-shell"])
-    monkeypatch.delitem(sys.modules, "dau_build.hardware_plan", raising=False)
-
-    with pytest.raises(SystemExit) as exc_info:
-        runpy.run_module("dau_build.hardware_plan", run_name="__main__")
-
-    assert exc_info.value.code == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert lines == ["thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"]
 
 
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_smoke() -> None:
@@ -956,44 +953,32 @@ def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -
     assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
 
 
-def test_cli_local_build_can_stage_shell_before_overlay(capsys) -> None:
-    exit_code = main(
-        [
-            "local-build-and-program",
-            "--source-shell-root",
-            "/repo/reference/vivado-shell",
-            "--work-root",
-            "/repo/dau-build/outputs/vivado",
-            "--dau-core-root",
-            "/repo/dau-core",
-            "--dau-driver-root",
-            "/repo/dau-driver",
-        ]
+def test_task_local_build_can_stage_shell_before_overlay() -> None:
+    result = _run_plan(
+        "local-build-and-program",
+        plan_fields=[
+            "plan.source_shell_root=/repo/reference/vivado-shell",
+            "plan.dau_core_root=/repo/dau-core",
+            "plan.dau_driver_root=/repo/dau-driver",
+        ],
+        work_root="/repo/dau-build/outputs/vivado",
     )
 
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
+    lines = result.message.splitlines()
     assert len(lines) == 12
     assert lines[0].startswith("stage-shell\tsh -c ")
     assert lines[2].startswith("write-dau-overlay\tsh -c ")
     assert lines[3].startswith("write-vivado-build-script\tsh -c ")
 
 
-def test_cli_prints_local_build_and_program_plan(capsys) -> None:
-    exit_code = main(
-        [
-            "local-build-and-program",
-            "--work-root",
-            "/repo/projects/vivado-shell",
-            "--dau-core-root",
-            "/repo/dau-core",
-            "--dau-driver-root",
-            "/repo/dau-driver",
-        ]
+def test_task_prints_local_build_and_program_plan() -> None:
+    result = _run_plan(
+        "local-build-and-program",
+        plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+        work_root="/repo/projects/vivado-shell",
     )
 
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
+    lines = result.message.splitlines()
     assert len(lines) == 11
     assert lines[0].startswith("thunderbolt-hold\tdau-pci-runtime-pm hold ")
     assert lines[1].startswith("write-dau-overlay\tsh -c ")
@@ -1003,23 +988,15 @@ def test_cli_prints_local_build_and_program_plan(capsys) -> None:
     assert lines[10].startswith("thunderbolt-release\tdau-pci-runtime-pm release ")
 
 
-def test_cli_prints_validate_bitstream_plan_without_vivado(capsys) -> None:
-    exit_code = main(
-        [
-            "validate-bitstream",
-            "--work-root",
-            "/repo/projects/vivado-shell",
-            "--bitstream",
-            "/tmp/candidate.bit",
-            "--dau-core-root",
-            "/repo/dau-core",
-            "--dau-driver-root",
-            "/repo/dau-driver",
-        ]
+def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
+    result = _run_plan(
+        "validate-bitstream",
+        plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+        work_root="/repo/projects/vivado-shell",
+        bitstream="/tmp/candidate.bit",
     )
 
-    assert exit_code == 0
-    lines = capsys.readouterr().out.splitlines()
+    lines = result.message.splitlines()
     assert len(lines) == 8
     assert lines[0].startswith("thunderbolt-hold\tdau-pci-runtime-pm hold ")
     assert lines[3] == "program-volatile\topenFPGALoader -c digilent_hs2 /tmp/candidate.bit"
@@ -1028,7 +1005,7 @@ def test_cli_prints_validate_bitstream_plan_without_vivado(capsys) -> None:
     assert all("vivado" not in line.lower() for line in lines)
 
 
-def test_cli_execute_runs_plan_steps_in_order(monkeypatch) -> None:
+def test_task_execute_runs_plan_steps_in_order(monkeypatch) -> None:
     calls = []
 
     class Completed:
@@ -1040,9 +1017,8 @@ def test_cli_execute_runs_plan_steps_in_order(monkeypatch) -> None:
 
     monkeypatch.setattr(hardware_plan.subprocess, "run", fake_run)
 
-    exit_code = main(["thunderbolt-release", "--work-root", "/repo/projects/vivado-shell", "--execute"])
+    _run_plan("thunderbolt-release", work_root="/repo/projects/vivado-shell", execute=True)
 
-    assert exit_code == 0
     assert calls == [
         (
             "dau-pci-runtime-pm",
@@ -1073,20 +1049,14 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
 
     monkeypatch.setattr(hardware_plan.subprocess, "run", fake_run)
 
-    exit_code = main(
-        [
+    with pytest.raises(BuildStepError, match="exit code 23"):
+        _run_plan(
             "local-build-and-program",
-            "--work-root",
-            "/repo/projects/vivado-shell",
-            "--dau-core-root",
-            "/repo/dau-core",
-            "--dau-driver-root",
-            "/repo/dau-driver",
-            "--execute",
-        ]
-    )
+            plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+            work_root="/repo/projects/vivado-shell",
+            execute=True,
+        )
 
-    assert exit_code == 23
     assert len(calls) == 3
     assert calls[0][1] == "hold"
     assert calls[1][0:2] == ("sh", "-c")

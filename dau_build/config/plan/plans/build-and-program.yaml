@@ -1,0 +1,3 @@
+# @package plan
+_target_: dau_build.hardware_plan.BuildAndProgramPlan
+name: build-and-program
