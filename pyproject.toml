@@ -12,7 +12,7 @@ authors = [
 description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 keywords = []
 
@@ -82,7 +82,7 @@ Repository = "https://github.com/dau-dev/dau-build"
 Homepage = "https://github.com/dau-dev/dau-build"
 
 [tool.bumpversion]
-current_version = "0.2.0"
+current_version = "0.3.0"
 commit = true
 tag = true
 commit_args = "-s"
