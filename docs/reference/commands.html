@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Config group reference" href="config-groups.html"><link rel="prev" title="How to extend dau-build" href="../how-to/extend-dau-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Command reference - dau-build v0.3.0</title>
+        <title>Command reference - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -245,108 +245,104 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="command-reference">
 <h1>Command reference<a class="headerlink" href="#command-reference" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> installs five console scripts. All of them ultimately run typed
-<code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s composed from the Hydra config tree in
-<code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. They differ in how arguments are parsed and which surface of
-the tree they expose.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> installs a single console script (entry point
+<code class="docutils literal notranslate"><span class="pre">dau_build.cli:main</span></code>). It runs typed <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s composed from the
+Hydra config tree in <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build [--config-dir DIR] [--explain] &lt;overrides ...&gt;
+</pre></div>
+</div>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Command</p></th>
-<th class="head"><p>Entry point</p></th>
-<th class="head"><p>Argument style</p></th>
-<th class="head"><p>Purpose</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_spec:main</span></code></p></td>
-<td><p>flat <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code></p></td>
-<td><p>Flat task dispatch</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_spec:main_callable_steps</span></code></p></td>
-<td><p>flat <code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span> <span class="pre">field=value</span></code></p></td>
-<td><p>Low-level step dispatch</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.cli:main</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">[--config-dir</span> <span class="pre">DIR]</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">model.&lt;f&gt;=v</span></code></p></td>
-<td><p>Compose and run a task through the registry</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.cli:explain</span></code></p></td>
-<td><p>same as <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code></p></td>
-<td><p>Print the resolved config; do not run</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.cli:run</span></code></p></td>
-<td><p>Hydra app: <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">group=opt</span> <span class="pre">model.&lt;f&gt;=v</span></code></p></td>
-<td><p>Hydra <code class="docutils literal notranslate"><span class="pre">hydra.main</span></code> app with the search path active</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>Task and step names are <strong>path-style</strong>, mirroring the config tree: <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>. Short names (<code class="docutils literal notranslate"><span class="pre">task=simulate</span></code>) are not accepted. Field overrides carry a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix on the Hydra CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code>) and no prefix on the flat CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code>).</p>
-<p>The full set of task and step names and their fields is in the <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The config groups selectable with <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
-<section id="dau-build">
-<h2><code class="docutils literal notranslate"><span class="pre">dau-build</span></code><a class="headerlink" href="#dau-build" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=&lt;path&gt; [field=value ...]
-</pre></div>
-</div>
-<p>Dispatches a task through the registry from the flat surface — equivalent to <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> without the <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix on field overrides. Exits non-zero with a usage message if the first argument is not a <code class="docutils literal notranslate"><span class="pre">key=value</span></code> override. For example, the spec operations (inspect, build, and validate a spec or generated bundle):</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  spec_path=examples/identity/dau-build.yaml
-dau-build task=tasks/spec/build     spec_path=examples/identity/dau-build.yaml output_root=outputs/identity
-dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.manifest root=outputs/identity
-</pre></div>
-</div>
-</section>
-<section id="dau-build-steps">
-<h2><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code><a class="headerlink" href="#dau-build-steps" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-steps step=&lt;path&gt; [field=value ...]
-</pre></div>
-</div>
-<p>Dispatches a low-level step (see <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">steps</span></a>). Fields carry no <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix. Steps are development/plumbing operations; user-facing workflows use tasks.</p>
-</section>
-<section id="dau-build-cfg">
-<h2><code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code><a class="headerlink" href="#dau-build-cfg" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-cfg [--config-dir DIR] task=&lt;path&gt; [group=option ...] [model.&lt;field&gt;=value ...]
-</pre></div>
-</div>
-<p>Composes the base config with the given overrides and runs the selected model through ccflow. Prints the model’s result message.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Option</p></th>
+<tr class="row-odd"><th class="head"><p>Option / argument</p></th>
 <th class="head"><p>Description</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--config-dir</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code></p></td>
 <td><p>A user config overlay directory. Its groups are merged into the tree (open registration).</p></td>
 </tr>
-<tr class="row-odd"><td><p>overrides</p></td>
-<td><p>Hydra overrides: group selections (<code class="docutils literal notranslate"><span class="pre">task=</span></code>, <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>) and field sets (<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>).</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--explain</span></code></p></td>
+<td><p>Print the fully resolved config as YAML and exit without running.</p></td>
+</tr>
+<tr class="row-even"><td><p>overrides</p></td>
+<td><p>Hydra overrides — see below.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Raises an error if no <code class="docutils literal notranslate"><span class="pre">task=</span></code>/<code class="docutils literal notranslate"><span class="pre">step=</span></code> is selected (nothing populates <code class="docutils literal notranslate"><span class="pre">model</span></code>).</p>
+<section id="overrides">
+<h2>Overrides<a class="headerlink" href="#overrides" title="Link to this heading">¶</a></h2>
+<p>Every argument after the options is a Hydra override:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Form</p></th>
+<th class="head"><p>Selects</p></th>
+<th class="head"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code></p></td>
+<td><p>the task to run (populates <code class="docutils literal notranslate"><span class="pre">model</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code></p></td>
+<td><p>a low-level step to run (populates <code class="docutils literal notranslate"><span class="pre">model</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code></p></td>
+<td><p>a config group option: <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">design=</span></code>, <code class="docutils literal notranslate"><span class="pre">plan=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code></p></td>
+<td><p>a field on the selected task/step model</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">model.output_root=out</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Task, step, and group option names are <strong>path-style</strong>, mirroring the config
+tree (<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>).
+Short names (<code class="docutils literal notranslate"><span class="pre">task=simulate</span></code>) are not accepted.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> raises an error if no <code class="docutils literal notranslate"><span class="pre">task=</span></code>/<code class="docutils literal notranslate"><span class="pre">step=</span></code> is selected (nothing populates
+<code class="docutils literal notranslate"><span class="pre">model</span></code>).</p>
+<p>The full set of task and step names and their fields is in the
+<a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The config groups selectable with
+<code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the
+<a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
-<section id="dau-build-cfg-explain">
-<h2><code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code><a class="headerlink" href="#dau-build-cfg-explain" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-cfg-explain [--config-dir DIR] task=&lt;path&gt; [group=option ...] [model.&lt;field&gt;=value ...]
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
+<p>Inspect, build, and validate a spec or generated bundle:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  model.spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/build     model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
+dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
 </pre></div>
 </div>
-<p>Takes the same arguments as <code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> but prints the fully resolved config as YAML and does not run anything. Use it to inspect what a set of overrides composes to.</p>
-</section>
-<section id="dau-build-run">
-<h2><code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code><a class="headerlink" href="#dau-build-run" title="Link to this heading">¶</a></h2>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-run task=&lt;path&gt; [group=option ...] [model.&lt;field&gt;=value ...]
+<p>Select a config group — here the Yosys synthesis backend instead of the default
+Vivado engine:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.output_root=out
 </pre></div>
 </div>
-<p>A Hydra <code class="docutils literal notranslate"><span class="pre">hydra.main</span></code> application over <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code> (config name <code class="docutils literal notranslate"><span class="pre">base</span></code>). The Hydra search path is active, so config groups registered by other installed packages compose uniformly alongside the packaged ones. Standard Hydra CLI conventions apply: use <code class="docutils literal notranslate"><span class="pre">+group=option</span></code> to add a group not present in the defaults, and <code class="docutils literal notranslate"><span class="pre">-m</span></code> for multirun.</p>
-<p>This is the recommended entry point for cross-package composition. For example, with the private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, <code class="docutils literal notranslate"><span class="pre">dau-build-run</span> <span class="pre">task=dpv1-shell</span></code> resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. See <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>.</p>
+<p>Inspect what a set of overrides composes to, without running:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=tasks/build/synthesize spec=specs/identity backend=backends/yosys
+</pre></div>
+</div>
+<p>Run a low-level step (development/plumbing; user-facing workflows use tasks):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build step=steps/validate model.spec_path=examples/identity/dau-build.yaml
+</pre></div>
+</div>
+</section>
+<section id="open-registration-and-cross-package-composition">
+<h2>Open registration and cross-package composition<a class="headerlink" href="#open-registration-and-cross-package-composition" title="Link to this heading">¶</a></h2>
+<p>The Hydra search path is active, so config groups registered by other installed
+packages (through their own <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point) compose uniformly
+alongside the packaged ones — no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay needed. For example,
+with the private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=dpv1-shell</span> <span class="pre">design=designs/bar-noc</span></code> resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree. A
+<code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code> overlay adds ad-hoc task configs (and new <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models
+from any importable package) the same way. See
+<a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>.</p>
 </section>
 </section>
 
@@ -406,11 +402,9 @@ dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Command reference</a><ul>
-<li><a class="reference internal" href="#dau-build"><code class="docutils literal notranslate"><span class="pre">dau-build</span></code></a></li>
-<li><a class="reference internal" href="#dau-build-steps"><code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code></a></li>
-<li><a class="reference internal" href="#dau-build-cfg"><code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code></a></li>
-<li><a class="reference internal" href="#dau-build-cfg-explain"><code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code></a></li>
-<li><a class="reference internal" href="#dau-build-run"><code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code></a></li>
+<li><a class="reference internal" href="#overrides">Overrides</a></li>
+<li><a class="reference internal" href="#examples">Examples</a></li>
+<li><a class="reference internal" href="#open-registration-and-cross-package-composition">Open registration and cross-package composition</a></li>
 </ul>
 </li>
 </ul>
@@ -422,7 +416,7 @@ dau-build task=tasks/spec/validate  manifest_path=outputs/identity/dau-identity.
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

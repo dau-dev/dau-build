@@ -50,22 +50,20 @@ Because groups are just directories and options are just files, the config tree
 derived by globbing the tree (`_model_types_from_config_group`), so there is no
 second place to register it.
 
-## Why there are two override syntaxes
+## The override syntax
 
-Two families of CLI exist because two audiences want different things.
+`dau-build` composes the config tree and runs the result, so a single command
+carries three kinds of override. `task=<path>` (or `step=<path>`) selects the
+runnable and composes it *into* the `model` key. `<group>=<option>` selects a
+config group — `spec=specs/identity`, `board=boards/dau/dpv1`,
+`backend=backends/vivado`. And `model.<field>=value` sets a field on the selected
+model. The `model.` prefix is not decoration: because the task is composed into
+the `model` key, its fields are addressed under `model.`.
 
-The flat CLIs (`dau-build`, `dau-build-steps`) take `task=<path> field=value` with
-no prefix — the terse form for driving a single task from a shell or a Makefile.
-The Hydra CLIs (`dau-build-cfg`, `dau-build-cfg-explain`, `dau-build-run`) take
-`task=<path> model.<field>=value` and also accept group selections like
-`spec=specs/identity board=boards/dau/dpv1 backend=backends/vivado`. The `model.`
-prefix is not decoration: on these CLIs the task is composed *into* the `model`
-key, so its fields are addressed under `model.`. Both families converge on the
-same registry execution — the flat form is sugar over the composed form.
-
-`dau-build-run` is the fullest expression of the idea: a Hydra `hydra.main`
-application, so it inherits Hydra's own conventions (`+group=option` to add a
-group, `-m` multirun) and, crucially, the active search path.
+Names are path-style (`tasks/sim/simulate`, `backend=backends/yosys`) because
+they *are* paths into the config tree — the same reason adding a task is adding a
+file. Passing `--explain` composes the overrides without running, printing the
+resolved config so you can see exactly what they produced.
 
 ## ccflow owns ordering and caching
 
@@ -90,7 +88,7 @@ The mechanism is honored by the lerna search-path bridge (`lerna` on PyPI); the
 entry point is inert without it, so a package that relies on cross-package
 composition depends on `lerna` directly. The private `dau` package is the working
 example: it registers `pkg:dau.config`, which adds `task=dpv1-shell`, and with
-`dau` installed `dau-build-run task=dpv1-shell` resolves that task with no
+`dau` installed `dau-build task=dpv1-shell` resolves that task with no
 `--config-dir` overlay. dau-build never imports `dau` — extension flows one way,
 through the search path, which keeps the public tool free of private
 dependencies. See [Extending dau-build](../how-to/extend-dau-build.md) for how to

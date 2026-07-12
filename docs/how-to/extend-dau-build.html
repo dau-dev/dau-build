@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Command reference" href="../reference/commands.html"><link rel="prev" title="How to program a bitstream on dpv1" href="program-hardware.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>How to extend dau-build - dau-build v0.3.0</title>
+        <title>How to extend dau-build - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -298,14 +298,14 @@ that runs. dau-build derives its name→class registry by globbing the config
 tree, so there is nothing else to register — the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> may point at any
 importable module.</p>
 </li>
-<li><p>Run it through dau-build’s Hydra CLI:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-run<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
+<li><p>Run it through the <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> CLI:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
 </pre></div>
 </div>
 </li>
 </ol>
 <p>The private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package does exactly this to add <code class="docutils literal notranslate"><span class="pre">task=dpv1-shell</span></code>: with <code class="docutils literal notranslate"><span class="pre">dau</span></code>
-installed, <code class="docutils literal notranslate"><span class="pre">dau-build-run</span> <span class="pre">task=dpv1-shell</span> <span class="pre">model.shell=...</span> <span class="pre">model.output_root=...</span></code>
+installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=dpv1-shell</span> <span class="pre">design=designs/bar-noc</span> <span class="pre">model.output_root=...</span></code>
 resolves a task defined entirely in <code class="docutils literal notranslate"><span class="pre">dau</span></code>, with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay.</p>
 </section>
 <section id="add-a-board-or-platform">
@@ -364,9 +364,9 @@ you extend the packaged set.</p>
 </section>
 <section id="try-it-without-packaging">
 <h2>Try it without packaging<a class="headerlink" href="#try-it-without-packaging" title="Link to this heading">¶</a></h2>
-<p>To test a config overlay before packaging it, point the argparse CLI at a
-directory with <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span>--config-dir<span class="w"> </span>./my-configs<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
+<p>To test a config overlay before packaging it, point the CLI at a directory with
+<code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>--config-dir<span class="w"> </span>./my-configs<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
 </pre></div>
 </div>
 <p>The overlay’s groups merge into the tree for that run, and its <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models
@@ -447,7 +447,7 @@ task config before wiring up the entry point.</p>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

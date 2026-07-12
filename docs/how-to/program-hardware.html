@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to extend dau-build" href="extend-dau-build.html"><link rel="prev" title="How to run a build end to end" href="run-a-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>How to program a bitstream on dpv1 - dau-build v0.3.0</title>
+        <title>How to program a bitstream on dpv1 - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -269,9 +269,8 @@ a host where that is a risk, arm a watchdog / auto-reboot before you run any
 <p>Always look at the sequence first. Omit <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> and the task prints the
 ordered steps without touching the board:</p>
 <p>The plan is a config group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>); its own fields are
-<code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>,
-so use the composing CLI (<code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code> or <code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code>):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -287,7 +286,7 @@ so use the composing CLI (<code class="docutils literal notranslate"><span class
 <h2>Program a fresh build<a class="headerlink" href="#program-a-fresh-build" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code> stages the shell, runs the Vivado overlay build, then
 programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the host:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -311,7 +310,7 @@ staging and the Vivado build.</p>
 <h2>Validate an already-built bitstream<a class="headerlink" href="#validate-an-already-built-bitstream" title="Link to this heading">¶</a></h2>
 <p>To program a specific bitstream and run the full endpoint-and-smoke check without
 building anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_driver_root<span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
@@ -330,7 +329,7 @@ lives at <code class="docutils literal notranslate"><span class="pre">sw/xdma/xd
 against a resident dead image is what hangs. The <code class="docutils literal notranslate"><span class="pre">recovery</span></code> plan does the steps in
 the safe order: hold power management, remove the endpoint via sysfs, program a
 known-good volatile bitstream, then rescan and re-check:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/recovery<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
@@ -344,8 +343,8 @@ not reappear, the device needs a power cycle.</p>
 <p>To flash and to run a smoke test against a <code class="docutils literal notranslate"><span class="pre">built</span></code> shell-build manifest, use the
 <code class="docutils literal notranslate"><span class="pre">flash</span></code> and <code class="docutils literal notranslate"><span class="pre">smoke-test</span></code> tasks (these consume the manifest and verify the
 bitstream digest before touching the board):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/flash<span class="w"> </span><span class="nv">manifest_path</span><span class="o">=</span>outputs/vivado/shell-build.artifacts.yaml
-dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/smoke-test<span class="w"> </span><span class="nv">test</span><span class="o">=</span>identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/flash<span class="w"> </span>model.manifest_path<span class="o">=</span>outputs/vivado/shell-build.artifacts.yaml
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/smoke-test<span class="w"> </span>model.test<span class="o">=</span>identity
 </pre></div>
 </div>
 <p>Both require <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when given a manifest, and both emit a safe plan
@@ -426,7 +425,7 @@ unless run against real hardware. The smoke <code class="docutils literal notran
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

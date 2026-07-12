@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="prev" title="Task and step catalog" href="../reference/tasks-and-steps.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Architecture: how dau-build composes work from Hydra config - dau-build v0.3.0</title>
+        <title>Architecture: how dau-build composes work from Hydra config - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -290,20 +290,19 @@ full list.</p>
 derived by globbing the tree (<code class="docutils literal notranslate"><span class="pre">_model_types_from_config_group</span></code>), so there is no
 second place to register it.</p>
 </section>
-<section id="why-there-are-two-override-syntaxes">
-<h2>Why there are two override syntaxes<a class="headerlink" href="#why-there-are-two-override-syntaxes" title="Link to this heading">¶</a></h2>
-<p>Two families of CLI exist because two audiences want different things.</p>
-<p>The flat CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code>) take <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code> with
-no prefix — the terse form for driving a single task from a shell or a Makefile.
-The Hydra CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code>) take
-<code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span> <span class="pre">model.&lt;field&gt;=value</span></code> and also accept group selections like
-<code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span> <span class="pre">board=boards/dau/dpv1</span> <span class="pre">backend=backends/vivado</span></code>. The <code class="docutils literal notranslate"><span class="pre">model.</span></code>
-prefix is not decoration: on these CLIs the task is composed <em>into</em> the <code class="docutils literal notranslate"><span class="pre">model</span></code>
-key, so its fields are addressed under <code class="docutils literal notranslate"><span class="pre">model.</span></code>. Both families converge on the
-same registry execution — the flat form is sugar over the composed form.</p>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code> is the fullest expression of the idea: a Hydra <code class="docutils literal notranslate"><span class="pre">hydra.main</span></code>
-application, so it inherits Hydra’s own conventions (<code class="docutils literal notranslate"><span class="pre">+group=option</span></code> to add a
-group, <code class="docutils literal notranslate"><span class="pre">-m</span></code> multirun) and, crucially, the active search path.</p>
+<section id="the-override-syntax">
+<h2>The override syntax<a class="headerlink" href="#the-override-syntax" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> composes the config tree and runs the result, so a single command
+carries three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code> (or <code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code>) selects the
+runnable and composes it <em>into</em> the <code class="docutils literal notranslate"><span class="pre">model</span></code> key. <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code> selects a
+config group — <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code>, <code class="docutils literal notranslate"><span class="pre">board=boards/dau/dpv1</span></code>,
+<code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code> sets a field on the selected
+model. The <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix is not decoration: because the task is composed into
+the <code class="docutils literal notranslate"><span class="pre">model</span></code> key, its fields are addressed under <code class="docutils literal notranslate"><span class="pre">model.</span></code>.</p>
+<p>Names are path-style (<code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>) because
+they <em>are</em> paths into the config tree — the same reason adding a task is adding a
+file. Passing <code class="docutils literal notranslate"><span class="pre">--explain</span></code> composes the overrides without running, printing the
+resolved config so you can see exactly what they produced.</p>
 </section>
 <section id="ccflow-owns-ordering-and-caching">
 <h2>ccflow owns ordering and caching<a class="headerlink" href="#ccflow-owns-ordering-and-caching" title="Link to this heading">¶</a></h2>
@@ -327,7 +326,7 @@ without touching dau-build.</p>
 entry point is inert without it, so a package that relies on cross-package
 composition depends on <code class="docutils literal notranslate"><span class="pre">lerna</span></code> directly. The private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package is the working
 example: it registers <code class="docutils literal notranslate"><span class="pre">pkg:dau.config</span></code>, which adds <code class="docutils literal notranslate"><span class="pre">task=dpv1-shell</span></code>, and with
-<code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build-run</span> <span class="pre">task=dpv1-shell</span></code> resolves that task with no
+<code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=dpv1-shell</span></code> resolves that task with no
 <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. dau-build never imports <code class="docutils literal notranslate"><span class="pre">dau</span></code> — extension flows one way,
 through the search path, which keeps the public tool free of private
 dependencies. See <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> for how to
@@ -460,7 +459,7 @@ new engine requires, using yosys as the worked example.</p>
 <li><a class="reference internal" href="#">Architecture: how dau-build composes work from Hydra config</a><ul>
 <li><a class="reference internal" href="#the-shape-of-the-tool">The shape of the tool</a></li>
 <li><a class="reference internal" href="#config-groups-are-directories">Config groups are directories</a></li>
-<li><a class="reference internal" href="#why-there-are-two-override-syntaxes">Why there are two override syntaxes</a></li>
+<li><a class="reference internal" href="#the-override-syntax">The override syntax</a></li>
 <li><a class="reference internal" href="#ccflow-owns-ordering-and-caching">ccflow owns ordering and caching</a></li>
 <li><a class="reference internal" href="#the-search-path-makes-the-tree-extensible">The search path makes the tree extensible</a></li>
 <li><a class="reference internal" href="#plans-first-execution-on-the-host">Plans first, execution on the host</a></li>
@@ -477,7 +476,7 @@ new engine requires, using yosys as the worked example.</p>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to program a bitstream on dpv1" href="program-hardware.html"><link rel="prev" title="Build the identity example" href="../tutorial/first-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>How to run a build end to end - dau-build v0.3.0</title>
+        <title>How to run a build end to end - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -256,14 +256,14 @@ open-source synthesis check that runs anywhere, select the yosys engine on the
 synthesize task instead (<code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>; see the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>).</p>
 <p>Field lists for each task are in the <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.
-To see the full resolved config for any command before running it, prefix it with
-<code class="docutils literal notranslate"><span class="pre">dau-build-cfg-explain</span></code>.</p>
+To see the full resolved config for any command before running it, add <code class="docutils literal notranslate"><span class="pre">--explain</span></code>
+(e.g. <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">--explain</span> <span class="pre">task=tasks/build/synthesize</span> <span class="pre">...</span></code>).</p>
 <section id="synthesize-the-handoff">
 <h2>Synthesize the handoff<a class="headerlink" href="#synthesize-the-handoff" title="Link to this heading">¶</a></h2>
 <p>Generate the DAU top, artifact bundle, and the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;stem&gt;.manifest</span></code> backend
 handoff. This writes a manifest at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does <strong>not</strong> invoke
 Vivado:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build-cfg<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/synthesize<span class="w"> </span><span class="se">\</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/synthesize<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.output_root<span class="o">=</span>outputs/identity
@@ -281,19 +281,19 @@ still without running Vivado.</p>
 <p>For a full project dry-run that also records checkout roots and the
 stage/build/validate command contract, use <code class="docutils literal notranslate"><span class="pre">stage-vivado-project</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/stage/stage-vivado-project<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">source_shell_root</span><span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">work_root</span><span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">dau_core_root</span><span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">dau_driver_root</span><span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">artifact_stem</span><span class="o">=</span>dau-vivado
+<span class="w">  </span>model.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.dau_driver_root<span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.artifact_stem<span class="o">=</span>dau-vivado
 </pre></div>
 </div>
 <p>If you only need the overlay artifacts, use <code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code>
-instead (it requires <code class="docutils literal notranslate"><span class="pre">work_root</span></code> and <code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>). To fold a DAU artifact
-bundle into the overlay, add <code class="docutils literal notranslate"><span class="pre">dau_artifact_bundle=&lt;bundle.yaml&gt;</span></code>. If your Vivado
-runs through a wrapper that only accepts a Tcl source path, add
-<code class="docutils literal notranslate"><span class="pre">vivado_invocation=source-only</span></code>, and if that wrapper mounts the current directory
-in a container, also add <code class="docutils literal notranslate"><span class="pre">vivado_mount_root=/path/to/dau</span></code>.</p>
+instead (it requires <code class="docutils literal notranslate"><span class="pre">model.work_root</span></code> and <code class="docutils literal notranslate"><span class="pre">model.dau_core_root</span></code>). To fold a DAU
+artifact bundle into the overlay, add <code class="docutils literal notranslate"><span class="pre">model.dau_artifact_bundle=&lt;bundle.yaml&gt;</span></code>. If
+your Vivado runs through a wrapper that only accepts a Tcl source path, add
+<code class="docutils literal notranslate"><span class="pre">model.vivado_invocation=source-only</span></code>, and if that wrapper mounts the current
+directory in a container, also add <code class="docutils literal notranslate"><span class="pre">model.vivado_mount_root=/path/to/dau</span></code>.</p>
 </section>
 <section id="validate-before-you-synthesize">
 <h2>Validate before you synthesize<a class="headerlink" href="#validate-before-you-synthesize" title="Link to this heading">¶</a></h2>
@@ -301,8 +301,8 @@ in a container, also add <code class="docutils literal notranslate"><span class=
 build Tcl, command plan, and planned output paths all agree — without needing
 Xilinx tools:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/validate/validate-vivado-artifacts<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">work_root</span><span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">project_manifest_path</span><span class="o">=</span>dau-vivado.project
+<span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.project_manifest_path<span class="o">=</span>dau-vivado.project
 </pre></div>
 </div>
 <p>Do this on your development machine before moving to the Vivado host. A failure
@@ -314,9 +314,9 @@ here is cheap; a failure an hour into synthesis is not.</p>
 validate the artifact bundle. This is the step that spends real synthesis time,
 so it is gated behind <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/build-vivado-artifacts<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">work_root</span><span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">artifact_stem</span><span class="o">=</span>dau-vivado<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">execute</span><span class="o">=</span><span class="nb">true</span>
+<span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.artifact_stem<span class="o">=</span>dau-vivado<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 <p>Once the bitstream, resource report, timing report, and Vivado log exist, this
@@ -406,7 +406,7 @@ hardware.</p>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

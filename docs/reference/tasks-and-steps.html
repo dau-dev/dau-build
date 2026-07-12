@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Architecture: how dau-build composes work from Hydra config" href="../explanation/architecture.html"><link rel="prev" title="Config group reference" href="config-groups.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Task and step catalog - dau-build v0.3.0</title>
+        <title>Task and step catalog - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -250,13 +250,13 @@ config groups. This page lists each one, its <code class="docutils literal notra
 fields (those set to <code class="docutils literal notranslate"><span class="pre">???</span></code> in the config, which must be supplied as overrides),
 and its default execution mode.</p>
 <p>The complete field set with defaults for any task or step is self-describing:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-cfg-explain task=&lt;path&gt;
-dau-build-cfg-explain step=&lt;path&gt;
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=&lt;path&gt;
+dau-build --explain step=&lt;path&gt;
 </pre></div>
 </div>
-<p>Fields marked <strong>required</strong> have no default and must be overridden. On the Hydra
-CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build-cfg</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-run</span></code>) fields carry a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix; on the
-flat CLIs (<code class="docutils literal notranslate"><span class="pre">dau-build</span></code>, <code class="docutils literal notranslate"><span class="pre">dau-build-steps</span></code>) they do not.</p>
+<p>Fields marked <strong>required</strong> have no default and must be overridden. Field
+overrides carry a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix (<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code>), since the selected
+task or step is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.</p>
 <p>Tasks whose default is <strong>plan</strong> carry <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and produce plans,
 manifests, and staged files without invoking a vendor toolchain or touching
 hardware. Pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run the privileged action. Tasks marked <strong>run</strong>
@@ -520,7 +520,7 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

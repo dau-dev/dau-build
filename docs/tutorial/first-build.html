@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to run a build end to end" href="../how-to/run-a-build.html"><link rel="prev" title="dau build" href="../../index.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Build the identity example - dau-build v0.3.0</title>
+        <title>Build the identity example - dau-build v0.4.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.3.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.4.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -251,14 +251,17 @@ check — all on your machine, with no FPGA and no Xilinx tools installed. By th
 end you will have run every stage of the plan-first build flow and seen what each
 one produces.</p>
 <p>Work from the root of a <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> checkout. Every command here uses the
-<code class="docutils literal notranslate"><span class="pre">examples/identity</span></code> design that ships with the package.</p>
+<code class="docutils literal notranslate"><span class="pre">examples/identity</span></code> design that ships with the package. Each step shows the
+command to type in a shell block, then an <strong>Output</strong> block with what it prints —
+the output lines are tab-separated <code class="docutils literal notranslate"><span class="pre">label⇥key=value</span></code> status lines, so a leading
+word like <code class="docutils literal notranslate"><span class="pre">dau-build-spec</span></code> is a line label the task emits, not a command.</p>
 <section id="step-1-inspect-the-spec">
 <h2>Step 1 — Inspect the spec<a class="headerlink" href="#step-1-inspect-the-spec" title="Link to this heading">¶</a></h2>
 <p>First, look at what the example declares. Run:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
-<p>You should see a summary line followed by the resolved inputs:</p>
+<p><strong>Output</strong> — a summary line, then the resolved inputs:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-spec	name=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=identity sources=1 clock=clk reset=reset backend=vivado
 manifest	index=0 path=.../examples/identity/package.artifacts.yaml
 source	index=0 path=.../examples/identity/rtl/identity.sv role=hdl-source language=systemverilog origin=...
@@ -274,10 +277,10 @@ backend — nothing has been generated yet.</p>
 <section id="step-2-generate-the-artifacts">
 <h2>Step 2 — Generate the artifacts<a class="headerlink" href="#step-2-generate-the-artifacts" title="Link to this heading">¶</a></h2>
 <p>Now generate the build outputs into a fresh directory:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span><span class="nv">output_root</span><span class="o">=</span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
-<p>The command prints the two headline artifacts it wrote:</p>
+<p><strong>Output</strong> — the two headline artifacts it wrote:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-artifacts	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
 </pre></div>
 </div>
@@ -285,6 +288,7 @@ backend — nothing has been generated yet.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ls<span class="w"> </span>outputs/identity
 </pre></div>
 </div>
+<p><strong>Output:</strong></p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-identity.artifacts.yaml   dau-identity.manifest   generated
 </pre></div>
 </div>
@@ -296,13 +300,14 @@ portable inputs a synthesis backend consumes.</p>
 <h2>Step 3 — Validate the bundle<a class="headerlink" href="#step-3-validate-the-bundle" title="Link to this heading">¶</a></h2>
 <p>Check that the generated bundle is internally consistent — that every file the
 manifest references exists and every required role is present:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w"> </span><span class="nv">manifest_path</span><span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span><span class="nv">root</span><span class="o">=</span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w"> </span>model.manifest_path<span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span>model.root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
+<p><strong>Output:</strong></p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-artifacts-valid	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">-valid</span></code> prefix confirms the bundle passed. If a referenced file were missing,
+<p>The <code class="docutils literal notranslate"><span class="pre">-valid</span></code> label confirms the bundle passed. If a referenced file were missing,
 validation would fail here rather than deep inside a Vivado run later.</p>
 </section>
 <section id="step-4-run-a-simulation-check">
@@ -310,23 +315,24 @@ validation would fail here rather than deep inside a Vivado run later.</p>
 <p>Finally, validate the generated top against the spec through the simulation task.
 The default simulator, <code class="docutils literal notranslate"><span class="pre">svparser</span></code>, parses and checks the module without needing
 any external simulator:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span><span class="nv">module</span><span class="o">=</span>dau_identity_top<span class="w"> </span><span class="nv">spec_path</span><span class="o">=</span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
+<p><strong>Output:</strong></p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. Like the
 previous steps, <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected a task from the config tree and
-the <code class="docutils literal notranslate"><span class="pre">module=</span></code> and <code class="docutils literal notranslate"><span class="pre">spec_path=</span></code> overrides supplied its fields.</p>
+the <code class="docutils literal notranslate"><span class="pre">model.module=</span></code> and <code class="docutils literal notranslate"><span class="pre">model.spec_path=</span></code> overrides supplied its fields.</p>
 </section>
 <section id="what-you-have-done">
 <h2>What you have done<a class="headerlink" href="#what-you-have-done" title="Link to this heading">¶</a></h2>
 <p>You have run the identity design through the full plan-first flow: <strong>inspect →
 build → validate → simulate</strong>, and seen the artifacts each stage produces — all
 without a board or a vendor toolchain. Every step was the same shape —
-<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">field=value</span></code> — because every dau-build operation is a task
-you select from the config tree and override.</p>
+<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">model.field=value</span></code> — because every dau-build operation is a
+task you select from the config tree and override.</p>
 <p>From here:</p>
 <ul class="simple">
 <li><p>To drive a real synthesis-and-program sequence, see
@@ -337,6 +343,9 @@ you select from the config tree and override.</p>
 <li><p>For the full set of commands, tasks, and config groups, see the
 <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">reference</span></a>.</p></li>
 </ul>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
 </section>
 </section>
 
@@ -412,7 +421,7 @@ you select from the config tree and override.</p>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=e259d695"></script>
+</div><script src="../../_static/documentation_options.js?v=6c02275b"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
