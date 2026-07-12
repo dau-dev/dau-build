@@ -666,13 +666,12 @@ class BuildShellProjectTask(BuildCallableModel):
             self.output_root,
             name=self.manifest_name,
             source_paths=self.source_paths,
-            metadata={**self.metadata, **status},
+            metadata={**self.metadata, **status.model_dump(exclude_none=True)},
         )
         return BuildStepResult(
             step="build-shell-project",
             message=(
-                f"dau-build-shell\ttask=build-shell-project output_root={self.output_root}"
-                f" wns={status.get('wns_ns')} manifest={manifest_path} status=built"
+                f"dau-build-shell\ttask=build-shell-project output_root={self.output_root} wns={status.wns_ns} manifest={manifest_path} status=built"
             ),
         )
 
