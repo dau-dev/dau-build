@@ -1,6 +1,6 @@
 # @package backend
 
-# backend=backends/vivado
-_target_: dau_build.build_config.BackendConfig
+# backend=backends/vivado — the Vivado synthesis engine (FPGA bitstream flow)
+_target_: dau_build.build_steps.VivadoEngine
 name: vivado
 invocation: standard

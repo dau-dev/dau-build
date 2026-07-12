@@ -138,41 +138,37 @@ bitstream.
 ## Backends: Vivado and yosys
 
 Two synthesis engines are real: **Vivado** (the FPGA bitstream flow) and
-**yosys** (open-source synthesis). They differ in an important way that shapes
-how each is used.
+**yosys** (open-source synthesis). The engine is chosen the hydra-first way —
+it *is* the `backend` config group. Each option instantiates a polymorphic
+`SynthesisEngine` model, and `SynthesizeTask` just delegates to
+`engine.synthesize(...)`. There is no engine `Literal` and no `if engine ==`
+dispatch branch; adding an engine is adding a model and a yaml.
 
-`BackendConfig` has two fields, `name` and `invocation`, and it is a *label*, not
-a driver. `invocation` (`standard` vs `dry-run`) is surfaced in the resolved
-config as metadata and is not branched on. The `backends/none` option is that
-label with no toolchain behind it. So selecting `backend=backends/...` changes
-what the resolved config *reports*, not what codegen runs.
+- **`backend=backends/vivado`** (the default) composes a `VivadoEngine`, which
+  writes a Vivado *handoff* — `vivado_backend.py` generates text artifacts
+  (overlay Tcl, build Tcl, a key=value manifest, a command plan) but never
+  spawns Vivado; that happens later in the `execute=true` build tasks and in
+  `hardware_plan.py`. Vivado is not present in CI, so this path is plan-only there.
+- **`backend=backends/yosys`** composes a `YosysEngine`, which *runs* synthesis.
+  `yosys_backend.py` generates a yosys script and executes it, so the generated
+  top is actually elaborated and synthesized — a real check, not a plan. yosys is
+  open-source and installs in CI, which is the point: it turns synthesis into
+  something the test suite can exercise on every run.
 
-What actually runs is the synthesis engine. `SynthesizeTask.engine` is a
-`Literal["vivado", "yosys"]`, and the task dispatches on it:
+Because the engine is a composed model, it is fully hydra-configurable. The
+`YosysEngine`'s SystemVerilog frontend is a field, set like any other override:
+`backend=backends/yosys backend.frontend=slang` (or `+backend.<field>=...`).
+`frontend=verilog` uses yosys's built-in `read_verilog -sv` (enough for
+dau-build's own synthesizable sources); `frontend=slang` uses the yosys-slang
+plugin's `read_slang`, the same slang engine as the project's `pyslang` parser,
+for the full SV surface (packages, interfaces) the private cores use.
 
-- **`engine=vivado`** writes a Vivado backend *handoff* — the real
-  implementation in `vivado_backend.py` generates text artifacts (overlay Tcl,
-  build Tcl, a key=value manifest, a command plan) but never spawns Vivado;
-  that happens later in the `execute=true` build tasks and in `hardware_plan.py`.
-  Vivado is not present in CI, so this path is plan-only there.
-- **`engine=yosys`** *runs* synthesis. `yosys_backend.py` generates a yosys
-  script and executes it, so the generated top is actually elaborated and
-  synthesized — a real check, not a plan. yosys is open-source and installs in
-  CI, which is the point: `engine=yosys` turns synthesis into something the test
-  suite can exercise on every run.
-
-The yosys backend supports two SystemVerilog frontends, selected with
-`frontend=`: `verilog` (yosys's built-in `read_verilog -sv`, enough for
-dau-build's own synthesizable sources) and `slang` (the yosys-slang plugin's
-`read_slang`, the same slang engine as the project's `pyslang` parser, for the
-full SV surface — packages, interfaces — that the private cores use). The
-frontend is a script-generation detail; the run path is identical.
-
-There is no dispatch *table* keyed on backend name — the wiring from each engine
-value to its generator is direct. That is enough for two engines; a third (a
-nextpnr place-and-route flow, another vendor) would add its own module and engine
-branch. The config-group plumbing, the open registry, the `_target_`
-indirection, and the search-path extension are all backend-agnostic, so most of a
-new backend composes from a package without touching dau-build —
+The engine model carries only `name`/`invocation` up to the resolved-config view
+(`ResolvedBuildConfig` normalizes it to that label), so an engine's own fields
+never leak into the build-config reporting. A third engine (a nextpnr
+place-and-route flow, another vendor) is a new `SynthesisEngine` subclass and a
+yaml; the config-group plumbing, the open registry, the `_target_` indirection,
+and the search-path extension are all engine-agnostic, so it can even come from a
+package without touching dau-build —
 [Extending dau-build](../how-to/extend-dau-build.md) walks through exactly what a
-new backend requires, using yosys as the worked example.
+new engine requires, using yosys as the worked example.

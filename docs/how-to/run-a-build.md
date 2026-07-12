@@ -8,8 +8,9 @@ step needs a Vivado host.
 The stages are **synthesize → stage → build → validate**, then hand off to
 [programming the board](program-hardware.md). This guide is the Vivado bitstream
 flow, so every backend-specific command below is a `vivado` command. For a fast
-open-source synthesis check that runs anywhere, use `engine=yosys` on the
-synthesize task instead (see the [task catalog](../reference/tasks-and-steps.md)).
+open-source synthesis check that runs anywhere, select the yosys engine on the
+synthesize task instead (`backend=backends/yosys`; see the
+[task catalog](../reference/tasks-and-steps.md)).
 
 Field lists for each task are in the [task catalog](../reference/tasks-and-steps.md).
 To see the full resolved config for any command before running it, prefix it with

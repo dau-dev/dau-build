@@ -6,7 +6,7 @@ from shutil import which
 
 import pytest
 
-from dau_build.build_steps import execute_override_task
+from dau_build.config import run_request_config
 from dau_build.yosys_backend import YosysBackendRequest, _parse_cell_count, run_yosys_synthesis, yosys_script_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -79,9 +79,13 @@ def test_run_yosys_reports_a_synthesis_failure(tmp_path: Path) -> None:
 
 
 @requires_yosys
-def test_synthesize_task_engine_yosys_runs_real_synthesis(tmp_path: Path) -> None:
-    result = execute_override_task(
-        ("task=tasks/build/synthesize", "engine=yosys", "module=identity", f"spec_path={_IDENTITY_SPEC}", f"output_root={tmp_path}")
+def test_synthesize_task_yosys_engine_runs_real_synthesis(tmp_path: Path) -> None:
+    # the engine is the composed backend group: backend=backends/yosys
+    result = run_request_config(
+        "task",
+        "tasks/build/synthesize",
+        overrides=["backend=backends/yosys"],
+        model_values={"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)},
     )
     assert result.step == "synthesize"
     assert "engine=yosys frontend=verilog" in result.message
@@ -90,9 +94,13 @@ def test_synthesize_task_engine_yosys_runs_real_synthesis(tmp_path: Path) -> Non
 
 
 @requires_slang
-def test_synthesize_task_engine_yosys_slang_frontend(tmp_path: Path) -> None:
-    result = execute_override_task(
-        ("task=tasks/build/synthesize", "engine=yosys", "frontend=slang", "module=identity", f"spec_path={_IDENTITY_SPEC}", f"output_root={tmp_path}")
+def test_synthesize_task_yosys_slang_frontend_via_hydra_override(tmp_path: Path) -> None:
+    # the engine is fully hydra-configurable: backend.frontend=slang
+    result = run_request_config(
+        "task",
+        "tasks/build/synthesize",
+        overrides=["backend=backends/yosys", "backend.frontend=slang"],
+        model_values={"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)},
     )
     assert result.step == "synthesize"
     assert "engine=yosys frontend=slang" in result.message
