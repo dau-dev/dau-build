@@ -7,4 +7,7 @@ board: ${oc.select:board,null}
 backend: ${oc.select:backend,null}
 module: ???
 engine: vivado
+# yosys-only fields (ignored for engine=vivado)
+frontend: verilog
+yosys: yosys
 output_root: ???

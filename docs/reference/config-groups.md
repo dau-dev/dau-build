@@ -107,15 +107,16 @@ shell: xdma-ddr
 
 `backend=backends/vivado` composes `BackendConfig` into the `backend` key.
 
-| Option            | `name`   | `invocation` | Description                    |
-| ----------------- | -------- | ------------ | ------------------------------ |
-| `backends/vivado` | `vivado` | `standard`   | The Vivado/XDMA backend.       |
-| `backends/none`   | `none`   | `dry-run`    | No vendor toolchain (dry-run). |
+| Option            | `name`   | `invocation` | Description                         |
+| ----------------- | -------- | ------------ | ----------------------------------- |
+| `backends/vivado` | `vivado` | `standard`   | The Vivado/XDMA backend.            |
+| `backends/yosys`  | `yosys`  | `standard`   | Open-source synthesis (runs in CI). |
+| `backends/none`   | `none`   | `dry-run`    | No vendor toolchain (dry-run).      |
 
-`BackendConfig` fields: `name` (str), `invocation` (str). Vivado is the only
-backend with a real implementation. See
-[the architecture explanation](../explanation/architecture.md) for
-current-vs-future backend support.
+`BackendConfig` fields: `name` (str), `invocation` (str). It is a label; the
+engine that runs codegen is `SynthesizeTask.engine` (`vivado` or `yosys`). See
+[the architecture explanation](../explanation/architecture.md) for how the two
+engines differ.
 
 ## `platform`
 

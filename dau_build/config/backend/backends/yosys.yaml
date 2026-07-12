@@ -1,0 +1,6 @@
+# @package backend
+
+# backend=backends/yosys (open-source synthesis; runnable in CI)
+_target_: dau_build.build_config.BackendConfig
+name: yosys
+invocation: standard

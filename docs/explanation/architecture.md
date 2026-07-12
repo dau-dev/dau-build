@@ -135,31 +135,44 @@ They are independent groups, composed together into a task's
 physical dpv1 definition can be reused regardless of which backend produced a
 bitstream.
 
-## Backends: Vivado today, others later
+## Backends: Vivado and yosys
 
-**Only the Vivado backend is real today.** Understanding the current shape makes
-clear what adding another backend involves.
+Two synthesis engines are real: **Vivado** (the FPGA bitstream flow) and
+**yosys** (open-source synthesis). They differ in an important way that shapes
+how each is used.
 
 `BackendConfig` has two fields, `name` and `invocation`, and it is a *label*, not
 a driver. `invocation` (`standard` vs `dry-run`) is surfaced in the resolved
 config as metadata and is not branched on. The `backends/none` option is that
-label with no toolchain behind it — a dry-run. So selecting `backend=backends/...`
-changes what the resolved config *reports*, not what codegen runs.
+label with no toolchain behind it. So selecting `backend=backends/...` changes
+what the resolved config *reports*, not what codegen runs.
 
-What actually runs codegen is the synthesis engine. `SynthesizeTask.engine` is a
-`Literal["vivado"]` — it accepts nothing else — and the task unconditionally
-writes the Vivado backend handoff. The real backend implementation lives in
-`vivado_backend.py`, which generates text artifacts (overlay Tcl, build Tcl, a
-key=value manifest, a command plan) and never spawns Vivado itself; that happens
-in the `execute=true` build tasks and in `hardware_plan.py`. There is no dispatch
-table keyed on backend name — the wiring from `engine="vivado"` to the Vivado
-generator is direct.
+What actually runs is the synthesis engine. `SynthesizeTask.engine` is a
+`Literal["vivado", "yosys"]`, and the task dispatches on it:
 
-So the config-group plumbing, the open registry, the `_target_` indirection, and
-the search-path extension are all backend-agnostic and ready; what is missing for,
-say, a yosys/nextpnr flow is a second *implementation*: a backend module
-paralleling `vivado_backend.py`, a widened `engine` literal with real dispatch,
-and its task configs. There is no yosys, nextpnr, or other backend scaffolding in
-the tree today — not a stub, not a config file. That is a deliberate honesty about
-the current state, not an oversight. [Extending dau-build](../how-to/extend-dau-build.md)
-walks through exactly what a new backend requires.
+- **`engine=vivado`** writes a Vivado backend *handoff* — the real
+  implementation in `vivado_backend.py` generates text artifacts (overlay Tcl,
+  build Tcl, a key=value manifest, a command plan) but never spawns Vivado;
+  that happens later in the `execute=true` build tasks and in `hardware_plan.py`.
+  Vivado is not present in CI, so this path is plan-only there.
+- **`engine=yosys`** *runs* synthesis. `yosys_backend.py` generates a yosys
+  script and executes it, so the generated top is actually elaborated and
+  synthesized — a real check, not a plan. yosys is open-source and installs in
+  CI, which is the point: `engine=yosys` turns synthesis into something the test
+  suite can exercise on every run.
+
+The yosys backend supports two SystemVerilog frontends, selected with
+`frontend=`: `verilog` (yosys's built-in `read_verilog -sv`, enough for
+dau-build's own synthesizable sources) and `slang` (the yosys-slang plugin's
+`read_slang`, the same slang engine as the project's `pyslang` parser, for the
+full SV surface — packages, interfaces — that the private cores use). The
+frontend is a script-generation detail; the run path is identical.
+
+There is no dispatch *table* keyed on backend name — the wiring from each engine
+value to its generator is direct. That is enough for two engines; a third (a
+nextpnr place-and-route flow, another vendor) would add its own module and engine
+branch. The config-group plumbing, the open registry, the `_target_`
+indirection, and the search-path extension are all backend-agnostic, so most of a
+new backend composes from a package without touching dau-build —
+[Extending dau-build](../how-to/extend-dau-build.md) walks through exactly what a
+new backend requires, using yosys as the worked example.
