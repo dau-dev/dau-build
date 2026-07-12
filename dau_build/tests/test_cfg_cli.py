@@ -14,7 +14,7 @@ def test_cfg_cli_runs_profile_only_simulate(tmp_path: Path, capsys) -> None:
     manifest_path = _write_self_contained_counter_manifest(tmp_path)
     exit_code = main(
         [
-            "task=simulate",
+            "task=tasks/sim/simulate",
             "model.simulator=verilator",
             "model.spec_path=null",
             "model.module=''",
@@ -36,7 +36,7 @@ def test_profile_only_simulate_falls_back_to_manifest_registry() -> None:
     with pytest.raises(Exception, match="unknown DAU Verilator profile"):
         main(
             [
-                "task=simulate",
+                "task=tasks/sim/simulate",
                 "model.simulator=verilator",
                 "model.spec_path=null",
                 "model.module=''",
@@ -46,7 +46,7 @@ def test_profile_only_simulate_falls_back_to_manifest_registry() -> None:
 
 
 def test_cfg_explain_prints_resolved_config(capsys) -> None:
-    exit_code = explain(["task=synthesize", "model.spec_path=spec.yaml", "model.module=m", "model.output_root=out"])
+    exit_code = explain(["task=tasks/build/synthesize", "model.spec_path=spec.yaml", "model.module=m", "model.output_root=out"])
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "_target_: dau_build.build_steps.SynthesizeTask" in captured.out

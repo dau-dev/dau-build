@@ -122,6 +122,12 @@ packages = [
     "dau_build",
 ]
 
+# Force the config tree into the sdist verbatim: nested groups like
+# task/tasks/build/ would otherwise be stripped by the `build/` .gitignore
+# pattern, leaving the sdist and wheel out of sync.
+[tool.hatch.build.targets.sdist.force-include]
+"dau_build/config" = "dau_build/config"
+
 [tool.hatch.build.targets.wheel]
 packages = [
     "dau_build",

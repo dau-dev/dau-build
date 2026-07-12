@@ -18,7 +18,7 @@ def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path:
 
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_request(("task=simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"))
+    result = execute_override_request(("task=tasks/sim/simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="simulate",
@@ -29,7 +29,7 @@ def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path:
 def test_execute_override_task_accepts_public_cocotb_simulate_surface(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
-    result = execute_override_task(("task=simulate", "simulator=cocotb", "module=dau_identity_top", f"spec_path={spec_path}"))
+    result = execute_override_task(("task=tasks/sim/simulate", "simulator=cocotb", "module=dau_identity_top", f"spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="simulate",
@@ -41,7 +41,7 @@ def test_execute_override_task_requires_selected_module_to_match_spec(tmp_path: 
     spec_path = _write_spec(tmp_path)
 
     with pytest.raises(BuildStepError, match="module 'missing' is not provided by spec"):
-        execute_override_task(("task=simulate", "simulator=svparser", "module=missing", f"spec_path={spec_path}"))
+        execute_override_task(("task=tasks/sim/simulate", "simulator=svparser", "module=missing", f"spec_path={spec_path}"))
 
 
 def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_path: Path) -> None:
@@ -50,7 +50,7 @@ def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_pat
 
     result = execute_override_task(
         (
-            "task=synthesize",
+            "task=tasks/build/synthesize",
             "engine=vivado",
             "module=dau_identity_top",
             f"spec_path={spec_path}",
@@ -78,7 +78,7 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
 
     synthesize_result = execute_override_task(
         (
-            "task=synthesize",
+            "task=tasks/build/synthesize",
             "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
@@ -101,8 +101,8 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
     assert backend_manifest["output_buffer_address"] == "0x0000000000100000"
 
     bitstream = _write_built_backend_outputs(output_root / "vivado", backend_manifest_path)
-    flash_result = execute_override_task(("task=flash", f"manifest_path={backend_manifest_path}"))
-    smoke_result = execute_override_task(("task=smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
+    flash_result = execute_override_task(("task=tasks/flash/flash", f"manifest_path={backend_manifest_path}"))
+    smoke_result = execute_override_task(("task=tasks/flash/smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
 
     assert flash_result == BuildStepResult(
         step="flash",
@@ -122,7 +122,7 @@ def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) 
     output_root = tmp_path / "out"
     execute_override_task(
         (
-            "task=synthesize",
+            "task=tasks/build/synthesize",
             "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
@@ -133,7 +133,7 @@ def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) 
     backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
 
     with pytest.raises(BuildStepError, match="is not built: build_status=planned; expected built"):
-        execute_override_task(("task=flash", f"manifest_path={backend_manifest_path}"))
+        execute_override_task(("task=tasks/flash/flash", f"manifest_path={backend_manifest_path}"))
 
 
 def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_path: Path) -> None:
@@ -141,7 +141,7 @@ def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_pat
     output_root = tmp_path / "out"
     execute_override_task(
         (
-            "task=synthesize",
+            "task=tasks/build/synthesize",
             "engine=vivado",
             "module=stream_doubler",
             f"spec_path={spec_path}",
@@ -156,14 +156,14 @@ def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_pat
     )
 
     with pytest.raises(BuildStepError, match="is built but incomplete: missing bitstream:"):
-        execute_override_task(("task=smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
+        execute_override_task(("task=tasks/flash/smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
 
 
 def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> None:
     bitstream = tmp_path / "Top_wrapper.bit"
     bitstream.write_bytes(b"bit")
 
-    result = execute_override_task(("task=flash", "tool=openFPGAloader", f"bitstream={bitstream}"))
+    result = execute_override_task(("task=tasks/flash/flash", "tool=openFPGAloader", f"bitstream={bitstream}"))
 
     assert result == BuildStepResult(
         step="flash",
@@ -172,7 +172,7 @@ def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> Non
 
 
 def test_execute_override_task_plans_identity_smoke_test() -> None:
-    result = execute_override_task(("task=smoke-test", "test=identity"))
+    result = execute_override_task(("task=tasks/flash/smoke-test", "test=identity"))
 
     assert result == BuildStepResult(
         step="smoke-test",
@@ -181,7 +181,7 @@ def test_execute_override_task_plans_identity_smoke_test() -> None:
 
 
 def test_execute_override_task_accepts_public_hardware_plan_surface() -> None:
-    result = execute_override_task(("task=hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"))
+    result = execute_override_task(("task=tasks/hardware/hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"))
 
     assert result == BuildStepResult(
         step="hardware-plan",
@@ -192,7 +192,7 @@ def test_execute_override_task_accepts_public_hardware_plan_surface() -> None:
 def test_execute_override_task_accepts_stage_shell_surface() -> None:
     result = execute_override_task(
         (
-            "task=stage-shell",
+            "task=tasks/stage/stage-shell",
             "source_shell_root=/repo/reference/vivado-shell",
             "work_root=/repo/dau-build/outputs/vivado",
         )
@@ -206,7 +206,7 @@ def test_execute_override_task_accepts_stage_shell_surface() -> None:
 def test_execute_override_task_accepts_stage_vivado_overlay_surface() -> None:
     result = execute_override_task(
         (
-            "task=stage-vivado-overlay",
+            "task=tasks/stage/stage-vivado-overlay",
             "work_root=/repo/projects/vivado-shell",
             "dau_core_root=/repo/dau-core",
         )
@@ -224,7 +224,7 @@ def test_execute_override_task_accepts_stage_vivado_overlay_surface() -> None:
 def test_execute_override_task_accepts_stage_vivado_project_surface() -> None:
     result = execute_override_task(
         (
-            "task=stage-vivado-project",
+            "task=tasks/stage/stage-vivado-project",
             "source_shell_root=/repo/projects/vivado-shell",
             "work_root=/repo/dau-build/outputs/vivado",
             "dau_core_root=/repo/dau-core",
@@ -247,7 +247,7 @@ def test_execute_override_task_accepts_stage_vivado_project_surface() -> None:
 def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
     result = execute_override_task(
         (
-            "task=build-vivado-artifacts",
+            "task=tasks/build/build-vivado-artifacts",
             "work_root=/repo/projects/vivado-shell",
             "artifact_stem=dau-ci",
         )
@@ -256,7 +256,7 @@ def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
     assert result.step == "build-vivado-artifacts"
     assert result.message.splitlines()[0].startswith("vivado-overlay-build\tbash -lc ")
     assert result.message.splitlines()[1] == (
-        "validate-vivado-artifacts\tdau-build task=validate-vivado-artifacts "
+        "validate-vivado-artifacts\tdau-build task=tasks/validate/validate-vivado-artifacts "
         "work_root=/repo/projects/vivado-shell manifest_path=dau-ci.manifest command_plan_path=dau-ci.plan"
     )
 
@@ -293,7 +293,7 @@ def test_execute_override_task_runs_build_vivado_artifacts_with_graph_models(mon
 
     result = execute_override_task(
         (
-            "task=build-vivado-artifacts",
+            "task=tasks/build/build-vivado-artifacts",
             "work_root=/repo/projects/vivado-shell",
             "artifact_stem=dau-ci",
             "execute=true",
@@ -322,7 +322,7 @@ def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: P
 
     result = execute_override_task(
         (
-            "task=validate-vivado-artifacts",
+            "task=tasks/validate/validate-vivado-artifacts",
             f"work_root={tmp_path}",
             "manifest_path=dau-ci.manifest",
             "command_plan_path=dau-ci.plan",
@@ -344,7 +344,7 @@ def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: P
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main(["task=simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"])
+    exit_code = main(["task=tasks/sim/simulate", "simulator=svparser", "module=dau_identity_top", f"spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
@@ -353,7 +353,7 @@ def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys)
 
 
 def test_dau_build_main_dispatches_public_hardware_plan_arguments(capsys) -> None:
-    exit_code = main(["task=hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"])
+    exit_code = main(["task=tasks/hardware/hardware-plan", "plan=thunderbolt-release", "work_root=/repo/projects/vivado-shell"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [

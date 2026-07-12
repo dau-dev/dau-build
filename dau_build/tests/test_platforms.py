@@ -115,7 +115,7 @@ def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
 def test_platform_group_resolves_dpv1_through_hydra() -> None:
     from dau_build.config import resolve_platform
 
-    assert resolve_platform("dpv1") == dpv1_platform()
+    assert resolve_platform("platforms/dau/dpv1") == dpv1_platform()
 
 
 def test_resolve_platform_rejects_unknown() -> None:
@@ -163,7 +163,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     assert board.budget.lut == 41000
     assert board.host_link.pcie_lanes == 1
     # the packaged dpv1 board still resolves alongside the overlay
-    assert resolve_platform("dpv1", config_dir=str(overlay)) == dpv1_platform()
+    assert resolve_platform("platforms/dau/dpv1", config_dir=str(overlay)) == dpv1_platform()
 
 
 def _dpv1_with(**overrides: object) -> PlatformDefinition:

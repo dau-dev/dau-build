@@ -4,8 +4,8 @@ The task dispatch has always loaded through the hydra config tree in
 ``dau_build/config`` (``request_config``/``run_request_config``); this module
 exposes that machinery directly on the command line:
 
-    dau-build-cfg task=simulate model.simulator=verilator model.profile=<name>
-    dau-build-cfg task=synthesize model.spec_path=spec.yaml model.module=m \\
+    dau-build-cfg task=tasks/sim/simulate model.simulator=verilator model.profile=<name>
+    dau-build-cfg task=tasks/build/synthesize spec=specs/identity model.module=m \\
         model.engine=vivado model.output_root=out
     dau-build-cfg --config-dir ./my-configs task=my-custom-task
     dau-build-cfg-explain task=synthesize ...   # resolved config, no execution

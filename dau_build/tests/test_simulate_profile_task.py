@@ -12,7 +12,7 @@ def test_profile_only_simulate_runs(tmp_path):
     manifest_path = _write_self_contained_counter_manifest(tmp_path)
     result = execute_override_task(
         [
-            "task=simulate",
+            "task=tasks/sim/simulate",
             "simulator=verilator",
             "profile=counter-profile",
             f"profile_manifest={manifest_path}",
@@ -25,7 +25,7 @@ def test_profile_only_simulate_runs(tmp_path):
 
 def test_simulate_without_spec_or_profile_fails_typed(tmp_path):
     with pytest.raises(BuildStepError, match="requires a spec"):
-        execute_override_task(["task=simulate", "simulator=verilator"])
+        execute_override_task(["task=tasks/sim/simulate", "simulator=verilator"])
 
 
 def _write_self_contained_counter_manifest(tmp_path) -> Path:
