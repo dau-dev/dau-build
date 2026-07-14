@@ -25,6 +25,7 @@ __all__ = (
     "ScanComposition",
     "ScanCompositionError",
     "TileInstance",
+    "generate_scan_composition_sim_sv",
     "generate_scan_composition_top_sv",
 )
 
@@ -297,7 +298,7 @@ def _tile_config_binds_sv(config) -> str:
     return "".join(f"        .{port}({value}),\n" for port, value in config.items())
 
 
-def _lane_front_sv(composition: ScanComposition, i: int) -> str:
+def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk") -> str:
     """The lane front for lane ``i``: tap the shared partitioner's per-lane
     stream, tap the broadcast directly (filterless lane), or instantiate the
     lane's partition filter off the broadcast."""
@@ -322,7 +323,7 @@ def _lane_front_sv(composition: ScanComposition, i: int) -> str:
     assign filt_status_error_code_{i} = 8'd0;
 """
     return f"""    {lane.partition.module} partition_{i} (
-        .clk(s_axi_aclk),
+        .clk({clk}),
         .rst(lane_rst),
 {_tile_config_binds_sv(lane.partition.config)}        .input_valid(bcast_valid[{i}]),
         .input_ready(bcast_ready[{i}]),
@@ -356,6 +357,218 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
     assign filt_status_ready_{i} = unit_status_ready_{i} && filt_status_valid_{i};
     assign tile_status_ready_{i} = unit_status_ready_{i} && !filt_status_valid_{i};
 """
+
+
+def _lane_wire_decls_sv(composition: ScanComposition) -> str:
+    """Per-lane internal wire declarations (lane front, tile, status glue,
+    writer, and the latched count register)."""
+    addr_width = composition.addr_width
+    return "\n".join(
+        f"""    wire filt_out_valid_{i};
+    wire filt_out_ready_{i};
+    wire [63:0] filt_out_data_{i};
+    wire filt_out_last_{i};
+    wire filt_status_valid_{i};
+    wire filt_status_ready_{i};
+    wire filt_status_error_{i};
+    wire [7:0] filt_status_error_code_{i};
+    wire tile_out_valid_{i};
+    wire tile_out_ready_{i};
+    wire [63:0] tile_out_data_{i};
+    wire tile_out_last_{i};
+    wire tile_status_valid_{i};
+    wire tile_status_ready_{i};
+    wire tile_status_error_{i};
+    wire [7:0] tile_status_error_code_{i};
+    wire [63:0] tile_bar_count_{i};
+    wire unit_status_valid_{i};
+    wire unit_status_ready_{i};
+    wire unit_status_error_{i};
+    wire [7:0] unit_status_error_code_{i};
+    wire writer_busy_{i};
+    wire writer_done_{i};
+    wire writer_error_{i};
+    wire [7:0] writer_error_code_{i};
+    wire [31:0] lane_result_length_{i};
+    wire [{addr_width - 1}:0] wr_awaddr_{i};
+    wire [7:0] wr_awlen_{i};
+    wire wr_awvalid_{i};
+    wire wr_awready_{i};
+    wire [63:0] wr_wdata_{i};
+    wire wr_wlast_{i};
+    wire wr_wvalid_{i};
+    wire wr_wready_{i};
+    wire wr_bvalid_{i};
+    wire wr_bready_{i};
+    reg [63:0] lane_bar_count_{i};"""
+        for i in range(len(composition.lanes))
+    )
+
+
+def _wr_flat_decls_sv(composition: ScanComposition) -> str:
+    """The flattened per-lane write-channel bundles toward the write mux."""
+    num_lanes = len(composition.lanes)
+    addr_width = composition.addr_width
+    return f"""    wire [1:0] wr_bresp;
+    wire [{num_lanes * addr_width - 1}:0] wr_awaddr_flat;
+    wire [{num_lanes * 8 - 1}:0] wr_awlen_flat;
+    wire [{num_lanes - 1}:0] wr_awvalid_flat;
+    wire [{num_lanes - 1}:0] wr_awready_flat;
+    wire [{num_lanes * 64 - 1}:0] wr_wdata_flat;
+    wire [{num_lanes - 1}:0] wr_wlast_flat;
+    wire [{num_lanes - 1}:0] wr_wvalid_flat;
+    wire [{num_lanes - 1}:0] wr_wready_flat;
+    wire [{num_lanes - 1}:0] wr_bvalid_flat;
+    wire [{num_lanes - 1}:0] wr_bready_flat;"""
+
+
+def _lane_flat_assigns_sv(composition: ScanComposition) -> str:
+    """Per-lane write-channel taps into the flattened mux bundles."""
+    addr_width = composition.addr_width
+    return "\n".join(
+        f"""    assign wr_awaddr_flat[{addr_width * (i + 1) - 1}:{addr_width * i}] = wr_awaddr_{i};
+    assign wr_awlen_flat[{8 * (i + 1) - 1}:{8 * i}] = wr_awlen_{i};
+    assign wr_awvalid_flat[{i}] = wr_awvalid_{i};
+    assign wr_awready_{i} = wr_awready_flat[{i}];
+    assign wr_wdata_flat[{64 * (i + 1) - 1}:{64 * i}] = wr_wdata_{i};
+    assign wr_wlast_flat[{i}] = wr_wlast_{i};
+    assign wr_wvalid_flat[{i}] = wr_wvalid_{i};
+    assign wr_wready_{i} = wr_wready_flat[{i}];
+    assign wr_bvalid_{i} = wr_bvalid_flat[{i}];
+    assign wr_bready_flat[{i}] = wr_bready_{i};"""
+        for i in range(len(composition.lanes))
+    )
+
+
+def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -> str:
+    """Every lane unit: front (partitioner tap / broadcast tap / partition
+    filter), operator tile, status glue, and record writer."""
+    addr_width = composition.addr_width
+    burst_beats = composition.burst_beats
+    return "\n\n".join(
+        f"""{_lane_front_sv(composition, i, clk=clk)}
+    {composition.lanes[i].module} tile_{i} (
+        .clk({clk}),
+        .rst(lane_rst),
+{_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid(filt_out_valid_{i}),
+        .input_ready(filt_out_ready_{i}),
+        .input_data(filt_out_data_{i}),
+        .input_last(filt_out_last_{i}),
+        .output_valid(tile_out_valid_{i}),
+        .output_ready(tile_out_ready_{i}),
+        .output_data(tile_out_data_{i}),
+        .output_last(tile_out_last_{i}),
+        .status_valid(tile_status_valid_{i}),
+        .status_ready(tile_status_ready_{i}),
+        .status_error(tile_status_error_{i}),
+        .status_error_code(tile_status_error_code_{i}),
+        .{composition.lanes[i].count_port}(tile_bar_count_{i})
+    );
+
+{_lane_status_glue_sv(composition, i)}
+    dau_axi_record_writer #(
+        .ADDR_WIDTH({addr_width}),
+        .BURST_BEATS({burst_beats})
+    ) writer_{i} (
+        .clk({clk}),
+        .rst({writer_rst}),
+        .start(unit_start),
+        .output_address(lane_output_address_{i}),
+        .busy(writer_busy_{i}),
+        .done(writer_done_{i}),
+        .error(writer_error_{i}),
+        .error_code(writer_error_code_{i}),
+        .result_length_bytes(lane_result_length_{i}),
+        .m_axi_awaddr(wr_awaddr_{i}),
+        .m_axi_awlen(wr_awlen_{i}),
+        .m_axi_awsize(),
+        .m_axi_awburst(),
+        .m_axi_awvalid(wr_awvalid_{i}),
+        .m_axi_awready(wr_awready_{i}),
+        .m_axi_wdata(wr_wdata_{i}),
+        .m_axi_wstrb(),
+        .m_axi_wlast(wr_wlast_{i}),
+        .m_axi_wvalid(wr_wvalid_{i}),
+        .m_axi_wready(wr_wready_{i}),
+        .m_axi_bresp(wr_bresp),
+        .m_axi_bvalid(wr_bvalid_{i}),
+        .m_axi_bready(wr_bready_{i}),
+        .record_valid(tile_out_valid_{i}),
+        .record_ready(tile_out_ready_{i}),
+        .record_data(tile_out_data_{i}),
+        .record_last(tile_out_last_{i}),
+        .status_valid(unit_status_valid_{i}),
+        .status_ready(unit_status_ready_{i}),
+        .status_error(unit_status_error_{i}),
+        .status_error_code(unit_status_error_code_{i})
+    );"""
+        for i in range(len(composition.lanes))
+    )
+
+
+def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
+    """The scan fan-out: wire declarations and the instance — the shared
+    partitioner when the composition carries one, the stream broadcast
+    otherwise."""
+    num_lanes = len(composition.lanes)
+    if composition.partitioner is not None:
+        wire_decls = f"""    wire [{num_lanes - 1}:0] part_out_valid;
+    wire [{num_lanes - 1}:0] part_out_ready;
+    wire [{num_lanes * 64 - 1}:0] part_out_data;
+    wire [{num_lanes - 1}:0] part_out_last;
+    wire [{num_lanes - 1}:0] part_status_valid;
+    wire [{num_lanes - 1}:0] part_status_ready;
+    wire [{num_lanes - 1}:0] part_status_error;
+    wire [{num_lanes * 8 - 1}:0] part_status_error_code;"""
+        instance = f"""    {composition.partitioner.module} #(
+        .NUM_PARTITIONS({num_lanes})
+    ) partitioner (
+        .clk({clk}),
+        .rst(lane_rst),
+{_tile_config_binds_sv(composition.partitioner.config)}        .input_valid(scan_valid),
+        .input_ready(scan_ready),
+        .input_data(scan_data),
+        .input_last(scan_last),
+        .output_valid(part_out_valid),
+        .output_ready(part_out_ready),
+        .output_data(part_out_data),
+        .output_last(part_out_last),
+        .status_valid(part_status_valid),
+        .status_ready(part_status_ready),
+        .status_error(part_status_error),
+        .status_error_code(part_status_error_code)
+    );"""
+        return wire_decls, instance
+    wire_decls = f"""    wire [{num_lanes - 1}:0] bcast_valid;
+    wire [{num_lanes - 1}:0] bcast_ready;
+    wire [63:0] bcast_data;
+    wire bcast_last;"""
+    instance = f"""    dau_stream_broadcast #(
+        .NUM_OUTPUTS({num_lanes})
+    ) broadcast (
+        .clk({clk}),
+        .rst(lane_rst),
+        .input_valid(scan_valid),
+        .input_ready(scan_ready),
+        .input_data(scan_data),
+        .input_last(scan_last),
+        .output_valid(bcast_valid),
+        .output_ready(bcast_ready),
+        .output_data(bcast_data),
+        .output_last(bcast_last)
+    );"""
+    return wire_decls, instance
+
+
+def _writer_error_priority_sv(num_lanes: int, *, error: str, error_code: str) -> str:
+    """First-error-wins fall-through over the lane writers (the reader's
+    branch comes first at the call site)."""
+    return "\n".join(
+        f"""            end else if (writer_error_{i}) begin
+                {error} = 1'b1;
+                {error_code} = writer_error_code_{i};"""
+        for i in range(num_lanes)
+    )
 
 
 def _validate_against_sources(composition: ScanComposition, sources: Sequence[Path | str]) -> None:
@@ -429,174 +642,14 @@ def generate_scan_composition_top_sv(
         for i in lanes
     )
     lane_reg_decls = "\n".join(f"    reg [{addr_width - 1}:0] lane_output_address_{i};" for i in lanes)
-    lane_wire_decls = "\n".join(
-        f"""    wire filt_out_valid_{i};
-    wire filt_out_ready_{i};
-    wire [63:0] filt_out_data_{i};
-    wire filt_out_last_{i};
-    wire filt_status_valid_{i};
-    wire filt_status_ready_{i};
-    wire filt_status_error_{i};
-    wire [7:0] filt_status_error_code_{i};
-    wire tile_out_valid_{i};
-    wire tile_out_ready_{i};
-    wire [63:0] tile_out_data_{i};
-    wire tile_out_last_{i};
-    wire tile_status_valid_{i};
-    wire tile_status_ready_{i};
-    wire tile_status_error_{i};
-    wire [7:0] tile_status_error_code_{i};
-    wire [63:0] tile_bar_count_{i};
-    wire unit_status_valid_{i};
-    wire unit_status_ready_{i};
-    wire unit_status_error_{i};
-    wire [7:0] unit_status_error_code_{i};
-    wire writer_busy_{i};
-    wire writer_done_{i};
-    wire writer_error_{i};
-    wire [7:0] writer_error_code_{i};
-    wire [31:0] lane_result_length_{i};
-    wire [{addr_width - 1}:0] wr_awaddr_{i};
-    wire [7:0] wr_awlen_{i};
-    wire wr_awvalid_{i};
-    wire wr_awready_{i};
-    wire [63:0] wr_wdata_{i};
-    wire wr_wlast_{i};
-    wire wr_wvalid_{i};
-    wire wr_wready_{i};
-    wire wr_bvalid_{i};
-    wire wr_bready_{i};
-    reg [63:0] lane_bar_count_{i};"""
-        for i in lanes
-    )
-    lane_flat_assigns = "\n".join(
-        f"""    assign wr_awaddr_flat[{addr_width * (i + 1) - 1}:{addr_width * i}] = wr_awaddr_{i};
-    assign wr_awlen_flat[{8 * (i + 1) - 1}:{8 * i}] = wr_awlen_{i};
-    assign wr_awvalid_flat[{i}] = wr_awvalid_{i};
-    assign wr_awready_{i} = wr_awready_flat[{i}];
-    assign wr_wdata_flat[{64 * (i + 1) - 1}:{64 * i}] = wr_wdata_{i};
-    assign wr_wlast_flat[{i}] = wr_wlast_{i};
-    assign wr_wvalid_flat[{i}] = wr_wvalid_{i};
-    assign wr_wready_{i} = wr_wready_flat[{i}];
-    assign wr_bvalid_{i} = wr_bvalid_flat[{i}];
-    assign wr_bready_flat[{i}] = wr_bready_{i};"""
-        for i in lanes
-    )
-
-    lane_instances = "\n\n".join(
-        f"""{_lane_front_sv(composition, i)}
-    {composition.lanes[i].module} tile_{i} (
-        .clk(s_axi_aclk),
-        .rst(lane_rst),
-{_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid(filt_out_valid_{i}),
-        .input_ready(filt_out_ready_{i}),
-        .input_data(filt_out_data_{i}),
-        .input_last(filt_out_last_{i}),
-        .output_valid(tile_out_valid_{i}),
-        .output_ready(tile_out_ready_{i}),
-        .output_data(tile_out_data_{i}),
-        .output_last(tile_out_last_{i}),
-        .status_valid(tile_status_valid_{i}),
-        .status_ready(tile_status_ready_{i}),
-        .status_error(tile_status_error_{i}),
-        .status_error_code(tile_status_error_code_{i}),
-        .{composition.lanes[i].count_port}(tile_bar_count_{i})
-    );
-
-{_lane_status_glue_sv(composition, i)}
-    dau_axi_record_writer #(
-        .ADDR_WIDTH({addr_width}),
-        .BURST_BEATS({burst_beats})
-    ) writer_{i} (
-        .clk(s_axi_aclk),
-        .rst(!s_axi_aresetn),
-        .start(unit_start),
-        .output_address(lane_output_address_{i}),
-        .busy(writer_busy_{i}),
-        .done(writer_done_{i}),
-        .error(writer_error_{i}),
-        .error_code(writer_error_code_{i}),
-        .result_length_bytes(lane_result_length_{i}),
-        .m_axi_awaddr(wr_awaddr_{i}),
-        .m_axi_awlen(wr_awlen_{i}),
-        .m_axi_awsize(),
-        .m_axi_awburst(),
-        .m_axi_awvalid(wr_awvalid_{i}),
-        .m_axi_awready(wr_awready_{i}),
-        .m_axi_wdata(wr_wdata_{i}),
-        .m_axi_wstrb(),
-        .m_axi_wlast(wr_wlast_{i}),
-        .m_axi_wvalid(wr_wvalid_{i}),
-        .m_axi_wready(wr_wready_{i}),
-        .m_axi_bresp(wr_bresp),
-        .m_axi_bvalid(wr_bvalid_{i}),
-        .m_axi_bready(wr_bready_{i}),
-        .record_valid(tile_out_valid_{i}),
-        .record_ready(tile_out_ready_{i}),
-        .record_data(tile_out_data_{i}),
-        .record_last(tile_out_last_{i}),
-        .status_valid(unit_status_valid_{i}),
-        .status_ready(unit_status_ready_{i}),
-        .status_error(unit_status_error_{i}),
-        .status_error_code(unit_status_error_code_{i})
-    );"""
-        for i in lanes
-    )
-    if composition.partitioner is not None:
-        fanout_wire_decls = f"""    wire [{num_lanes - 1}:0] part_out_valid;
-    wire [{num_lanes - 1}:0] part_out_ready;
-    wire [{num_lanes * 64 - 1}:0] part_out_data;
-    wire [{num_lanes - 1}:0] part_out_last;
-    wire [{num_lanes - 1}:0] part_status_valid;
-    wire [{num_lanes - 1}:0] part_status_ready;
-    wire [{num_lanes - 1}:0] part_status_error;
-    wire [{num_lanes * 8 - 1}:0] part_status_error_code;"""
-        fanout_instance = f"""    {composition.partitioner.module} #(
-        .NUM_PARTITIONS({num_lanes})
-    ) partitioner (
-        .clk(s_axi_aclk),
-        .rst(lane_rst),
-{_tile_config_binds_sv(composition.partitioner.config)}        .input_valid(scan_valid),
-        .input_ready(scan_ready),
-        .input_data(scan_data),
-        .input_last(scan_last),
-        .output_valid(part_out_valid),
-        .output_ready(part_out_ready),
-        .output_data(part_out_data),
-        .output_last(part_out_last),
-        .status_valid(part_status_valid),
-        .status_ready(part_status_ready),
-        .status_error(part_status_error),
-        .status_error_code(part_status_error_code)
-    );"""
-    else:
-        fanout_wire_decls = f"""    wire [{num_lanes - 1}:0] bcast_valid;
-    wire [{num_lanes - 1}:0] bcast_ready;
-    wire [63:0] bcast_data;
-    wire bcast_last;"""
-        fanout_instance = f"""    dau_stream_broadcast #(
-        .NUM_OUTPUTS({num_lanes})
-    ) broadcast (
-        .clk(s_axi_aclk),
-        .rst(lane_rst),
-        .input_valid(scan_valid),
-        .input_ready(scan_ready),
-        .input_data(scan_data),
-        .input_last(scan_last),
-        .output_valid(bcast_valid),
-        .output_ready(bcast_ready),
-        .output_data(bcast_data),
-        .output_last(bcast_last)
-    );"""
+    lane_wire_decls = _lane_wire_decls_sv(composition)
+    lane_flat_assigns = _lane_flat_assigns_sv(composition)
+    lane_instances = _lane_units_sv(composition, clk="s_axi_aclk", writer_rst="!s_axi_aresetn")
+    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="s_axi_aclk")
 
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
-    error_priority = "\n".join(
-        f"""            end else if (writer_error_{i}) begin
-                job_error = 1'b1;
-                job_error_code = writer_error_code_{i};"""
-        for i in lanes
-    )
+    error_priority = _writer_error_priority_sv(num_lanes, error="job_error", error_code="job_error_code")
     write_case_items = "\n".join(f"                    ADDR_LANE{i}_OUTPUT_ADDRESS: lane_output_address_{i} <= s_axi_wdata;" for i in lanes)
     read_case_items = "\n".join(
         f"""                    ADDR_LANE{i}_OUTPUT_ADDRESS: s_axi_rdata <= lane_output_address_{i}[31:0];
@@ -701,17 +754,7 @@ module {module_name} #(
     wire [63:0] scan_data;
     wire scan_last;
 {fanout_wire_decls}
-    wire [1:0] wr_bresp;
-    wire [{num_lanes * addr_width - 1}:0] wr_awaddr_flat;
-    wire [{num_lanes * 8 - 1}:0] wr_awlen_flat;
-    wire [{num_lanes - 1}:0] wr_awvalid_flat;
-    wire [{num_lanes - 1}:0] wr_awready_flat;
-    wire [{num_lanes * 64 - 1}:0] wr_wdata_flat;
-    wire [{num_lanes - 1}:0] wr_wlast_flat;
-    wire [{num_lanes - 1}:0] wr_wvalid_flat;
-    wire [{num_lanes - 1}:0] wr_wready_flat;
-    wire [{num_lanes - 1}:0] wr_bvalid_flat;
-    wire [{num_lanes - 1}:0] wr_bready_flat;
+{_wr_flat_decls_sv(composition)}
 {lane_wire_decls}
 
     // the 16-byte row grid is enforced before any unit starts: a rejected
@@ -823,6 +866,294 @@ module {module_name} #(
     );
 
 {register_process}
+endmodule
+
+`default_nettype wire
+"""
+
+
+_DEFAULT_GENERATED_BY_SIM = "dau_build.scan_composition.generate_scan_composition_sim_sv"
+
+
+def generate_scan_composition_sim_sv(
+    composition: ScanComposition,
+    *,
+    module_name: str | None = None,
+    mem_words: int = 65536,
+    read_latency: int = 4,
+    config_inputs: dict[str, int] | None = None,
+    sources: Sequence[Path | str] | None = None,
+    generated_by: str = _DEFAULT_GENERATED_BY_SIM,
+) -> str:
+    """Walk the same ``ScanComposition`` into its JOB-level simulation
+    harness: the pipeline the shell top wires (burst reader -> fan-out ->
+    per-lane optional partition filter -> tile -> record writer -> write
+    mux) closed by a backdoor-loaded ``dau_axi_ram_sim`` instead of an
+    external M_AXI, and driven by the job-level control surface (start /
+    input window / per-lane output addresses / busy / done / first-error
+    status) instead of the AXI-Lite register aperture — the shape of the
+    hand-written ``*_noc_sim.sv`` tops.
+
+    ``config_inputs`` maps extra top-level input ports (name -> bit width)
+    onto the harness so tile config bindings can reference testbench-driven
+    signals (the shared partitioner's splitters, typically) instead of
+    literals. ``module_name`` defaults to the composition's shell module
+    name with a ``_sim`` suffix; ``mem_words``/``read_latency`` parameterize
+    the backdoor RAM. ``sources`` arms the same slang-backed interface
+    validation as the shell walker."""
+    if sources is not None:
+        _validate_against_sources(composition, sources)
+    addr_width = composition.addr_width
+    burst_beats = composition.burst_beats
+    num_lanes = len(composition.lanes)
+    lanes = range(num_lanes)
+    name = module_name if module_name is not None else f"{composition.module_name}_sim"
+    config_input_ports = "".join(f"    input wire [{width - 1}:0] {port},\n" for port, width in (config_inputs or {}).items())
+    lane_port_taps = "\n".join(
+        f"""    wire [{addr_width - 1}:0] lane_output_address_{i} = lane_output_address[{addr_width * (i + 1) - 1}:{addr_width * i}];
+    assign lane_result_length_bytes[{32 * (i + 1) - 1}:{32 * i}] = lane_result_length_{i};
+    assign lane_count[{64 * (i + 1) - 1}:{64 * i}] = lane_bar_count_{i};"""
+        for i in lanes
+    )
+    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="clk")
+    lane_instances = _lane_units_sv(composition, clk="clk", writer_rst="rst")
+    all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
+    any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
+    error_priority = _writer_error_priority_sv(num_lanes, error="error", error_code="error_code")
+    lane_count_clears = "\n".join(f"            lane_bar_count_{i} <= 64'd0;" for i in lanes)
+    lane_count_start_clears = "\n".join(f"                lane_bar_count_{i} <= 64'd0;" for i in lanes)
+    lane_count_latches = "\n".join(
+        f"""            if (tile_status_valid_{i} && tile_status_ready_{i}) begin
+                lane_bar_count_{i} <= tile_bar_count_{i};
+            end"""
+        for i in lanes
+    )
+
+    return f"""`default_nettype none
+
+// GENERATED by {generated_by} — do not
+// edit. Scan-composition sim harness {composition.name}: the pipeline the
+// shell top wires — one scan fanned to {num_lanes} lane(s) through the shared
+// write mux — behind the job-level control surface and closed by the
+// backdoor AXI RAM standing in for the platform memory.
+module {name} (
+    input wire clk,
+    input wire rst,
+
+    input wire start,
+    input wire [{addr_width - 1}:0] input_address,
+    input wire [31:0] input_length_bytes,
+{config_input_ports}    input wire [{num_lanes * addr_width - 1}:0] lane_output_address,
+    output wire busy,
+    output wire done,
+    output reg error,
+    output reg [7:0] error_code,
+    output wire [{num_lanes * 32 - 1}:0] lane_result_length_bytes,
+    output wire [{num_lanes * 64 - 1}:0] lane_count,
+
+    input wire bd_write,
+    input wire [31:0] bd_index,
+    input wire [63:0] bd_wdata,
+    output wire [63:0] bd_rdata
+);
+    wire reader_busy;
+    wire reader_done;
+    wire reader_error;
+    wire [7:0] reader_error_code;
+    wire [{addr_width - 1}:0] rd_araddr;
+    wire [7:0] rd_arlen;
+    wire [2:0] rd_arsize;
+    wire [1:0] rd_arburst;
+    wire rd_arvalid;
+    wire rd_arready;
+    wire [63:0] rd_rdata;
+    wire [1:0] rd_rresp;
+    wire rd_rlast;
+    wire rd_rvalid;
+    wire rd_rready;
+    wire scan_valid;
+    wire scan_ready;
+    wire [63:0] scan_data;
+    wire scan_last;
+{fanout_wire_decls}
+{_wr_flat_decls_sv(composition)}
+    wire [{addr_width - 1}:0] mx_awaddr;
+    wire [7:0] mx_awlen;
+    wire [2:0] mx_awsize;
+    wire [1:0] mx_awburst;
+    wire mx_awvalid;
+    wire mx_awready;
+    wire [63:0] mx_wdata;
+    wire [7:0] mx_wstrb;
+    wire mx_wlast;
+    wire mx_wvalid;
+    wire mx_wready;
+    wire [1:0] mx_bresp;
+    wire mx_bvalid;
+    wire mx_bready;
+{_lane_wire_decls_sv(composition)}
+
+{lane_port_taps}
+
+    // recover mid-stream lanes after an error before the next job
+    reg prev_done;
+    reg pipeline_error_reset;
+    wire lane_rst = rst || pipeline_error_reset;
+
+    // the 16-byte row grid is enforced before any unit starts: a rejected
+    // length must not leave the writers waiting on a status
+    reg length_fail;
+    wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[3:0] == 4'd0);
+    wire unit_start = start && length_ok;
+
+    assign busy = reader_busy || {any_writer_busy};
+    assign done = length_fail || (reader_done && {all_writers_done});
+
+    always @(*) begin
+        if (length_fail) begin
+            error = 1'b1;
+            error_code = 8'hFE;
+        end else begin
+            if (reader_error) begin
+                error = 1'b1;
+                error_code = reader_error_code;
+{error_priority}
+            end else begin
+                error = 1'b0;
+                error_code = 8'd0;
+            end
+        end
+    end
+
+    dau_axi_burst_reader #(
+        .ADDR_WIDTH({addr_width}),
+        .BURST_BEATS({burst_beats}),
+        .LENGTH_ALIGN_BITS(4)
+    ) reader (
+        .clk(clk),
+        .rst(rst),
+        .start(unit_start),
+        .read_address(input_address),
+        .read_length_bytes(input_length_bytes),
+        .busy(reader_busy),
+        .done(reader_done),
+        .error(reader_error),
+        .error_code(reader_error_code),
+        .m_axi_araddr(rd_araddr),
+        .m_axi_arlen(rd_arlen),
+        .m_axi_arsize(rd_arsize),
+        .m_axi_arburst(rd_arburst),
+        .m_axi_arvalid(rd_arvalid),
+        .m_axi_arready(rd_arready),
+        .m_axi_rdata(rd_rdata),
+        .m_axi_rresp(rd_rresp),
+        .m_axi_rlast(rd_rlast),
+        .m_axi_rvalid(rd_rvalid),
+        .m_axi_rready(rd_rready),
+        .stream_valid(scan_valid),
+        .stream_ready(scan_ready),
+        .stream_data(scan_data),
+        .stream_last(scan_last),
+        // boundary debug taps (BAR-mapped on hardware; unused in this sim)
+        .dbg_first_stream_word(),
+        .dbg_first_araddr(),
+        .dbg_beats_while_idle(),
+        .dbg_final_fifo_count()
+    );
+
+{fanout_instance}
+
+{lane_instances}
+
+{_lane_flat_assigns_sv(composition)}
+
+    dau_axi_write_mux #(
+        .NUM_INPUTS({num_lanes}),
+        .ADDR_WIDTH({addr_width})
+    ) write_mux (
+        .clk(clk),
+        .rst(rst),
+        .s_awaddr(wr_awaddr_flat),
+        .s_awlen(wr_awlen_flat),
+        .s_awvalid(wr_awvalid_flat),
+        .s_awready(wr_awready_flat),
+        .s_wdata(wr_wdata_flat),
+        .s_wlast(wr_wlast_flat),
+        .s_wvalid(wr_wvalid_flat),
+        .s_wready(wr_wready_flat),
+        .s_bresp(wr_bresp),
+        .s_bvalid(wr_bvalid_flat),
+        .s_bready(wr_bready_flat),
+        .m_axi_awaddr(mx_awaddr),
+        .m_axi_awlen(mx_awlen),
+        .m_axi_awsize(mx_awsize),
+        .m_axi_awburst(mx_awburst),
+        .m_axi_awvalid(mx_awvalid),
+        .m_axi_awready(mx_awready),
+        .m_axi_wdata(mx_wdata),
+        .m_axi_wstrb(mx_wstrb),
+        .m_axi_wlast(mx_wlast),
+        .m_axi_wvalid(mx_wvalid),
+        .m_axi_wready(mx_wready),
+        .m_axi_bresp(mx_bresp),
+        .m_axi_bvalid(mx_bvalid),
+        .m_axi_bready(mx_bready)
+    );
+
+    dau_axi_ram_sim #(
+        .ADDR_WIDTH({addr_width}),
+        .MEM_WORDS({mem_words}),
+        .READ_LATENCY({read_latency})
+    ) ram (
+        .clk(clk),
+        .rst(rst),
+        .s_axi_araddr(rd_araddr),
+        .s_axi_arlen(rd_arlen),
+        .s_axi_arsize(rd_arsize),
+        .s_axi_arburst(rd_arburst),
+        .s_axi_arvalid(rd_arvalid),
+        .s_axi_arready(rd_arready),
+        .s_axi_rdata(rd_rdata),
+        .s_axi_rresp(rd_rresp),
+        .s_axi_rlast(rd_rlast),
+        .s_axi_rvalid(rd_rvalid),
+        .s_axi_rready(rd_rready),
+        .s_axi_awaddr(mx_awaddr),
+        .s_axi_awlen(mx_awlen),
+        .s_axi_awsize(mx_awsize),
+        .s_axi_awburst(mx_awburst),
+        .s_axi_awvalid(mx_awvalid),
+        .s_axi_awready(mx_awready),
+        .s_axi_wdata(mx_wdata),
+        .s_axi_wstrb(mx_wstrb),
+        .s_axi_wlast(mx_wlast),
+        .s_axi_wvalid(mx_wvalid),
+        .s_axi_wready(mx_wready),
+        .s_axi_bresp(mx_bresp),
+        .s_axi_bvalid(mx_bvalid),
+        .s_axi_bready(mx_bready),
+        .bd_write(bd_write),
+        .bd_index(bd_index),
+        .bd_wdata(bd_wdata),
+        .bd_rdata(bd_rdata)
+    );
+
+    always @(posedge clk) begin
+        if (rst) begin
+            prev_done <= 1'b1;
+            pipeline_error_reset <= 1'b0;
+            length_fail <= 1'b0;
+{lane_count_clears}
+        end else begin
+            prev_done <= done;
+            pipeline_error_reset <= done && !prev_done && error;
+            if (start) begin
+                length_fail <= !length_ok;
+{lane_count_start_clears}
+            end
+{lane_count_latches}
+        end
+    end
 endmodule
 
 `default_nettype wire
