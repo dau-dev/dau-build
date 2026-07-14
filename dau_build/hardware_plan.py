@@ -124,10 +124,10 @@ def local_build_and_program_plan(
     config: HardwareToolchainConfig,
     *,
     dau_core_root: Path,
-    dau_driver_root: Path,
     source_shell_root: Path | None = None,
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl"),
     dau_utils_root: Path | None = None,
+    smoke_command: str | None = None,
     python: str = "python3",
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
 ) -> tuple[ToolStep, ...]:
@@ -149,7 +149,7 @@ def local_build_and_program_plan(
         program_volatile_step(config),
         pci_rescan_step(),
         lspci_endpoint_step(config),
-        driver_hardware_smoke_step(dau_core_root=dau_core_root, dau_driver_root=dau_driver_root, python=python),
+        *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
     )
 
@@ -283,8 +283,7 @@ def stage_shell_plan(
 def validate_bitstream_plan(
     config: HardwareToolchainConfig,
     *,
-    dau_core_root: Path,
-    dau_driver_root: Path,
+    smoke_command: str | None = None,
     dau_utils_root: Path | None = None,
     python: str = "python3",
 ) -> tuple[ToolStep, ...]:
@@ -295,7 +294,7 @@ def validate_bitstream_plan(
         program_volatile_step(config),
         pci_rescan_step(),
         lspci_endpoint_step(config),
-        driver_hardware_smoke_step(dau_core_root=dau_core_root, dau_driver_root=dau_driver_root, python=python),
+        *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
     )
 
@@ -447,10 +446,16 @@ def validate_vivado_artifacts_step(
     return ToolStep("validate-vivado-artifacts", tuple(argv))
 
 
-def driver_hardware_smoke_step(*, dau_core_root: Path, dau_driver_root: Path, python: str) -> ToolStep:
-    pythonpath = f"{dau_core_root}:{dau_driver_root}"
-    script = f"PYTHONPATH={shlex.quote(pythonpath)} {shlex.join((python, '-c', _driver_hardware_smoke_code()))}"
-    return ToolStep("driver-hardware-smoke", ("sh", "-c", script))
+def hardware_smoke_step(smoke_command: str) -> ToolStep:
+    """A post-programming smoke check supplied by the caller. dau-build is
+    public and never imports the private DAU packages, so it carries no smoke
+    payload of its own — inject one (e.g. from a private config overlay) via
+    the plan's ``smoke_command`` field."""
+    return ToolStep("driver-hardware-smoke", ("sh", "-c", smoke_command))
+
+
+def _smoke_steps(smoke_command: str | None) -> tuple[ToolStep, ...]:
+    return () if smoke_command is None else (hardware_smoke_step(smoke_command),)
 
 
 def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path) -> ToolStep:
@@ -511,23 +516,6 @@ def _runtime_pm_argv(config: HardwareToolchainConfig, mode: str) -> tuple[str, .
     for pattern in config.runtime_pm_patterns:
         argv.extend(("--pattern", pattern))
     return tuple(argv)
-
-
-def _driver_hardware_smoke_code() -> str:
-    return "; ".join(
-        (
-            "from pathlib import Path",
-            "from dau_core.registers import DAU_MAGIC_WORD, RegisterOffset",
-            "from dau_driver import discover_devices",
-            "devices = discover_devices(Path('/dev'))",
-            "assert devices, 'expected at least one DAU XDMA device'",
-            "device = devices[0]",
-            "assert device.read_register(RegisterOffset.MAGIC) == DAU_MAGIC_WORD",
-            "snapshot = device.read_register_block_snapshot()",
-            "assert snapshot.platform_id",
-            "print('DAU_SMOKE_OK', device.name, snapshot.platform_id)",
-        )
-    )
 
 
 def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequence[str] = PCI_RESCAN_BDFS) -> str:
@@ -664,16 +652,14 @@ class FlashPlan(HardwarePlan):
 
 class ValidateBitstreamPlan(HardwarePlan):
     name: str = "validate-bitstream"
-    dau_core_root: Path
-    dau_driver_root: Path
+    smoke_command: str | None = None
     dau_utils_root: Path | None = None
     python: str = "python3"
 
     def compose(self, config):
         return validate_bitstream_plan(
             config,
-            dau_core_root=self.dau_core_root,
-            dau_driver_root=self.dau_driver_root,
+            smoke_command=self.smoke_command,
             dau_utils_root=self.dau_utils_root,
             python=self.python,
         )
@@ -682,10 +668,10 @@ class ValidateBitstreamPlan(HardwarePlan):
 class LocalBuildAndProgramPlan(HardwarePlan):
     name: str = "local-build-and-program"
     dau_core_root: Path
-    dau_driver_root: Path
     source_shell_root: Path | None = None
     dau_utils_root: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
+    smoke_command: str | None = None
     python: str = "python3"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
 
@@ -693,10 +679,10 @@ class LocalBuildAndProgramPlan(HardwarePlan):
         return local_build_and_program_plan(
             config,
             dau_core_root=self.dau_core_root,
-            dau_driver_root=self.dau_driver_root,
             source_shell_root=self.source_shell_root,
             dau_utils_root=self.dau_utils_root,
             overlay_tcl=self.overlay_tcl,
+            smoke_command=self.smoke_command,
             python=self.python,
             vivado_settings=self.vivado_settings,
         )

@@ -92,6 +92,14 @@ def test_hardware_plan_source_fixtures_do_not_embed_local_hardware_paths() -> No
     assert leaks == []
 
 
+def test_hardware_plan_module_emits_no_private_package_imports() -> None:
+    # dau-build is public: the smoke payload is injected via `smoke_command`,
+    # never hardcoded here as dau_core/dau_driver imports
+    source = Path(hardware_plan.__file__).read_text()
+    for fragment in ("from dau_core", "import dau_core", "from dau_driver", "import dau_driver"):
+        assert fragment not in source
+
+
 def _decode_write_text_step_source(step) -> str:
     tokens = shlex.split(step.argv[2])
     payload = tokens[tokens.index("%s") + 1]
@@ -700,13 +708,13 @@ def test_task_prints_thunderbolt_release_plan() -> None:
     assert lines[0] == "thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
 
 
-def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_smoke() -> None:
+def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_smoke() -> None:
     config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(
         config,
         dau_core_root=Path("/repo/dau-core"),
-        dau_driver_root=Path("/repo/dau-driver"),
+        smoke_command="dau-smoke",
     )
 
     assert [step.name for step in steps] == [
@@ -734,10 +742,26 @@ def test_local_build_and_program_plan_stages_overlay_programs_and_runs_hardware_
     assert "scripts/build.tcl" not in steps[3].argv[2]
     assert EXPECTED_PCI_RESCAN_SCRIPT in steps[7].argv[2]
     assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in steps[8].argv[2]
-    assert steps[9].argv[0] == "sh"
-    assert "PYTHONPATH=/repo/dau-core:/repo/dau-driver python3 -c" in steps[9].argv[2]
-    assert "discover_devices" in steps[9].argv[2]
-    assert "DAU_MAGIC_WORD" in steps[9].argv[2]
+    assert steps[9].argv == ("sh", "-c", "dau-smoke")
+
+
+def test_local_build_and_program_plan_omits_smoke_step_without_a_command() -> None:
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
+
+    steps = local_build_and_program_plan(config, dau_core_root=Path("/repo/dau-core"))
+
+    assert [step.name for step in steps] == [
+        "thunderbolt-hold",
+        "write-dau-overlay",
+        "write-vivado-build-script",
+        "vivado-overlay-build",
+        "jtag-detect",
+        "remove-endpoint",
+        "program-volatile",
+        "pci-rescan",
+        "lspci-endpoint",
+        "thunderbolt-release",
+    ]
 
 
 def test_local_build_and_program_plan_can_stage_shell_seed_before_overlay() -> None:
@@ -747,7 +771,6 @@ def test_local_build_and_program_plan_can_stage_shell_seed_before_overlay() -> N
         config,
         source_shell_root=Path("/repo/reference/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
-        dau_driver_root=Path("/repo/dau-driver"),
     )
 
     assert [step.name for step in steps][0:5] == [
@@ -770,11 +793,7 @@ def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() ->
         vivado_executable="vivado",
     )
 
-    steps = validate_bitstream_plan(
-        config,
-        dau_core_root=Path("/repo/dau-core"),
-        dau_driver_root=Path("/repo/dau-driver"),
-    )
+    steps = validate_bitstream_plan(config, smoke_command="dau-smoke")
 
     assert [step.name for step in steps] == [
         "thunderbolt-hold",
@@ -787,9 +806,26 @@ def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() ->
         "thunderbolt-release",
     ]
     assert steps[3].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/vivado-shell/artifacts/candidate.bit")
+    assert steps[6].argv == ("sh", "-c", "dau-smoke")
     assert all(step.name != "vivado-overlay-build" for step in steps)
     assert all(step.argv[0] != "vivado" for step in steps)
     assert all("dau_overlay" not in step.command_line for step in steps)
+
+
+def test_validate_bitstream_plan_omits_smoke_step_without_a_command() -> None:
+    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
+
+    steps = validate_bitstream_plan(config)
+
+    assert [step.name for step in steps] == [
+        "thunderbolt-hold",
+        "jtag-detect",
+        "remove-endpoint",
+        "program-volatile",
+        "pci-rescan",
+        "lspci-endpoint",
+        "thunderbolt-release",
+    ]
 
 
 def test_stage_vivado_overlay_plan_writes_backend_artifacts_without_running_vivado() -> None:
@@ -959,13 +995,12 @@ def test_task_local_build_can_stage_shell_before_overlay() -> None:
         plan_fields=[
             "plan.source_shell_root=/repo/reference/vivado-shell",
             "plan.dau_core_root=/repo/dau-core",
-            "plan.dau_driver_root=/repo/dau-driver",
         ],
         work_root="/repo/dau-build/outputs/vivado",
     )
 
     lines = result.message.splitlines()
-    assert len(lines) == 12
+    assert len(lines) == 11
     assert lines[0].startswith("stage-shell\tsh -c ")
     assert lines[2].startswith("write-dau-overlay\tsh -c ")
     assert lines[3].startswith("write-vivado-build-script\tsh -c ")
@@ -974,7 +1009,7 @@ def test_task_local_build_can_stage_shell_before_overlay() -> None:
 def test_task_prints_local_build_and_program_plan() -> None:
     result = _run_plan(
         "local-build-and-program",
-        plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+        plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.smoke_command=dau-smoke"],
         work_root="/repo/projects/vivado-shell",
     )
 
@@ -984,14 +1019,14 @@ def test_task_prints_local_build_and_program_plan() -> None:
     assert lines[1].startswith("write-dau-overlay\tsh -c ")
     assert lines[2].startswith("write-vivado-build-script\tsh -c ")
     assert lines[3].startswith("vivado-overlay-build\tbash -lc ")
-    assert lines[9].startswith("driver-hardware-smoke\tsh -c ")
+    assert lines[9] == "driver-hardware-smoke\tsh -c dau-smoke"
     assert lines[10].startswith("thunderbolt-release\tdau-pci-runtime-pm release ")
 
 
 def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
     result = _run_plan(
         "validate-bitstream",
-        plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+        plan_fields=["plan.smoke_command=dau-smoke"],
         work_root="/repo/projects/vivado-shell",
         bitstream="/tmp/candidate.bit",
     )
@@ -1000,7 +1035,7 @@ def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
     assert len(lines) == 8
     assert lines[0].startswith("thunderbolt-hold\tdau-pci-runtime-pm hold ")
     assert lines[3] == "program-volatile\topenFPGALoader -c digilent_hs2 /tmp/candidate.bit"
-    assert lines[6].startswith("driver-hardware-smoke\tsh -c ")
+    assert lines[6] == "driver-hardware-smoke\tsh -c dau-smoke"
     assert lines[7].startswith("thunderbolt-release\tdau-pci-runtime-pm release ")
     assert all("vivado" not in line.lower() for line in lines)
 
@@ -1052,7 +1087,7 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
     with pytest.raises(BuildStepError, match="exit code 23"):
         _run_plan(
             "local-build-and-program",
-            plan_fields=["plan.dau_core_root=/repo/dau-core", "plan.dau_driver_root=/repo/dau-driver"],
+            plan_fields=["plan.dau_core_root=/repo/dau-core"],
             work_root="/repo/projects/vivado-shell",
             execute=True,
         )

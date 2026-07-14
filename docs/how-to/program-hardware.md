@@ -6,8 +6,8 @@ covers the three situations you hit most: programming a fresh build, validating
 an already-built bitstream, and recovering a device that a bad image has wedged.
 
 `hardware-plan` composes an ordered sequence of hardware-session steps — JTAG
-detect, endpoint remove, program, PCIe rescan, endpoint check, driver smoke — and
-runs them in the order the board actually needs. Like the build tasks it is
+detect, endpoint remove, program, PCIe rescan, endpoint check, optional injected
+smoke command — and runs them in the order the board actually needs. Like the build tasks it is
 plan-first: without `execute=true` it prints the plan; with it, it runs on the
 host. Run these on the machine physically attached to the board.
 
@@ -34,7 +34,6 @@ dau-build task=tasks/hardware/hardware-plan \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
-  plan.dau_driver_root=/path/to/dau-driver \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado
 ```
@@ -52,7 +51,6 @@ dau-build task=tasks/hardware/hardware-plan \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
-  plan.dau_driver_root=/path/to/dau-driver \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
   model.execute=true
@@ -61,9 +59,15 @@ dau-build task=tasks/hardware/hardware-plan \
 The plan holds runtime power management, writes the overlay/build Tcl, runs the
 Vivado build, detects the JTAG chain, removes the stale endpoint, programs the
 volatile bitstream, performs the ordered bridge-then-global PCIe rescan, retries
-the endpoint check, runs the dependency-free driver smoke (which asserts the DAU
-magic register and prints `DAU_SMOKE_OK`), and finally releases power management.
-If any step fails, the release step still runs.
+the endpoint check, runs the injected smoke command (if one is configured), and
+finally releases power management. If any step fails, the release step still
+runs.
+
+The smoke step is injectable: `plan.smoke_command=<command>` runs after the
+endpoint check, and the plan omits the step when no command is configured.
+dau-build itself ships no smoke payload — the DAU driver smoke (which asserts
+the DAU magic register and prints `DAU_SMOKE_OK`) is injected by the private
+`dau` package's config overlay.
 
 If you already have a bitstream and only want to program it, use
 `plan=plans/build-and-program` with `model.bitstream=<path>` instead — it skips
@@ -77,8 +81,6 @@ building anything, use `validate-bitstream`:
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
   plan=plans/validate-bitstream \
-  plan.dau_core_root=/path/to/dau-core \
-  plan.dau_driver_root=/path/to/dau-driver \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
   model.bitstream=/path/to/Top_wrapper.bit \

@@ -2,7 +2,7 @@
 
 _target_: dau_build.build_steps.HardwarePlanTask
 # the plan is the composed plan group; select+configure with
-# plan=plans/local-build-and-program plan.dau_core_root=... plan.dau_driver_root=...
+# plan=plans/local-build-and-program plan.dau_core_root=... plan.smoke_command=...
 plan: ${oc.select:plan,null}
 work_root: ???
 bitstream: null
