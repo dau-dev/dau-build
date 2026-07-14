@@ -250,8 +250,8 @@ XC7A200T reached over a PCIe/Thunderbolt link) using the <code class="docutils l
 covers the three situations you hit most: programming a fresh build, validating
 an already-built bitstream, and recovering a device that a bad image has wedged.</p>
 <p><code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> composes an ordered sequence of hardware-session steps — JTAG
-detect, endpoint remove, program, PCIe rescan, endpoint check, driver smoke — and
-runs them in the order the board actually needs. Like the build tasks it is
+detect, endpoint remove, program, PCIe rescan, endpoint check, optional injected
+smoke command — and runs them in the order the board actually needs. Like the build tasks it is
 plan-first: without <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> it prints the plan; with it, it runs on the
 host. Run these on the machine physically attached to the board.</p>
 <p>The named plans are <code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code>, <code class="docutils literal notranslate"><span class="pre">build-and-program</span></code>,
@@ -274,7 +274,6 @@ ordered steps without touching the board:</p>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>plan.dau_driver_root<span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado
 </pre></div>
@@ -290,7 +289,6 @@ programs and verifies the device. Add <code class="docutils literal notranslate"
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>plan.dau_driver_root<span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
@@ -299,9 +297,14 @@ programs and verifies the device. Add <code class="docutils literal notranslate"
 <p>The plan holds runtime power management, writes the overlay/build Tcl, runs the
 Vivado build, detects the JTAG chain, removes the stale endpoint, programs the
 volatile bitstream, performs the ordered bridge-then-global PCIe rescan, retries
-the endpoint check, runs the dependency-free driver smoke (which asserts the DAU
-magic register and prints <code class="docutils literal notranslate"><span class="pre">DAU_SMOKE_OK</span></code>), and finally releases power management.
-If any step fails, the release step still runs.</p>
+the endpoint check, runs the injected smoke command (if one is configured), and
+finally releases power management. If any step fails, the release step still
+runs.</p>
+<p>The smoke step is injectable: <code class="docutils literal notranslate"><span class="pre">plan.smoke_command=&lt;command&gt;</span></code> runs after the
+endpoint check, and the plan omits the step when no command is configured.
+dau-build itself ships no smoke payload — the DAU driver smoke (which asserts
+the DAU magic register and prints <code class="docutils literal notranslate"><span class="pre">DAU_SMOKE_OK</span></code>) is injected by the private
+<code class="docutils literal notranslate"><span class="pre">dau</span></code> package’s config overlay.</p>
 <p>If you already have a bitstream and only want to program it, use
 <code class="docutils literal notranslate"><span class="pre">plan=plans/build-and-program</span></code> with <code class="docutils literal notranslate"><span class="pre">model.bitstream=&lt;path&gt;</span></code> instead — it skips
 staging and the Vivado build.</p>
@@ -312,8 +315,6 @@ staging and the Vivado build.</p>
 building anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>plan.dau_driver_root<span class="o">=</span>/path/to/dau-driver<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.bitstream<span class="o">=</span>/path/to/Top_wrapper.bit<span class="w"> </span><span class="se">\</span>
