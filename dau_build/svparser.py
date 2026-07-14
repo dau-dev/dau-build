@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -75,12 +76,81 @@ __all__ = (
 Keyword = Literal["bit", "wire", "logic", "reg"]
 
 
+def _sv_clog2(value) -> int:
+    """SystemVerilog $clog2: $clog2(1) == 0, $clog2(2) == 1, $clog2(16) == 4."""
+    value = int(value)
+    if value <= 1:
+        return 0
+    return (value - 1).bit_length()
+
+
+def _translate_sv_expr(text: str) -> str:
+    """Translate SV constant-expression constructs into python-evaluatable text."""
+    text = text.replace("$clog2", "clog2")
+    text = text.replace("&&", " and ").replace("||", " or ")
+    text = re.sub(r"!(?!=)", " not ", text)
+    return _translate_ternaries(text)
+
+
+def _translate_ternaries(text: str) -> str:
+    """Rewrite SV ternaries `a ? b : c` as python `(b) if (a) else (c)`, recursing into parentheses."""
+    depth = 0
+    question = -1
+    for i, ch in enumerate(text):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "?" and depth == 0:
+            question = i
+            break
+    if question >= 0:
+        depth = 0
+        pending = 0
+        for j in range(question + 1, len(text)):
+            ch = text[j]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "?" and depth == 0:
+                pending += 1
+            elif ch == ":" and depth == 0:
+                if pending == 0:
+                    condition = _translate_ternaries(text[:question])
+                    if_true = _translate_ternaries(text[question + 1 : j])
+                    if_false = _translate_ternaries(text[j + 1 :])
+                    return f"(({if_true}) if ({condition}) else ({if_false}))"
+                pending -= 1
+        return text
+    # no top-level ternary: recurse into parenthesized subexpressions
+    parts = []
+    i = 0
+    while i < len(text):
+        if text[i] == "(":
+            depth = 1
+            j = i + 1
+            while j < len(text) and depth:
+                if text[j] == "(":
+                    depth += 1
+                elif text[j] == ")":
+                    depth -= 1
+                j += 1
+            parts.append("(" + _translate_ternaries(text[i + 1 : j - 1]) + ")")
+            i = j
+        else:
+            parts.append(text[i])
+            i += 1
+    return "".join(parts)
+
+
 class Size(BaseModel):
     width: int
 
 
 class Dimensions(BaseModel):
     dimensions: list[int] = Field(default_factory=list)
+    resolved: bool = Field(default=True, description="False when a dimension expression could not be evaluated; size() falls back to 1")
 
     @property
     def unresolved(self) -> bool:
@@ -96,6 +166,10 @@ class Dimensions(BaseModel):
             return "?"
 
     def size(self) -> int:
+        if not self.resolved:
+            # unresolvable dimension expression: fall back to a single bit so
+            # amaranth In/Out sizing stays legal
+            return 1
         if len(self.dimensions) == 1:
             return self.dimensions[0]
         elif len(self.dimensions) == 2:
@@ -307,9 +381,16 @@ class Module(_Base):
     @classmethod
     def from_str(cls, st: str) -> Module:
         tree = SyntaxTree.fromText(st)
-        if tree.root.kind == SyntaxKind.InterfaceDeclaration:
-            return Interface(name=tree.root.header.name.value, node=tree.root)
-        return Module(name=tree.root.header.name.value, node=tree.root)
+        root = tree.root
+        if root.kind == SyntaxKind.CompilationUnit:
+            # multi-module file: take the last module/interface declaration (the top)
+            declarations = [member for member in root.members if member.kind in (SyntaxKind.ModuleDeclaration, SyntaxKind.InterfaceDeclaration)]
+            if not declarations:
+                raise ValueError("no module or interface declaration found")
+            root = declarations[-1]
+        if root.kind == SyntaxKind.InterfaceDeclaration:
+            return Interface(name=root.header.name.value, node=root)
+        return Module(name=root.header.name.value, node=root)
 
     def to_string(self, indent=""):
         ret = f"\n{indent}{self.__class__.__name__}({self.name})"
@@ -365,6 +446,7 @@ class Module(_Base):
             return self
 
         self._parse_params()
+        self._parse_localparams()
         self._parse_ports()
         self._parse_modules()
         self._parse_modports()
@@ -407,21 +489,49 @@ class Module(_Base):
                 if hasattr(child, "declarators"):
                     yield child
 
-    def _eval_dim_expr(self, expr) -> int:
-        """Evaluate a dimension expression using known parameters."""
-        return int(eval(str(expr), {p.name: p.value for p in self.parameters}))
+    def _eval_dim_expr(self, expr) -> Optional[int]:
+        """Evaluate a dimension expression using known parameters and localparams, None if unresolvable."""
+        namespace = {"clog2": _sv_clog2}
+        namespace.update({p.name: p.value for p in self.parameters})
+        namespace.update(getattr(self, "__localparams__", {}))
+        try:
+            return int(eval(_translate_sv_expr(str(expr)), {"__builtins__": {}}, namespace))
+        except Exception:
+            return None
 
-    def _parse_dimensions(self, type_node) -> list[int]:
+    def _parse_localparams(self):
+        """Collect body localparam/parameter values for use in dimension expressions.
+
+        Evaluated in declaration order so later localparams can reference earlier
+        ones (and header parameters, e.g. `localparam IDXW = $clog2(CAPACITY)`).
+        Declarations that cannot be evaluated (non-constant initializers,
+        unsupported syntax) are skipped; dimensions depending on them fall back
+        to unresolved.
+        """
+        self.__localparams__ = {}
+        for member in self.node.members:
+            if getattr(member, "kind", None) != SyntaxKind.ParameterDeclarationStatement:
+                continue
+            for declarator in getattr(member.parameter, "declarators", []):
+                if declarator.initializer is None:
+                    continue
+                value = self._eval_dim_expr(declarator.initializer[1])
+                if value is not None:
+                    self.__localparams__[declarator.name.value] = value
+
+    def _parse_dimensions(self, type_node) -> Dimensions:
         """Parse packed dimensions from a type node."""
         if type_node.dimensions:
             if len(type_node.dimensions) == 1:
-                left = type_node.dimensions[0].specifier[0][0]
-                right = type_node.dimensions[0].specifier[0][2]
-                return [self._eval_dim_expr(left), self._eval_dim_expr(right)]
+                left = self._eval_dim_expr(type_node.dimensions[0].specifier[0][0])
+                right = self._eval_dim_expr(type_node.dimensions[0].specifier[0][2])
+                if left is None or right is None:
+                    return Dimensions(resolved=False)
+                return Dimensions(dimensions=[left, right])
             else:
                 # TODO: multi-dimensional
-                return [1]
-        return [1]
+                return Dimensions(dimensions=[1])
+        return Dimensions(dimensions=[1])
 
     @staticmethod
     def _keyword_from_kind(kind) -> str:
@@ -456,7 +566,7 @@ class Module(_Base):
                                 Input(
                                     name=declarator,
                                     keyword=keyword,
-                                    dimensions=Dimensions(dimensions=dimensions),
+                                    dimensions=dimensions,
                                     node=port,
                                 )
                             )
@@ -465,7 +575,7 @@ class Module(_Base):
                                 Output(
                                     name=declarator,
                                     keyword=keyword,
-                                    dimensions=Dimensions(dimensions=dimensions),
+                                    dimensions=dimensions,
                                     node=port,
                                 )
                             )
@@ -474,7 +584,7 @@ class Module(_Base):
                                 Inout(
                                     name=declarator,
                                     keyword=keyword,
-                                    dimensions=Dimensions(dimensions=dimensions),
+                                    dimensions=dimensions,
                                     node=port,
                                 )
                             )
@@ -539,7 +649,7 @@ class Module(_Base):
                         Wire(
                             name=name,
                             keyword=keyword,
-                            dimensions=Dimensions(dimensions=dimensions),
+                            dimensions=dimensions,
                             unpacked_dimensions=unpacked,
                             body=str(member).strip(),
                         )
@@ -549,7 +659,7 @@ class Module(_Base):
                 try:
                     dimensions = self._parse_dimensions(member.type)
                 except Exception:
-                    dimensions = [1]
+                    dimensions = Dimensions(dimensions=[1])
                 for decl in member.declarators:
                     name = decl.name.value
                     unpacked = ""
@@ -559,7 +669,7 @@ class Module(_Base):
                         Wire(
                             name=name,
                             keyword=keyword,
-                            dimensions=Dimensions(dimensions=dimensions),
+                            dimensions=dimensions,
                             unpacked_dimensions=unpacked,
                             body=str(member).strip(),
                         )
@@ -661,7 +771,7 @@ class Module(_Base):
                     continue
                 keyword = self._keyword_from_kind(member.type.kind)
                 dimensions = self._parse_dimensions(member.type)
-                data_declarations[name] = (keyword, Dimensions(dimensions=dimensions))
+                data_declarations[name] = (keyword, dimensions)
 
         for member in self.node.members:
             if isinstance(member, ModportDeclarationSyntax):
