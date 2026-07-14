@@ -311,8 +311,11 @@ staging and the Vivado build.</p>
 </section>
 <section id="validate-an-already-built-bitstream">
 <h2>Validate an already-built bitstream<a class="headerlink" href="#validate-an-already-built-bitstream" title="Link to this heading">¶</a></h2>
-<p>To program a specific bitstream and run the full endpoint-and-smoke check without
-building anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>:</p>
+<p>To program a specific bitstream and run the endpoint check without building
+anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>. The driver smoke is injected, not built in:
+pass <code class="docutils literal notranslate"><span class="pre">plan.smoke_command=&lt;cmd&gt;</span></code> (or use a package-provided plan that injects
+one, e.g. the private dau package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>); with no
+command the plan ends at the endpoint check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>

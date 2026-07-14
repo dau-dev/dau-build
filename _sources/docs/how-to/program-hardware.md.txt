@@ -75,8 +75,11 @@ staging and the Vivado build.
 
 ## Validate an already-built bitstream
 
-To program a specific bitstream and run the full endpoint-and-smoke check without
-building anything, use `validate-bitstream`:
+To program a specific bitstream and run the endpoint check without building
+anything, use `validate-bitstream`. The driver smoke is injected, not built in:
+pass `plan.smoke_command=<cmd>` (or use a package-provided plan that injects
+one, e.g. the private dau package's `plans/dpv1-validate-bitstream`); with no
+command the plan ends at the endpoint check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
