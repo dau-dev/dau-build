@@ -179,8 +179,8 @@ pydantic enforces them, rather than a runtime check).
 | Option                          | Model                      | Extra fields                                                                                                                |
 | ------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `plans/build-and-program`       | `BuildAndProgramPlan`      | —                                                                                                                           |
-| `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root`, `dau_driver_root` (req), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `python`, `vivado_settings` |
-| `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `dau_core_root`, `dau_driver_root` (req), `dau_utils_root`, `python`                                                        |
+| `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root` (req), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `smoke_command`, `python`, `vivado_settings`   |
+| `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `smoke_command`, `dau_utils_root`, `python`                                                                                 |
 | `plans/flash`                   | `FlashPlan`                | `dau_utils_root`, `python`, `vivado_settings`                                                                               |
 | `plans/recovery`                | `RecoveryPlan`             | —                                                                                                                           |
 | `plans/thunderbolt-hold`        | `ThunderboltHoldPlan`      | —                                                                                                                           |
