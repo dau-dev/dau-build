@@ -276,3 +276,76 @@ class TestDesign:
         design = Design.from_files([_SV_DIR / "ff.sv"])
         s = str(design)
         assert "Design(1 modules)" in s
+
+
+class TestDimensionEval:
+    """Dimension expressions using body localparams, $clog2, and SV ternaries."""
+
+    _SORTER_LIKE = """
+module sorter #(
+    parameter int CAPACITY = 16
+) (
+    input  wire logic        clk,
+    input  wire logic [63:0] input_data,
+    output logic [IDXW-1:0]  sorted_index,
+    output logic [63:0]      output_data
+);
+    localparam logic [7:0] ERR_CAPACITY = 8'd3;
+    localparam int IDXW = $clog2(CAPACITY);
+    logic [IDXW-1:0]     load_count;
+    logic [CAPACITY-1:0] valid_mask;
+endmodule
+"""
+
+    _PARTITIONER_LIKE = """
+module partitioner #(
+    parameter int NUM_PARTITIONS = 4
+) (
+    input  wire logic clk,
+    input  wire logic [((NUM_PARTITIONS > 1) ? (NUM_PARTITIONS-1)*32 : 1)-1:0] cfg_splitters,
+    output logic [NUM_PARTITIONS*64-1:0] output_data
+);
+    localparam int PIDX_W = (NUM_PARTITIONS <= 1) ? 1 : $clog2(NUM_PARTITIONS);
+    logic [PIDX_W-1:0] dest;
+    logic [((NUM_PARTITIONS > 8) ? 8 : ((NUM_PARTITIONS > 2) ? 4 : 2))-1:0] nested;
+endmodule
+"""
+
+    _UNRESOLVABLE = """
+module mystery (
+    input  wire logic [UNKNOWN_WIDTH-1:0] data,
+    output logic                          done
+);
+endmodule
+"""
+
+    def test_localparam_clog2(self):
+        mod = Module.from_str(self._SORTER_LIKE)
+        sorted_index = next(o for o in mod.outputs if o.name == "sorted_index")
+        assert sorted_index.dimensions.resolved
+        assert sorted_index.dimensions.size() == 4
+        load_count = next(w for w in mod.wires if w.name == "load_count")
+        assert load_count.dimensions.size() == 4
+        valid_mask = next(w for w in mod.wires if w.name == "valid_mask")
+        assert valid_mask.dimensions.size() == 16
+
+    def test_ternary_port_width(self):
+        mod = Module.from_str(self._PARTITIONER_LIKE)
+        cfg_splitters = next(i for i in mod.inputs if i.name == "cfg_splitters")
+        assert cfg_splitters.dimensions.resolved
+        assert cfg_splitters.dimensions.size() == 96
+        output_data = next(o for o in mod.outputs if o.name == "output_data")
+        assert output_data.dimensions.size() == 256
+        dest = next(w for w in mod.wires if w.name == "dest")
+        assert dest.dimensions.size() == 2
+        nested = next(w for w in mod.wires if w.name == "nested")
+        assert nested.dimensions.size() == 4
+
+    def test_unresolvable_dimension_fallback(self):
+        mod = Module.from_str(self._UNRESOLVABLE)
+        data = next(i for i in mod.inputs if i.name == "data")
+        assert not data.dimensions.resolved
+        assert data.dimensions.size() == 1
+        done = next(o for o in mod.outputs if o.name == "done")
+        assert done.dimensions.resolved
+        assert done.dimensions.size() == 1
