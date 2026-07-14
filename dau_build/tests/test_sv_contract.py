@@ -102,3 +102,14 @@ def test_unknown_module_raises(tmp_path: Path) -> None:
     source = _write(tmp_path, _CONFORMING)
     with pytest.raises(StreamContractError, match="not found"):
         module_ports([source], "nope")
+
+
+def test_inherited_ansi_directions_resolve(tmp_path: Path) -> None:
+    source = _write(tmp_path, "module pair (input logic a, b, output logic c, d);\nendmodule\n")
+    assert module_ports([source], "pair") == {"a": "input", "b": "input", "c": "output", "d": "output"}
+
+
+def test_non_ansi_port_list_is_reported_explicitly(tmp_path: Path) -> None:
+    source = _write(tmp_path, "module old (a, b);\ninput a;\noutput b;\nendmodule\n")
+    with pytest.raises(StreamContractError, match="non-ANSI"):
+        module_ports([source], "old")

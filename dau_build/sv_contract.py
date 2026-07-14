@@ -49,7 +49,11 @@ class StreamContractError(ValueError):
 def module_ports(sources: Sequence[Path | str], module: str) -> dict[str, str]:
     """Parse ``sources`` with pyslang and return ``{port_name: direction}``
     for ``module``'s ANSI header ports (direction is ``input``/``output``/
-    ``inout``). Raises ``StreamContractError`` if the module is not found."""
+    ``inout``); a port that omits its direction inherits the previous port's
+    (ANSI semantics). Top-level modules only; the first definition of the
+    module across ``sources`` wins (duplicates are a compile error upstream).
+    Non-ANSI (1995-style) port lists are unsupported and reported explicitly.
+    Raises ``StreamContractError`` if the module is not found."""
     for source in sources:
         tree = SyntaxTree.fromFile(str(source))
         for member in tree.root.members:
@@ -61,12 +65,23 @@ def module_ports(sources: Sequence[Path | str], module: str) -> dict[str, str]:
             port_list = member.header.ports
             if port_list is None:
                 return ports
+            direction = ""
+            saw_non_ansi = False
             for port in port_list.ports:
                 if port.kind != SyntaxKind.ImplicitAnsiPort:
+                    saw_non_ansi = True
                     continue
-                # valueText strips leading trivia (comments/whitespace)
-                direction = port.header.direction.valueText
-                ports[port.declarator.name.value] = direction
+                # valueText strips leading trivia; an empty direction means
+                # the port inherits the previous port's (ANSI semantics)
+                declared = port.header.direction.valueText
+                if declared:
+                    direction = declared
+                name = port.declarator.name.value
+                if name in ports:
+                    raise StreamContractError(f"module {module!r} declares port {name!r} more than once")
+                ports[name] = direction
+            if saw_non_ansi and not ports:
+                raise StreamContractError(f"module {module!r} uses a non-ANSI (1995-style) port list; unsupported")
             return ports
     raise StreamContractError(f"module {module!r} not found in {[str(s) for s in sources]}")
 
