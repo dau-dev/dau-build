@@ -23,6 +23,7 @@ from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
+    VivadoOverlayDefinition,
     VivadoProjectArtifactValidation,
     generate_vivado_backend_artifacts,
 )
@@ -478,6 +479,7 @@ class SynthesisEngine(BaseModel):
 
 class VivadoEngine(SynthesisEngine):
     name: str = "vivado"
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
         backend_artifacts = _write_vivado_backend_handoff(
@@ -488,6 +490,7 @@ class VivadoEngine(SynthesisEngine):
             platform=resolved.board.platform,
             shell=resolved.board.shell,
             operator_set=resolved.operators.names,
+            overlay_definition=self.overlay_definition,
         )
         return BuildStepResult(
             step="synthesize",
@@ -752,6 +755,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
     vivado_log_path: Path = Path("vivado.log")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     def stage_steps(self):
         return stage_vivado_overlay_plan(
@@ -772,6 +776,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
             timing_summary_path=self.timing_summary_path,
             vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
+            overlay_definition=self.overlay_definition,
         )
 
     def _toolchain_config(self) -> HardwareToolchainConfig:
@@ -818,6 +823,7 @@ class VivadoProjectStageTask(VivadoOverlayStageTask):
             timing_summary_path=self.timing_summary_path,
             vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
+            overlay_definition=self.overlay_definition,
         )
 
 
@@ -1270,6 +1276,7 @@ def _write_vivado_backend_handoff(
     platform: str,
     shell: str,
     operator_set: tuple[str, ...],
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> VivadoBackendArtifacts:
     try:
         backend_artifacts = generate_vivado_backend_artifacts(
@@ -1284,6 +1291,7 @@ def _write_vivado_backend_handoff(
                 selected_module=selected_module,
                 register_map_version=spec.register_map_version,
                 stream_protocol_version=spec.stream_protocol_version,
+                overlay_definition=overlay_definition,
             )
         )
     except ValueError as exc:

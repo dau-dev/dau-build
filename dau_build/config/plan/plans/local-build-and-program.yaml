@@ -8,3 +8,4 @@ overlay_tcl: scripts/dau_overlay.tcl
 smoke_command: null
 python: python3
 vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+overlay_definition: null

@@ -410,3 +410,39 @@ def test_task_dispatch_import_stays_light() -> None:
         capture_output=True,
     )
     assert completed.returncode == 0, completed.stderr.decode()
+
+
+def test_vivado_engine_threads_the_overlay_definition_into_the_handoff(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import dau_build.build_steps as build_steps
+    from dau_build.vivado_backend import VivadoOverlayDefinition
+
+    captured = {}
+
+    def capture_request(request):
+        captured["request"] = request
+        raise ValueError("captured")
+
+    monkeypatch.setattr(build_steps, "generate_vivado_backend_artifacts", capture_request)
+    definition = VivadoOverlayDefinition(bd_overlay_tcl='puts "engine overlay"')
+    spec = SimpleNamespace(
+        sources=(str(tmp_path / "hdl" / "top.sv"),),
+        artifact_stem="dau-identity",
+        register_map_version="0.1",
+        stream_protocol_version="0.1",
+    )
+
+    with pytest.raises(BuildStepError, match="captured"):
+        build_steps._write_vivado_backend_handoff(
+            spec,
+            selected_module="dau_identity_top",
+            output_root=tmp_path / "out",
+            dau_artifact_bundle_path=tmp_path / "bundle.yaml",
+            platform="vivado-xdma",
+            shell="xdma-shell",
+            operator_set=("identity",),
+            overlay_definition=definition,
+        )
+
+    assert captured["request"].overlay_definition == definition

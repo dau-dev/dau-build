@@ -10,6 +10,26 @@ from ccflow import BaseModel
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
 
 
+class VivadoOverlayDefinition(BaseModel):
+    """The design-specific payload of the Vivado overlay and build scripts:
+    which HDL sources to graft onto the staged shell (as Tcl-variable /
+    HDL-root-relative-path pairs), the source-management and block-design
+    edit Tcl those variables feed, the manifest entries they contribute, and
+    the placement fixups the build script applies after synthesis. dau-build's
+    machinery (path rendering, artifact bundles, manifest/command-plan
+    contracts) is generic; this payload is data so integration packages can
+    inject their own definition through the request/task ``overlay_definition``
+    fields. ``DEFAULT_OVERLAY_DEFINITION`` carries the historical XDMA
+    identity overlay for compatibility when no definition is injected."""
+
+    hdl_source_vars: tuple[tuple[str, str], ...] = ()
+    source_management_tcl: str = ""
+    bd_overlay_tcl: str = ""
+    runtime_manifest_entries: tuple[tuple[str, str], ...] = ()
+    static_manifest_items: tuple[tuple[str, str], ...] = ()
+    lane_placements: tuple[tuple[str, str], ...] = ()
+
+
 class VivadoBackendRequest(BaseModel):
     dau_core_hdl_root: Path
     build_root: Path
@@ -33,6 +53,7 @@ class VivadoBackendRequest(BaseModel):
     vivado_executable: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     @property
     def resolved_manifest_path(self) -> Path:
@@ -90,6 +111,7 @@ class VivadoProjectGenerationRequest(BaseModel):
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     plan_executable: str = "dau-build"
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     @property
     def dau_core_hdl_root(self) -> Path:
@@ -124,6 +146,7 @@ class VivadoProjectGenerationRequest(BaseModel):
             vivado_executable=self.vivado_executable,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,
+            overlay_definition=self.overlay_definition,
         )
 
 
@@ -243,6 +266,7 @@ def generate_vivado_backend_artifacts(request: VivadoBackendRequest) -> VivadoBa
             dau_bundle_hdl_sources=_bundle_hdl_source_paths(artifact_bundle),
             selected_module=request.selected_module,
             vivado_path_base=vivado_path_base,
+            overlay_definition=request.overlay_definition,
         ),
         build_tcl_text=vivado_build_tcl(
             manifest_path=manifest_path,
@@ -250,6 +274,7 @@ def generate_vivado_backend_artifacts(request: VivadoBackendRequest) -> VivadoBa
             resource_summary_path=request.resource_summary_path,
             timing_summary_path=request.timing_summary_path,
             vivado_log_path=request.vivado_log_path,
+            lane_placements=None if request.overlay_definition is None else request.overlay_definition.lane_placements,
         ),
         overlay_driver_tcl_text=None
         if overlay_driver_tcl is None
@@ -405,6 +430,7 @@ def vivado_backend_manifest(request: VivadoBackendRequest, *, artifact_bundle: A
             dau_artifact_bundle_path=request.resolved_dau_artifact_bundle_path,
             artifact_bundle=artifact_bundle,
             vivado_path_base=vivado_path_base,
+            overlay_definition=request.overlay_definition,
         ),
         ("platform", request.platform),
         ("shell", request.shell),
@@ -467,10 +493,20 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
         ("vivado_executable", request.vivado_executable),
         ("vivado_invocation", request.vivado_invocation),
         ("vivado_mount_root", "" if request.vivado_mount_root is None else request.vivado_mount_root.resolve(strict=False).as_posix()),
-        ("stage_command", vivado_project_stage_command(request)),
-        ("build_command", vivado_project_build_command(request)),
-        ("validate_command", vivado_project_validate_command(request)),
     ]
+    if request.overlay_definition is not None:
+        # a caller-injected overlay definition cannot be reconstructed from a
+        # flat command line; record the fact so consumers know the recorded
+        # stage_command (which demands the definition) needs the caller's
+        # configuration to re-run
+        items.append(("overlay_definition", "injected"))
+    items.extend(
+        (
+            ("stage_command", vivado_project_stage_command(request)),
+            ("build_command", vivado_project_build_command(request)),
+            ("validate_command", vivado_project_validate_command(request)),
+        )
+    )
     return tuple(items)
 
 
@@ -501,6 +537,11 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
     if request.dau_artifact_bundle_path is not None:
         overrides.append(("dau_artifact_bundle", request.dau_artifact_bundle_path))
+    if request.overlay_definition is not None:
+        # the injected definition cannot ride a flat command line; mark the
+        # field hydra-missing so replaying the recorded command refuses to
+        # silently re-stage the packaged default overlay instead
+        overrides.append(("overlay_definition", "???"))
     overrides.append(("operator", ",".join(request.operator_set)))
     return _task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
 
@@ -789,6 +830,11 @@ def _validate_project_manifest_commands(
         stage_required_options.append(("--vivado-invocation", vivado_invocation))
     if vivado_mount_root:
         stage_required_options.append(("--vivado-mount-root", vivado_mount_root))
+    if project_manifest.get("overlay_definition") == "injected":
+        # the artifacts came from a caller-injected overlay definition; the
+        # recorded stage_command must demand it (hydra-missing) rather than
+        # silently re-stage the packaged default overlay
+        stage_required_options.append(("--overlay-definition", "???"))
     errors.extend(
         _validate_project_command(
             label="stage_command",
@@ -1107,20 +1153,17 @@ def dau_overlay_manifest(
     dau_artifact_bundle_path: Path | None = None,
     artifact_bundle: ArtifactBundle | None = None,
     vivado_path_base: Path | None = None,
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[tuple[str, str], ...]:
-    identity_source = dau_core_hdl_root / "dau_identity_registers.sv"
-    identity_axil_source = dau_core_hdl_root / "dau_identity_axil.v"
-    legacy_identity_axil_source = dau_core_hdl_root / "dau_identity_axil.sv"
-    identity_source = _render_vivado_path(identity_source, vivado_path_base=vivado_path_base)
-    identity_axil_source = _render_vivado_path(identity_axil_source, vivado_path_base=vivado_path_base)
-    legacy_identity_axil_source = _render_vivado_path(legacy_identity_axil_source, vivado_path_base=vivado_path_base)
+    definition = overlay_definition if overlay_definition is not None else DEFAULT_OVERLAY_DEFINITION
+    hdl_source_items = tuple(
+        (variable, _render_vivado_path(dau_core_hdl_root / relative_path, vivado_path_base=vivado_path_base).as_posix())
+        for variable, relative_path in definition.hdl_source_vars
+    )
     return (
         ("backend", "dau_build.vivado_backend.vivado_overlay"),
-        ("dau_identity_registers_sv", identity_source.as_posix()),
-        ("dau_identity_axil_v", identity_axil_source.as_posix()),
-        ("dau_identity_axil_sv_legacy", legacy_identity_axil_source.as_posix()),
-        ("dau_identity_axil_cell", "dau_identity_axil_0"),
-        ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
+        *hdl_source_items,
+        *definition.static_manifest_items,
         ("overlay", overlay_tcl.as_posix()),
         ("bitstream", bitstream_path.as_posix()),
         ("resource_summary", resource_summary_path.as_posix()),
@@ -1160,112 +1203,36 @@ def dau_overlay_tcl(
     dau_bundle_hdl_sources: tuple[Path, ...] = (),
     selected_module: str | None = None,
     vivado_path_base: Path | None = None,
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> str:
-    identity_source = _render_vivado_path(dau_core_hdl_root / "dau_identity_registers.sv", vivado_path_base=vivado_path_base)
-    identity_axil_source = _render_vivado_path(dau_core_hdl_root / "dau_identity_axil.v", vivado_path_base=vivado_path_base)
-    legacy_identity_axil_source = _render_vivado_path(dau_core_hdl_root / "dau_identity_axil.sv", vivado_path_base=vivado_path_base)
+    definition = overlay_definition if overlay_definition is not None else DEFAULT_OVERLAY_DEFINITION
+    hdl_source_sets = "\n".join(
+        f'set {variable} [file normalize "{_render_vivado_path(dau_core_hdl_root / relative_path, vivado_path_base=vivado_path_base).as_posix()}"]'
+        for variable, relative_path in definition.hdl_source_vars
+    )
+    runtime_manifest_puts = "\n".join(f'puts $manifest_file "{key}={value}"' for key, value in definition.runtime_manifest_entries)
     rendered_bundle_path = (
         None if dau_artifact_bundle_path is None else _render_vivado_path(dau_artifact_bundle_path, vivado_path_base=vivado_path_base)
     )
     rendered_generated_top = None if dau_generated_top is None else _render_vivado_path(dau_generated_top, vivado_path_base=vivado_path_base)
     rendered_bundle_sources = tuple(_render_vivado_path(path, vivado_path_base=vivado_path_base) for path in dau_bundle_hdl_sources)
     return f"""# Generated by dau-build; source before scripts/build.tcl.
-set dau_identity_registers_sv [file normalize \"{identity_source.as_posix()}\"]
-set dau_identity_axil_v [file normalize "{identity_axil_source.as_posix()}"]
-set dau_identity_axil_sv_legacy [file normalize "{legacy_identity_axil_source.as_posix()}"]
+{hdl_source_sets}
 if {{[llength [get_projects -quiet]] == 0}} {{
     if {{![file exists \"project.xpr\"]}} {{
         error \"project.xpr is missing; restore the Vivado project before this overlay\"
     }}
     open_project project.xpr
 }}
-set stale_dau_axil_source [get_files -quiet $dau_identity_axil_sv_legacy]
-if {{[llength $stale_dau_axil_source] != 0}} {{
-    remove_files $stale_dau_axil_source
-}}
-set locked_dau_ips [get_ips -quiet -filter {{IS_LOCKED == 1}}]
-if {{[llength $locked_dau_ips] != 0}} {{
-    upgrade_ip $locked_dau_ips
-}}
-foreach dau_hdl_source [list $dau_identity_registers_sv $dau_identity_axil_v] {{
-    if {{![file exists $dau_hdl_source]}} {{
-        error "missing DAU HDL source: $dau_hdl_source"
-    }}
-    if {{[llength [get_files -quiet $dau_hdl_source]] == 0}} {{
-        add_files -norecurse -fileset sources_1 $dau_hdl_source
-    }}
-    set_property library xil_defaultlib [get_files $dau_hdl_source]
-    set_property used_in {{synthesis implementation simulation}} [get_files $dau_hdl_source]
-}}
-set_property file_type SystemVerilog [get_files $dau_identity_registers_sv]
-set_property file_type Verilog [get_files $dau_identity_axil_v]
+{definition.source_management_tcl}
 {_bundle_hdl_sources_tcl(rendered_bundle_sources)}
 update_compile_order -fileset sources_1
-set top_bd [get_files -quiet project.srcs/sources_1/bd/Top/Top.bd]
-if {{[llength $top_bd] == 0}} {{
-    error "missing Top block design at project.srcs/sources_1/bd/Top/Top.bd"
-}}
-open_bd_design [get_files project.srcs/sources_1/bd/Top/Top.bd]
-foreach net_name {{axi_interconnect_0_M00_AXI Model_dout Version_dout}} {{
-    set old_net [get_bd_intf_nets -quiet $net_name]
-    if {{[llength $old_net] != 0}} {{
-        delete_bd_objs $old_net
-    }}
-    set old_net [get_bd_nets -quiet $net_name]
-    if {{[llength $old_net] != 0}} {{
-        delete_bd_objs $old_net
-    }}
-}}
-foreach cell_name {{dau_identity_axil_0 axi_gpio_0 Model Version}} {{
-    set old_cell [get_bd_cells -quiet $cell_name]
-    if {{[llength $old_cell] != 0}} {{
-        delete_bd_objs $old_cell
-    }}
-}}
-create_bd_cell -type module -reference dau_identity_axil dau_identity_axil_0
-connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins dau_identity_axil_0/S_AXI]
-connect_bd_net -net S00_ACLK_1 [get_bd_pins xdma_0/axi_aclk] [get_bd_pins dau_identity_axil_0/s_axi_aclk]
-connect_bd_net -net S00_ARESETN_1 [get_bd_pins xdma_0/axi_aresetn] [get_bd_pins dau_identity_axil_0/s_axi_aresetn]
-set dau_identity_addr_seg [lindex [get_bd_addr_segs -quiet dau_identity_axil_0/S_AXI/*] 0]
-if {{$dau_identity_addr_seg eq ""}} {{
-    error "missing DAU AXI-Lite address segment for dau_identity_axil_0/S_AXI"
-}}
-assign_bd_address -offset 0x00001000 -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] $dau_identity_addr_seg -force
-set spi_ss_i_pin [get_bd_pins -quiet axi_quad_spi_0/ss_i]
-if {{[llength $spi_ss_i_pin] != 0}} {{
-    if {{[llength [get_bd_cells -quiet dau_spi_ss_i_tieoff]] == 0}} {{
-        create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 dau_spi_ss_i_tieoff
-    }}
-    set_property -dict [list CONFIG.CONST_WIDTH {{1}} CONFIG.CONST_VAL {{0}}] [get_bd_cells dau_spi_ss_i_tieoff]
-    set spi_ss_i_nets [get_bd_nets -quiet -of_objects $spi_ss_i_pin]
-    if {{[llength $spi_ss_i_nets] == 0}} {{
-        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
-    }} elseif {{[lsearch -exact $spi_ss_i_nets /dau_spi_ss_i_tieoff_dout] < 0}} {{
-        delete_bd_objs $spi_ss_i_nets
-        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
-    }}
-}}
-validate_bd_design
-save_bd_design
-set wrapper_path [make_wrapper -files [get_files project.srcs/sources_1/bd/Top/Top.bd] -top]
-if {{[llength [get_files -quiet $wrapper_path]] == 0}} {{
-    add_files -norecurse -fileset sources_1 $wrapper_path
-}}
-set_property -name "top" -value "Top_wrapper" -objects [get_filesets sources_1]
-update_compile_order -fileset sources_1
-set dau_identity_ooc_runs [get_runs -quiet *dau_identity_axil*]
-if {{[llength $dau_identity_ooc_runs] != 0}} {{
-    reset_run $dau_identity_ooc_runs
-}}
+{definition.bd_overlay_tcl}
 # The Python staging step writes the full structured manifest before Vivado
 # runs. Append runtime-discovered fields here so executing the command plan
 # does not clobber the typed backend contract.
 set manifest_file [open \"{manifest_path.as_posix()}\" a]
-puts $manifest_file \"dau_identity_registers_sv=$dau_identity_registers_sv\"
-puts $manifest_file "dau_identity_axil_v=$dau_identity_axil_v"
-puts $manifest_file "dau_identity_axil_cell=dau_identity_axil_0"
-puts $manifest_file "dau_identity_ooc_runs=$dau_identity_ooc_runs"
-puts $manifest_file "spi_ss_i_tieoff=dau_spi_ss_i_tieoff"
+{runtime_manifest_puts}
 puts $manifest_file "overlay={overlay_tcl.as_posix()}"
 puts $manifest_file "bitstream={bitstream_path.as_posix()}"
 puts $manifest_file "resource_summary={resource_summary_path.as_posix()}"
@@ -1314,6 +1281,27 @@ def project_build_script(
     )
 
 
+def _lane_placement_tcl(lane_placements: tuple[tuple[str, str], ...]) -> str:
+    if not lane_placements:
+        return ""
+    lane_entries = "".join(f"    [list {{{cell_path}}} {location}] " for cell_path, location in lane_placements)
+    return (
+        "foreach lane [list "
+        + lane_entries
+        + "] {\n"
+        + "    set cell_path [lindex $lane 0]\n"
+        + "    set lane_loc [lindex $lane 1]\n"
+        + "    set lane_cells [get_cells -quiet $cell_path]\n"
+        + "    if {[llength $lane_cells] == 0} {\n"
+        + '        puts "dau-build: skipping missing PCIe lane cell $cell_path"\n'
+        + "        continue\n"
+        + "    }\n"
+        + "    reset_property LOC $lane_cells\n"
+        + "    set_property LOC $lane_loc $lane_cells\n"
+        + "}\n\n"
+    )
+
+
 def vivado_build_tcl(
     *,
     manifest_path: Path = Path("dau-vivado.manifest"),
@@ -1321,7 +1309,9 @@ def vivado_build_tcl(
     resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
     vivado_log_path: Path = Path("vivado.log"),
+    lane_placements: tuple[tuple[str, str], ...] | None = None,
 ) -> str:
+    placements = lane_placements if lane_placements is not None else DEFAULT_OVERLAY_DEFINITION.lane_placements
     script = """# Generated by dau-build; source after scripts/dau_overlay.tcl.
 open_project project.xpr
 reset_run synth_1
@@ -1329,23 +1319,7 @@ launch_runs synth_1 -jobs 2
 wait_on_run synth_1
 open_run synth_1
 
-foreach lane [list \
-    [list {Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[3].gt_wrapper_i/gtp_channel.gtpe2_channel_i} GTPE2_CHANNEL_X0Y7] \
-    [list {Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[0].gt_wrapper_i/gtp_channel.gtpe2_channel_i} GTPE2_CHANNEL_X0Y6] \
-    [list {Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[2].gt_wrapper_i/gtp_channel.gtpe2_channel_i} GTPE2_CHANNEL_X0Y5] \
-    [list {Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[1].gt_wrapper_i/gtp_channel.gtpe2_channel_i} GTPE2_CHANNEL_X0Y4] \
-] {
-    set cell_path [lindex $lane 0]
-    set lane_loc [lindex $lane 1]
-    set lane_cells [get_cells -quiet $cell_path]
-    if {[llength $lane_cells] == 0} {
-        puts "dau-build: skipping missing PCIe lane cell $cell_path"
-        continue
-    }
-    reset_property LOC $lane_cells
-    set_property LOC $lane_loc $lane_cells
-}
-
+__LANE_PLACEMENT_TCL__
 launch_runs impl_1 -jobs 6 -to_step write_bitstream
 wait_on_run impl_1
 open_run impl_1
@@ -1380,7 +1354,8 @@ close_design
 puts "Implementation done!"
 """
     return (
-        script.replace("__MANIFEST_PATH__", manifest_path.as_posix())
+        script.replace("__LANE_PLACEMENT_TCL__\n", _lane_placement_tcl(placements))
+        .replace("__MANIFEST_PATH__", manifest_path.as_posix())
         .replace("__BITSTREAM_PATH__", bitstream_path.as_posix())
         .replace("__RESOURCE_SUMMARY_PATH__", resource_summary_path.as_posix())
         .replace("__TIMING_SUMMARY_PATH__", timing_summary_path.as_posix())
@@ -1455,6 +1430,130 @@ def _vivado_source_command(*, vivado_executable: str, tcl_path: Path, vivado_inv
     if vivado_invocation == "source-only":
         return shlex.join((vivado_executable, str(tcl_path)))
     return shlex.join((vivado_executable, "-mode", "batch", "-source", str(tcl_path)))
+
+
+# The historical XDMA identity overlay payload, kept as the default so the
+# staged scripts are unchanged when no definition is injected. Integration
+# packages own their design-specific payloads and inject them via the
+# request/task `overlay_definition` fields (the same extraction pattern as
+# the injectable `smoke_command`); this default is tracked for relocation
+# into caller configuration once the platform registry threads through.
+_DEFAULT_SOURCE_MANAGEMENT_TCL = """set stale_dau_axil_source [get_files -quiet $dau_identity_axil_sv_legacy]
+if {[llength $stale_dau_axil_source] != 0} {
+    remove_files $stale_dau_axil_source
+}
+set locked_dau_ips [get_ips -quiet -filter {IS_LOCKED == 1}]
+if {[llength $locked_dau_ips] != 0} {
+    upgrade_ip $locked_dau_ips
+}
+foreach dau_hdl_source [list $dau_identity_registers_sv $dau_identity_axil_v] {
+    if {![file exists $dau_hdl_source]} {
+        error "missing DAU HDL source: $dau_hdl_source"
+    }
+    if {[llength [get_files -quiet $dau_hdl_source]] == 0} {
+        add_files -norecurse -fileset sources_1 $dau_hdl_source
+    }
+    set_property library xil_defaultlib [get_files $dau_hdl_source]
+    set_property used_in {synthesis implementation simulation} [get_files $dau_hdl_source]
+}
+set_property file_type SystemVerilog [get_files $dau_identity_registers_sv]
+set_property file_type Verilog [get_files $dau_identity_axil_v]"""
+
+_DEFAULT_BD_OVERLAY_TCL = """set top_bd [get_files -quiet project.srcs/sources_1/bd/Top/Top.bd]
+if {[llength $top_bd] == 0} {
+    error "missing Top block design at project.srcs/sources_1/bd/Top/Top.bd"
+}
+open_bd_design [get_files project.srcs/sources_1/bd/Top/Top.bd]
+foreach net_name {axi_interconnect_0_M00_AXI Model_dout Version_dout} {
+    set old_net [get_bd_intf_nets -quiet $net_name]
+    if {[llength $old_net] != 0} {
+        delete_bd_objs $old_net
+    }
+    set old_net [get_bd_nets -quiet $net_name]
+    if {[llength $old_net] != 0} {
+        delete_bd_objs $old_net
+    }
+}
+foreach cell_name {dau_identity_axil_0 axi_gpio_0 Model Version} {
+    set old_cell [get_bd_cells -quiet $cell_name]
+    if {[llength $old_cell] != 0} {
+        delete_bd_objs $old_cell
+    }
+}
+create_bd_cell -type module -reference dau_identity_axil dau_identity_axil_0
+connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins dau_identity_axil_0/S_AXI]
+connect_bd_net -net S00_ACLK_1 [get_bd_pins xdma_0/axi_aclk] [get_bd_pins dau_identity_axil_0/s_axi_aclk]
+connect_bd_net -net S00_ARESETN_1 [get_bd_pins xdma_0/axi_aresetn] [get_bd_pins dau_identity_axil_0/s_axi_aresetn]
+set dau_identity_addr_seg [lindex [get_bd_addr_segs -quiet dau_identity_axil_0/S_AXI/*] 0]
+if {$dau_identity_addr_seg eq ""} {
+    error "missing DAU AXI-Lite address segment for dau_identity_axil_0/S_AXI"
+}
+assign_bd_address -offset 0x00001000 -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] $dau_identity_addr_seg -force
+set spi_ss_i_pin [get_bd_pins -quiet axi_quad_spi_0/ss_i]
+if {[llength $spi_ss_i_pin] != 0} {
+    if {[llength [get_bd_cells -quiet dau_spi_ss_i_tieoff]] == 0} {
+        create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 dau_spi_ss_i_tieoff
+    }
+    set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] [get_bd_cells dau_spi_ss_i_tieoff]
+    set spi_ss_i_nets [get_bd_nets -quiet -of_objects $spi_ss_i_pin]
+    if {[llength $spi_ss_i_nets] == 0} {
+        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
+    } elseif {[lsearch -exact $spi_ss_i_nets /dau_spi_ss_i_tieoff_dout] < 0} {
+        delete_bd_objs $spi_ss_i_nets
+        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
+    }
+}
+validate_bd_design
+save_bd_design
+set wrapper_path [make_wrapper -files [get_files project.srcs/sources_1/bd/Top/Top.bd] -top]
+if {[llength [get_files -quiet $wrapper_path]] == 0} {
+    add_files -norecurse -fileset sources_1 $wrapper_path
+}
+set_property -name "top" -value "Top_wrapper" -objects [get_filesets sources_1]
+update_compile_order -fileset sources_1
+set dau_identity_ooc_runs [get_runs -quiet *dau_identity_axil*]
+if {[llength $dau_identity_ooc_runs] != 0} {
+    reset_run $dau_identity_ooc_runs
+}"""
+
+DEFAULT_OVERLAY_DEFINITION = VivadoOverlayDefinition(
+    hdl_source_vars=(
+        ("dau_identity_registers_sv", "dau_identity_registers.sv"),
+        ("dau_identity_axil_v", "dau_identity_axil.v"),
+        ("dau_identity_axil_sv_legacy", "dau_identity_axil.sv"),
+    ),
+    source_management_tcl=_DEFAULT_SOURCE_MANAGEMENT_TCL,
+    bd_overlay_tcl=_DEFAULT_BD_OVERLAY_TCL,
+    runtime_manifest_entries=(
+        ("dau_identity_registers_sv", "$dau_identity_registers_sv"),
+        ("dau_identity_axil_v", "$dau_identity_axil_v"),
+        ("dau_identity_axil_cell", "dau_identity_axil_0"),
+        ("dau_identity_ooc_runs", "$dau_identity_ooc_runs"),
+        ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
+    ),
+    static_manifest_items=(
+        ("dau_identity_axil_cell", "dau_identity_axil_0"),
+        ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
+    ),
+    lane_placements=(
+        (
+            "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[3].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+            "GTPE2_CHANNEL_X0Y7",
+        ),
+        (
+            "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[0].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+            "GTPE2_CHANNEL_X0Y6",
+        ),
+        (
+            "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[2].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+            "GTPE2_CHANNEL_X0Y5",
+        ),
+        (
+            "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[1].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+            "GTPE2_CHANNEL_X0Y4",
+        ),
+    ),
+)
 
 
 # Generic stream-job contract manifest values. dau-build is public and
