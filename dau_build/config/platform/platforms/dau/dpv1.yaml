@@ -10,11 +10,19 @@ _target_: dau_build.platforms.PlatformDefinition
 name: dpv1
 part: xc7a200tfbg484-2
 program_method: jtag
+# Placeable *datapath* capacity, not raw part capacity. Vivado reports
+# 133800 LUT / 267600 FF available on xc7a200tfbg484-2 (not the 134600 /
+# 269200 slice-math numbers), and the shell infrastructure a composition
+# never prices (XDMA + MIG DDR3 + interconnect) measures 21596 LUT /
+# 23905 FF / 29.5 BRAM36 / 0 DSP placed on the proven bring-up build
+# (~24.7K LUT derived on bar-noc). Budget = available minus a
+# 25K LUT / 25K FF / 30 BRAM36 shell reservation, so fits() checks what a
+# composition datapath may actually place.
 budget:
   _target_: dau_build.platforms.ResourceBudget
-  lut: 134600
-  ff: 269200
-  bram36: 365
+  lut: 108800
+  ff: 242600
+  bram36: 335
   dsp: 740
 memory:
   _target_: dau_build.platforms.PlatformMemory

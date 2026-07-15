@@ -75,7 +75,7 @@ def test_fits_under_and_over_budget() -> None:
     platform = dpv1_platform()
     report = fits(_Use(lut=2000, ff=1500, bram36=4.0, dsp=8), platform)
     assert report.fits
-    assert report.headroom["lut"] == 134600 - 2000
+    assert report.headroom["lut"] == 108800 - 2000
     assert report.utilization["dsp"] == pytest.approx(8 / 740)
 
     over = fits(_Use(lut=200000, ff=1500, bram36=4.0, dsp=8), platform)
