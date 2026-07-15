@@ -78,6 +78,29 @@ class HardwareToolchainConfig(BaseModel):
     jtag_cable: str = "digilent_hs2"
     endpoint_bdf: str = "0000:04:00.0"
     expected_endpoint_id: str = DPV1_PCI_ID
+    rescan_bdfs: tuple[str, ...] = PCI_RESCAN_BDFS
+
+    @classmethod
+    def for_platform(cls, platform, *, work_root: Path, **overrides) -> "HardwareToolchainConfig":
+        """Compose the toolchain config from a registered platform's
+        ``host_access`` (board/host config, not code defaults). Explicit
+        keyword overrides win; a platform without ``host_access`` keeps the
+        model defaults."""
+        access = getattr(platform, "host_access", None)
+        values: dict = {}
+        if access is not None:
+            values = {
+                "expected_endpoint_id": access.pci_id,
+                "endpoint_bdf": access.endpoint_bdf,
+                "jtag_cable": access.jtag_cable,
+                "runtime_pm_executable": access.runtime_pm_executable,
+            }
+            if access.rescan_bdfs:
+                values["rescan_bdfs"] = access.rescan_bdfs
+            if access.runtime_pm_patterns:
+                values["runtime_pm_patterns"] = access.runtime_pm_patterns
+        values.update({key: value for key, value in overrides.items() if value is not None})
+        return cls(work_root=work_root, **values)
 
     @property
     def project_tcl(self) -> Path:
@@ -108,7 +131,7 @@ def build_and_program_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, .
         vivado_build_step(config),
         jtag_detect_step(config),
         program_volatile_step(config),
-        pci_rescan_step(),
+        pci_rescan_step(config.rescan_bdfs),
         lspci_endpoint_step(config),
     )
 
@@ -118,7 +141,7 @@ def recovery_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
         thunderbolt_hold_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(),
+        pci_rescan_step(config.rescan_bdfs),
         lspci_endpoint_step(config),
     )
 
@@ -152,7 +175,7 @@ def local_build_and_program_plan(
         jtag_detect_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(),
+        pci_rescan_step(config.rescan_bdfs),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -239,6 +262,7 @@ def stage_vivado_project_plan(
     vivado_log_path: Path = Path("vivado.log"),
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
     overlay_definition: VivadoOverlayDefinition | None = None,
+    stage_task_name: str | None = None,
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_project_generation_artifacts(
         VivadoProjectGenerationRequest(
@@ -267,6 +291,7 @@ def stage_vivado_project_plan(
             vivado_invocation=config.vivado_invocation,
             vivado_mount_root=config.vivado_mount_root,
             overlay_definition=overlay_definition,
+            **({} if stage_task_name is None else {"stage_task_name": stage_task_name}),
         )
     )
     backend_artifacts = artifacts.backend_artifacts
@@ -301,7 +326,7 @@ def validate_bitstream_plan(
         jtag_detect_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(),
+        pci_rescan_step(config.rescan_bdfs),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -527,7 +552,9 @@ def _runtime_pm_argv(config: HardwareToolchainConfig, mode: str) -> tuple[str, .
     return tuple(argv)
 
 
-def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequence[str] = PCI_RESCAN_BDFS) -> str:
+def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequence[str] | None = None) -> str:
+    if bridge_bdfs is None:
+        bridge_bdfs = config.rescan_bdfs
     expected_id = shlex.quote(config.expected_endpoint_id.lower())
     expected_slot = shlex.quote(config.lspci_slot)
     retry_rescan = _pci_rescan_script(bridge_bdfs)
@@ -676,7 +703,9 @@ class ValidateBitstreamPlan(HardwarePlan):
 
 class LocalBuildAndProgramPlan(HardwarePlan):
     name: str = "local-build-and-program"
-    dau_core_root: Path
+    # sourced from the composed host group (host=hosts/<name>) by the plan
+    # config; a direct plan.dau_core_root=... override wins
+    dau_core_root: Path | None = None
     source_shell_root: Path | None = None
     dau_utils_root: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
@@ -686,6 +715,8 @@ class LocalBuildAndProgramPlan(HardwarePlan):
     overlay_definition: VivadoOverlayDefinition | None = None
 
     def compose(self, config):
+        if self.dau_core_root is None:
+            raise ValueError("dau_core_root is required: select host=hosts/<name> (a host config group entry) or set plan.dau_core_root=...")
         return local_build_and_program_plan(
             config,
             dau_core_root=self.dau_core_root,

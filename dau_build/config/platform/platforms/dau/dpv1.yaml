@@ -75,6 +75,28 @@ budget:
   ff: 242600
   bram36: 335
   dsp: 740
+# how the bench host reaches the board: the proven endpoint identity,
+# the Thunderbolt bridge chain rescanned bottom-up after reprogramming, the
+# runtime-PM device patterns held during hardware sessions, and the JTAG cable
+host_access:
+  _target_: dau_build.platforms.HostAccess
+  pci_id: "10ee:7011"
+  endpoint_bdf: "0000:04:00.0"
+  rescan_bdfs:
+    - "0000:03:01.0"
+    - "0000:02:00.0"
+    - "0000:00:0d.3"
+    - "0000:00:0d.2"
+    - "0000:00:0d.0"
+    - "0000:00:07.2"
+    - "0000:00:07.0"
+  runtime_pm_patterns:
+    - Thunderbolt
+    - JHL
+    - "10ee:7011"
+    - Xilinx
+  runtime_pm_executable: dau-utils-pci-runtime-pm
+  jtag_cable: digilent_hs2
 memory:
   _target_: dau_build.platforms.PlatformMemory
   kind: ddr3

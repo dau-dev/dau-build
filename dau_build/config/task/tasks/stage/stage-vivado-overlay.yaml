@@ -8,7 +8,9 @@ bitstream: null
 vivado: vivado
 vivado_invocation: standard
 vivado_mount_root: null
-dau_core_root: ???
+# sourced from the composed host group (host=hosts/<name>); a direct
+# dau_core_root=... override wins
+dau_core_root: ${oc.select:host.dau_core_root,null}
 dau_artifact_bundle: null
 overlay_tcl: scripts/dau_overlay.tcl
 artifact_stem: dau-vivado

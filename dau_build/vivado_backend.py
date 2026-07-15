@@ -30,6 +30,10 @@ class VivadoOverlayDefinition(BaseModel):
     lane_placements: tuple[tuple[str, str], ...] = ()
 
 
+# the packaged staging task a recorded stage_command replays by default
+DEFAULT_STAGE_TASK_NAME = "stage-vivado-overlay"
+
+
 class VivadoBackendRequest(BaseModel):
     dau_core_hdl_root: Path
     build_root: Path
@@ -112,6 +116,12 @@ class VivadoProjectGenerationRequest(BaseModel):
     vivado_mount_root: Path | None = None
     plan_executable: str = "dau-build"
     overlay_definition: VivadoOverlayDefinition | None = None
+    # the task name recorded in the replayable stage_command. Callers that
+    # inject an overlay definition through their own task overlay (e.g. a
+    # private dpv1-stage-vivado-overlay) pass that task's name so replaying
+    # the recorded command re-composes the injection instead of demanding a
+    # definition on a flat command line.
+    stage_task_name: str = DEFAULT_STAGE_TASK_NAME
 
     @property
     def dau_core_hdl_root(self) -> Path:
@@ -500,6 +510,11 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
         # stage_command (which demands the definition) needs the caller's
         # configuration to re-run
         items.append(("overlay_definition", "injected"))
+    if request.stage_task_name != DEFAULT_STAGE_TASK_NAME:
+        # the caller stages through its own task overlay (which composes the
+        # injected definition); record it so the stage_command replays the
+        # caller's task, not the packaged default
+        items.append(("stage_task", request.stage_task_name))
     items.extend(
         (
             ("stage_command", vivado_project_stage_command(request)),
@@ -537,13 +552,14 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
     if request.dau_artifact_bundle_path is not None:
         overrides.append(("dau_artifact_bundle", request.dau_artifact_bundle_path))
-    if request.overlay_definition is not None:
-        # the injected definition cannot ride a flat command line; mark the
-        # field hydra-missing so replaying the recorded command refuses to
-        # silently re-stage the packaged default overlay instead
+    if request.overlay_definition is not None and request.stage_task_name == DEFAULT_STAGE_TASK_NAME:
+        # the injected definition cannot ride a flat command line; when the
+        # caller did not name its own (definition-composing) staging task,
+        # mark the field hydra-missing so replaying the recorded command
+        # refuses to silently re-stage the packaged default overlay instead
         overrides.append(("overlay_definition", "???"))
     overrides.append(("operator", ",".join(request.operator_set)))
-    return _task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
+    return _task_command(request.plan_executable, request.stage_task_name, tuple(overrides))
 
 
 def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str:
@@ -830,16 +846,19 @@ def _validate_project_manifest_commands(
         stage_required_options.append(("--vivado-invocation", vivado_invocation))
     if vivado_mount_root:
         stage_required_options.append(("--vivado-mount-root", vivado_mount_root))
-    if project_manifest.get("overlay_definition") == "injected":
-        # the artifacts came from a caller-injected overlay definition; the
-        # recorded stage_command must demand it (hydra-missing) rather than
-        # silently re-stage the packaged default overlay
+    stage_task = project_manifest.get("stage_task", "") or DEFAULT_STAGE_TASK_NAME
+    if project_manifest.get("overlay_definition") == "injected" and stage_task == DEFAULT_STAGE_TASK_NAME:
+        # the artifacts came from a caller-injected overlay definition and no
+        # caller staging task was recorded; the recorded stage_command must
+        # demand the definition (hydra-missing) rather than silently re-stage
+        # the packaged default overlay. A recorded caller task composes the
+        # injection itself, so no marker is required then.
         stage_required_options.append(("--overlay-definition", "???"))
     errors.extend(
         _validate_project_command(
             label="stage_command",
             command=project_manifest.get("stage_command", ""),
-            expected_plan="stage-vivado-overlay",
+            expected_plan=stage_task,
             required_options=tuple(stage_required_options),
         )
     )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from ccflow import BaseModel
 from pydantic import field_validator
 
@@ -10,6 +12,20 @@ class BoardConfig(BaseModel):
     name: str
     platform: str
     shell: str
+
+
+class HostConfig(BaseModel):
+    """Where the build host keeps its source checkouts — the ``host`` hydra
+    config group. Tasks and plans that need a checkout root interpolate from
+    the composed host (``host=hosts/<name>``, registered from a search-path
+    package or ``--config-dir`` overlay) instead of demanding the paths as
+    first-class required fields; a direct ``<field>=...`` override still
+    wins."""
+
+    name: str = "local"
+    dau_core_root: Path | None = None
+    dau_driver_root: Path | None = None
+    dau_utils_root: Path | None = None
 
 
 class BackendConfig(BaseModel):

@@ -6,6 +6,7 @@ defaults:
   - optional step: null
   - optional platform: null
   - optional board: null
+  - optional host: null
   - optional backend: null
   - optional driver: null
   - optional memory: null

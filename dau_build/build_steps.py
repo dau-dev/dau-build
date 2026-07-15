@@ -748,7 +748,9 @@ class VivadoOverlayStageTask(OverlayStageTask):
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
-    dau_core_root: Path
+    # sourced from the composed host group (host=hosts/<name>) by the task
+    # config; a direct dau_core_root=... override wins
+    dau_core_root: Path | None = None
     dau_artifact_bundle: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     artifact_stem: str = "dau-vivado"
@@ -768,7 +770,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
     def stage_steps(self):
         return stage_vivado_overlay_plan(
             self._toolchain_config(),
-            dau_core_root=self.dau_core_root,
+            dau_core_root=self._required_root("dau_core_root"),
             source_shell_root=self.source_shell_root,
             dau_artifact_bundle=self.dau_artifact_bundle,
             artifact_stem=self.artifact_stem,
@@ -801,20 +803,30 @@ class VivadoOverlayStageTask(OverlayStageTask):
             return ("identity",)
         return tuple(operator for operator in self.operator.split(",") if operator) or ("identity",)
 
+    def _required_root(self, field_name: str) -> Path:
+        value = getattr(self, field_name)
+        if value is None:
+            raise BuildStepError(f"{field_name} is required: select host=hosts/<name> (a host config group entry) or set {field_name}=...")
+        return value
+
 
 class VivadoProjectStageTask(VivadoOverlayStageTask):
     task_name: ClassVar[str] = "stage-vivado-project"
     source_shell_root: Path
-    dau_driver_root: Path
+    dau_driver_root: Path | None = None
     dau_utils_root: Path | None = None
     project_manifest_path: Path | None = None
+    # the task name the manifest's replayable stage_command records; callers
+    # whose own task overlay composes an injected overlay definition set
+    # their task's name so replay re-composes the injection
+    stage_task_name: str | None = None
 
     def stage_steps(self):
         return stage_vivado_project_plan(
             self._toolchain_config(),
             source_shell_root=self.source_shell_root,
-            dau_core_root=self.dau_core_root,
-            dau_driver_root=self.dau_driver_root,
+            dau_core_root=self._required_root("dau_core_root"),
+            dau_driver_root=self._required_root("dau_driver_root"),
             dau_utils_root=self.dau_utils_root,
             dau_artifact_bundle=self.dau_artifact_bundle,
             artifact_stem=self.artifact_stem,
@@ -832,6 +844,7 @@ class VivadoProjectStageTask(VivadoOverlayStageTask):
             vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
             overlay_definition=self.overlay_definition,
+            stage_task_name=self.stage_task_name,
         )
 
 
@@ -1021,22 +1034,36 @@ class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
 
 class HardwarePlanTask(BuildCallableModel):
     # the plan is the composed `plan` group option (a HardwarePlan model that
-    # owns its own required fields); the task holds the shared toolchain config
+    # owns its own required fields); the task holds the shared toolchain
+    # config. Hardware access (endpoint identity, BDFs, runtime-PM patterns,
+    # JTAG cable) composes from the `platform=` group's host_access when
+    # given; explicit task fields override it; with neither, the model
+    # defaults (the proven dpv1 bench values) apply.
     plan: Any = None
+    platform: Any = None
     work_root: Path
     bitstream: Path | None = None
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader: str = "openFPGALoader"
-    jtag_cable: str = "digilent_hs2"
-    endpoint_bdf: str = "0000:04:00.0"
+    jtag_cable: str | None = None
+    endpoint_bdf: str | None = None
+    expected_endpoint_id: str | None = None
+    runtime_pm_executable: str | None = None
+    runtime_pm_patterns: tuple[str, ...] | None = None
+    rescan_bdfs: tuple[str, ...] | None = None
     execute: bool = False
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         plan = self._plan()
-        config = HardwareToolchainConfig(
+        if self.execute and self.platform is not None:
+            from dau_build.platforms import require_measured
+
+            require_measured(self.platform)
+        config = HardwareToolchainConfig.for_platform(
+            self.platform,
             work_root=self.work_root,
             vivado_executable=self.vivado,
             vivado_invocation=self.vivado_invocation,
@@ -1045,6 +1072,10 @@ class HardwarePlanTask(BuildCallableModel):
             openfpgaloader_executable=self.openfpgaloader,
             jtag_cable=self.jtag_cable,
             endpoint_bdf=self.endpoint_bdf,
+            expected_endpoint_id=self.expected_endpoint_id,
+            runtime_pm_executable=self.runtime_pm_executable,
+            runtime_pm_patterns=self.runtime_pm_patterns,
+            rescan_bdfs=self.rescan_bdfs,
         )
         plan_result = plan.compose(config)
         if self.execute:
