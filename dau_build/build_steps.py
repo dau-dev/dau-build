@@ -573,12 +573,15 @@ def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
     bitstream_path = bitstream.path if bitstream.path.is_absolute() else manifest_path.parent / bitstream.path
     if not bitstream_path.is_file():
         raise BuildStepError(f"bitstream does not exist: {bitstream_path.as_posix()}")
-    if bitstream.digest is not None:
-        actual = hashlib.new(bitstream.digest.algorithm, bitstream_path.read_bytes()).hexdigest()
-        if actual != bitstream.digest.value:
-            raise BuildStepError(
-                f"bitstream digest mismatch (manifest {bitstream.digest.value[:12]}..., file {actual[:12]}...): {bitstream_path.as_posix()}"
-            )
+    if bitstream.digest is None:
+        # digest is optional in the artlink model, but flash provenance is
+        # the digest: a manifest without one proves nothing about the file
+        raise BuildStepError(f"bitstream artifact carries no digest: {manifest_path.as_posix()}; flash requires digested provenance")
+    actual = hashlib.new(bitstream.digest.algorithm, bitstream_path.read_bytes()).hexdigest()
+    if actual != bitstream.digest.value:
+        raise BuildStepError(
+            f"bitstream digest mismatch (manifest {bitstream.digest.value[:12]}..., file {actual[:12]}...): {bitstream_path.as_posix()}"
+        )
     return bitstream_path
 
 

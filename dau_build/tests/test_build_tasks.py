@@ -234,6 +234,24 @@ def test_flash_refuses_backend_manifest_bitstream_digest_mismatch(tmp_path: Path
         execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
 
 
+def test_flash_refuses_packaged_manifest_without_bitstream_digest(tmp_path: Path) -> None:
+    # digest is optional in the artlink model: a packaged manifest whose
+    # bitstream artifact carries none must be refused, not silently trusted
+    import yaml
+
+    from dau_build.shell_build import write_overlay_build_manifest
+
+    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
+    packaged = write_overlay_build_manifest(tmp_path, manifest_path, name="dau-vivado")
+    data = yaml.safe_load(packaged.read_text(encoding="utf-8"))
+    for artifact in data["artifacts"]:
+        artifact.pop("digest", None)
+    packaged.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(BuildStepError, match="no digest"):
+        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
+
+
 def test_execute_override_task_plans_identity_smoke_test() -> None:
     result = execute_override_task(("task=tasks/flash/smoke-test", "test=identity"))
 
