@@ -167,8 +167,17 @@ byte-for-byte identical to the known-good core.
 
 `PlatformDefinition` is composed of `ResourceBudget` (`lut`, `ff`, `bram36`,
 `dsp`), `PlatformMemory` (`kind`, `size_bytes`, `mig_prj`,
-`bandwidth_bytes_per_s`), and `HostLink` (`interface`, `pcie_lanes`,
-`xdma_personality`).
+`bandwidth_bytes_per_s`, `constraints_xdc`), and `HostLink` (`interface`,
+`pcie_lanes`, `xdma_personality`, `expected_link_width`,
+`expected_link_speed_gts`), plus the board-level `constraints_xdc` (pin
+constraint text the shell project generators emit behind their banner),
+`lane_placements` (the GT lane swizzle, applied as a pre-`opt_design`
+implementation hook; empty means the board needs none), and `placeholders`
+(names of hardware-derived values not yet measured on the board —
+`require_measured` refuses placeholder boards for real builds while
+config-only generation stays open). The shell project requests
+(`MmJobShellRequest`, `MmDdrJobShellRequest`) take a `platform` and default
+to dpv1; `part` defaults from the platform.
 
 ## `plan`
 

@@ -67,11 +67,19 @@ class ResourceBudget(BaseModel):
 
 
 class HostLink(BaseModel):
-    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards."""
+    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards.
+
+    ``pcie_lanes`` is the endpoint's electrical width;
+    ``expected_link_width``/``expected_link_speed_gts`` are what the link
+    actually trains at on the proven host (dpv1 negotiates x2 at 5.0 GT/s
+    over Thunderbolt despite the X4 personality) — bring-up checks compare
+    against these, not the electrical maximum."""
 
     interface: str
     pcie_lanes: int
     xdma_personality: XdmaPersonality = Field(default_factory=XdmaPersonality)
+    expected_link_width: int | None = None
+    expected_link_speed_gts: float | None = None
 
     @field_validator("interface")
     @classmethod
@@ -87,14 +95,32 @@ class HostLink(BaseModel):
             raise ValueError(f"pcie_lanes must be one of {_PCIE_LANE_WIDTHS}, got {value}")
         return value
 
+    @field_validator("expected_link_width")
+    @classmethod
+    def _valid_expected_width(cls, value: int | None) -> int | None:
+        if value is not None and value not in _PCIE_LANE_WIDTHS:
+            raise ValueError(f"expected_link_width must be one of {_PCIE_LANE_WIDTHS}, got {value}")
+        return value
+
+    @field_validator("expected_link_speed_gts")
+    @classmethod
+    def _valid_expected_speed(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("expected_link_speed_gts must be positive when set")
+        return value
+
 
 class PlatformMemory(BaseModel):
-    """The device-side memory a design stages through."""
+    """The device-side memory a design stages through. ``constraints_xdc``
+    carries the memory system's additions to the board pin constraints
+    (IOSTANDARDs for the controller reference clock, calibration LEDs —
+    pin placement stays in the MIG ``.prj``)."""
 
     kind: str
     size_bytes: int
     mig_prj: str | None = None
     bandwidth_bytes_per_s: int | None = None
+    constraints_xdc: str = ""
 
     @field_validator("kind")
     @classmethod
@@ -119,7 +145,16 @@ class PlatformMemory(BaseModel):
 
 
 class PlatformDefinition(BaseModel):
-    """One target board as data."""
+    """One target board as data.
+
+    ``constraints_xdc`` is the board pin-constraint text (the shell project
+    generators prepend their banner); ``lane_placements`` is the GT lane
+    swizzle applied as a pre-``opt_design`` implementation hook (empty means
+    the board needs none). ``placeholders`` names hardware-derived values
+    that have *not* been measured on the board yet (e.g.
+    ``host_link.xdma_personality`` before the XCI delta is audited) —
+    ``require_measured`` refuses such boards for real builds while config-only
+    generation stays open."""
 
     name: str
     part: str
@@ -127,7 +162,10 @@ class PlatformDefinition(BaseModel):
     host_link: HostLink
     memory: PlatformMemory
     constraints: tuple[str, ...] = ()
+    constraints_xdc: str = ""
+    lane_placements: tuple[tuple[int, str], ...] = ()
     program_method: str = "jtag"
+    placeholders: tuple[str, ...] = ()
 
     @field_validator("name", "part")
     @classmethod
@@ -162,6 +200,23 @@ class FitReport(BaseModel):
     fits: bool
     headroom: dict[str, float]
     utilization: dict[str, float]
+
+
+class PlaceholderPlatformError(ValueError):
+    """Raised when a platform whose hardware-derived values are still
+    placeholders is used for a real build."""
+
+
+def require_measured(platform: PlatformDefinition) -> None:
+    """Refuse a placeholder board for hardware-affecting work: raises
+    ``PlaceholderPlatformError`` naming the unmeasured values. Config-only
+    generation does not call this — a placeholder board may generate a
+    project, never build or program one."""
+    if platform.placeholders:
+        raise PlaceholderPlatformError(
+            f"platform {platform.name!r} carries placeholder values ({', '.join(platform.placeholders)}); "
+            "measure them on hardware and clear `placeholders` before building"
+        )
 
 
 def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:

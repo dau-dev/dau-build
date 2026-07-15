@@ -7,4 +7,7 @@ vivado: vivado
 manifest_name: dau-shell
 source_paths: []
 metadata: {}
+# the composed platform group (platform=platforms/<vendor>/<board>); when
+# set, execute=true refuses placeholder boards
+platform: ${oc.select:platform,null}
 execute: false

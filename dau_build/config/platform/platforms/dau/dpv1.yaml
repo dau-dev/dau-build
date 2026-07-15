@@ -10,6 +10,57 @@ _target_: dau_build.platforms.PlatformDefinition
 name: dpv1
 part: xc7a200tfbg484-2
 program_method: jtag
+# lane index -> GTPE2 channel site: the reversed lane-to-GT-channel mapping
+# the dpv1 board requires, applied as a pre-opt_design implementation hook
+# (XDC-time LOCs conflict with the XDMA IP's internal BEL/LOC constraints)
+lane_placements:
+  - [3, GTPE2_CHANNEL_X0Y7]
+  - [0, GTPE2_CHANNEL_X0Y6]
+  - [2, GTPE2_CHANNEL_X0Y5]
+  - [1, GTPE2_CHANNEL_X0Y4]
+# board pin constraints (the shell project generator prepends its banner);
+# byte-for-byte the proven bring-up XDC
+constraints_xdc: |
+  # DAU platform variant 1 (dpv1) pin constraints. GT channel LOCs (the lane swizzle) are applied by
+  # the pre-opt_design implementation hook, never here: XDC-time LOCs conflict
+  # with the XDMA IP's internal BEL/LOC constraints.
+
+  set_property PACKAGE_PIN A10 [get_ports {pcie_mgt_rxn[0]}]
+  set_property PACKAGE_PIN B10 [get_ports {pcie_mgt_rxp[0]}]
+  set_property PACKAGE_PIN A6 [get_ports {pcie_mgt_txn[0]}]
+  set_property PACKAGE_PIN B6 [get_ports {pcie_mgt_txp[0]}]
+  set_property PACKAGE_PIN A8 [get_ports {pcie_mgt_rxn[1]}]
+  set_property PACKAGE_PIN B8 [get_ports {pcie_mgt_rxp[1]}]
+  set_property PACKAGE_PIN A4 [get_ports {pcie_mgt_txn[1]}]
+  set_property PACKAGE_PIN B4 [get_ports {pcie_mgt_txp[1]}]
+  set_property PACKAGE_PIN C11 [get_ports {pcie_mgt_rxn[2]}]
+  set_property PACKAGE_PIN D11 [get_ports {pcie_mgt_rxp[2]}]
+  set_property PACKAGE_PIN C5 [get_ports {pcie_mgt_txn[2]}]
+  set_property PACKAGE_PIN D5 [get_ports {pcie_mgt_txp[2]}]
+  set_property PACKAGE_PIN C9 [get_ports {pcie_mgt_rxn[3]}]
+  set_property PACKAGE_PIN D9 [get_ports {pcie_mgt_rxp[3]}]
+  set_property PACKAGE_PIN C7 [get_ports {pcie_mgt_txn[3]}]
+  set_property PACKAGE_PIN D7 [get_ports {pcie_mgt_txp[3]}]
+
+  set_property PACKAGE_PIN F6 [get_ports {pcie_clkin_clk_p[0]}]
+  set_property PACKAGE_PIN E6 [get_ports {pcie_clkin_clk_n[0]}]
+
+  set_property PACKAGE_PIN J1 [get_ports pci_reset]
+  set_property IOSTANDARD LVCMOS33 [get_ports pci_reset]
+  set_false_path -from [get_ports pci_reset]
+
+  set_property PACKAGE_PIN G1 [get_ports {pcie_clkreq_l[0]}]
+  set_property IOSTANDARD LVCMOS33 [get_ports {pcie_clkreq_l[0]}]
+
+  set_property PACKAGE_PIN M1 [get_ports {LED_M2[0]}]
+  set_property IOSTANDARD LVCMOS33 [get_ports {LED_M2[0]}]
+  set_property PULLUP true [get_ports {LED_M2[0]}]
+  set_property DRIVE 8 [get_ports {LED_M2[0]}]
+
+  set_property BITSTREAM.CONFIG.OVERTEMPPOWERDOWN ENABLE [current_design]
+  set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+  set_property CONFIG_VOLTAGE 3.3 [current_design]
+  set_property CFGBVS VCCO [current_design]
 # Placeable *datapath* capacity, not raw part capacity. Vivado reports
 # 133800 LUT / 267600 FF available on xc7a200tfbg484-2 (not the 134600 /
 # 269200 slice-math numbers), and the shell infrastructure a composition
@@ -30,10 +81,25 @@ memory:
   size_bytes: 1073741824
   mig_prj: dpv1_mig.prj
   bandwidth_bytes_per_s: 1600000000
+  # the memory system's additions to the board XDC: the controller's 200 MHz
+  # reference IOSTANDARD (pin placement lives in the MIG .prj) and the
+  # calibration-complete LED
+  constraints_xdc: |
+    set_property IOSTANDARD LVDS_25 [get_ports sys_clk_clk_p]
+    set_property IOSTANDARD LVDS_25 [get_ports sys_clk_clk_n]
+
+    set_property PACKAGE_PIN H4 [get_ports LED_A4]
+    set_property IOSTANDARD LVCMOS33 [get_ports LED_A4]
+    set_property PULLUP true [get_ports LED_A4]
+    set_property DRIVE 8 [get_ports LED_A4]
 host_link:
   _target_: dau_build.platforms.HostLink
   interface: pcie-xdma
   pcie_lanes: 4
+  # the proven host trains x2 at 5.0 GT/s over Thunderbolt despite the X4
+  # personality; bring-up checks compare against the trained values
+  expected_link_width: 2
+  expected_link_speed_gts: 5.0
   xdma_personality:
     _target_: dau_build.platforms.XdmaPersonality
     params:
