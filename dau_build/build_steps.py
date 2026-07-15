@@ -479,6 +479,7 @@ class SynthesisEngine(BaseModel):
 
 class VivadoEngine(SynthesisEngine):
     name: str = "vivado"
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
         backend_artifacts = _write_vivado_backend_handoff(
@@ -489,6 +490,7 @@ class VivadoEngine(SynthesisEngine):
             platform=resolved.board.platform,
             shell=resolved.board.shell,
             operator_set=resolved.operators.names,
+            overlay_definition=self.overlay_definition,
         )
         return BuildStepResult(
             step="synthesize",
@@ -1274,6 +1276,7 @@ def _write_vivado_backend_handoff(
     platform: str,
     shell: str,
     operator_set: tuple[str, ...],
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> VivadoBackendArtifacts:
     try:
         backend_artifacts = generate_vivado_backend_artifacts(
@@ -1288,6 +1291,7 @@ def _write_vivado_backend_handoff(
                 selected_module=selected_module,
                 register_map_version=spec.register_map_version,
                 stream_protocol_version=spec.stream_protocol_version,
+                overlay_definition=overlay_definition,
             )
         )
     except ValueError as exc:

@@ -493,10 +493,20 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
         ("vivado_executable", request.vivado_executable),
         ("vivado_invocation", request.vivado_invocation),
         ("vivado_mount_root", "" if request.vivado_mount_root is None else request.vivado_mount_root.resolve(strict=False).as_posix()),
-        ("stage_command", vivado_project_stage_command(request)),
-        ("build_command", vivado_project_build_command(request)),
-        ("validate_command", vivado_project_validate_command(request)),
     ]
+    if request.overlay_definition is not None:
+        # a caller-injected overlay definition cannot be reconstructed from a
+        # flat command line; record the fact so consumers know the recorded
+        # stage_command (which demands the definition) needs the caller's
+        # configuration to re-run
+        items.append(("overlay_definition", "injected"))
+    items.extend(
+        (
+            ("stage_command", vivado_project_stage_command(request)),
+            ("build_command", vivado_project_build_command(request)),
+            ("validate_command", vivado_project_validate_command(request)),
+        )
+    )
     return tuple(items)
 
 
@@ -527,6 +537,11 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
     if request.dau_artifact_bundle_path is not None:
         overrides.append(("dau_artifact_bundle", request.dau_artifact_bundle_path))
+    if request.overlay_definition is not None:
+        # the injected definition cannot ride a flat command line; mark the
+        # field hydra-missing so replaying the recorded command refuses to
+        # silently re-stage the packaged default overlay instead
+        overrides.append(("overlay_definition", "???"))
     overrides.append(("operator", ",".join(request.operator_set)))
     return _task_command(request.plan_executable, "stage-vivado-overlay", tuple(overrides))
 
@@ -815,6 +830,11 @@ def _validate_project_manifest_commands(
         stage_required_options.append(("--vivado-invocation", vivado_invocation))
     if vivado_mount_root:
         stage_required_options.append(("--vivado-mount-root", vivado_mount_root))
+    if project_manifest.get("overlay_definition") == "injected":
+        # the artifacts came from a caller-injected overlay definition; the
+        # recorded stage_command must demand it (hydra-missing) rather than
+        # silently re-stage the packaged default overlay
+        stage_required_options.append(("--overlay-definition", "???"))
     errors.extend(
         _validate_project_command(
             label="stage_command",

@@ -1300,3 +1300,55 @@ def test_local_build_and_program_plan_honors_the_injected_definition(tmp_path: P
     assert 'set acme_registers_sv [file normalize "/repo/acme/dau_core/hdl/acme_registers.sv"]' in overlay_source
     assert "[list {Top_i/gt0} GTPE2_CHANNEL_X0Y1]" in build_source
     assert "pipe_lane" not in build_source
+
+
+def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    request_kwargs = dict(
+        source_shell_root=Path("/repo/projects/nite"),
+        work_root=tmp_path,
+        dau_core_root=Path("/repo/acme"),
+        dau_driver_root=Path("/repo/dau-driver"),
+    )
+
+    injected = dict(
+        vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs, overlay_definition=definition))
+    )
+    default = dict(vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs)))
+
+    assert injected["overlay_definition"] == "injected"
+    # replaying the recorded command must demand the definition instead of
+    # silently re-staging the packaged default overlay
+    assert "overlay_definition=???" in injected["stage_command"]
+    assert "overlay_definition" not in default
+    assert "overlay_definition" not in default["stage_command"]
+
+
+def test_project_command_validation_requires_the_injected_definition_marker(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    request = VivadoProjectGenerationRequest(
+        source_shell_root=Path("/repo/projects/nite"),
+        work_root=tmp_path,
+        dau_core_root=Path("/repo/acme"),
+        dau_driver_root=Path("/repo/dau-driver"),
+        overlay_definition=definition,
+    )
+    project_manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
+    manifest_path = request.backend_request.resolved_manifest_path
+    command_plan_path = request.backend_request.resolved_command_plan_path
+
+    marked = vivado_backend._validate_project_manifest_commands(
+        project_manifest=project_manifest,
+        manifest_path=manifest_path,
+        command_plan_path=command_plan_path,
+    )
+    assert marked == ()
+
+    # a stage_command silently rebuilt without the marker fails validation
+    project_manifest["stage_command"] = project_manifest["stage_command"].replace(" 'overlay_definition=???'", "")
+    stripped = vivado_backend._validate_project_manifest_commands(
+        project_manifest=project_manifest,
+        manifest_path=manifest_path,
+        command_plan_path=command_plan_path,
+    )
+    assert any("overlay-definition" in error for error in stripped)
