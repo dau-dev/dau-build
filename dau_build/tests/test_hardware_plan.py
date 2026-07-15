@@ -705,7 +705,9 @@ def test_task_prints_thunderbolt_release_plan() -> None:
 
     lines = result.message.splitlines()
     assert len(lines) == 1
-    assert lines[0] == "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    assert (
+        lines[0] == "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    )
 
 
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_smoke() -> None:
