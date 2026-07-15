@@ -152,8 +152,10 @@ class HostAccess(BaseModel):
 
     pci_id: str
     endpoint_bdf: str
-    rescan_bdfs: tuple[str, ...] = ()
-    runtime_pm_patterns: tuple[str, ...] = ()
+    # explicit, not defaulted: an empty tuple is meaningful (global rescan
+    # only / no runtime-PM holds), so each board states its own values
+    rescan_bdfs: tuple[str, ...]
+    runtime_pm_patterns: tuple[str, ...]
     runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
     jtag_cable: str = "digilent_hs2"
 

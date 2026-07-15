@@ -94,11 +94,11 @@ class HardwareToolchainConfig(BaseModel):
                 "endpoint_bdf": access.endpoint_bdf,
                 "jtag_cable": access.jtag_cable,
                 "runtime_pm_executable": access.runtime_pm_executable,
+                # authoritative including empty (global rescan only / no
+                # runtime-PM holds) — never silently the dpv1 defaults
+                "rescan_bdfs": access.rescan_bdfs,
+                "runtime_pm_patterns": access.runtime_pm_patterns,
             }
-            if access.rescan_bdfs:
-                values["rescan_bdfs"] = access.rescan_bdfs
-            if access.runtime_pm_patterns:
-                values["runtime_pm_patterns"] = access.runtime_pm_patterns
         values.update({key: value for key, value in overrides.items() if value is not None})
         return cls(work_root=work_root, **values)
 

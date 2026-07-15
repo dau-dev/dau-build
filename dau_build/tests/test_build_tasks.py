@@ -632,3 +632,18 @@ def test_host_group_supplies_checkout_roots(tmp_path: Path) -> None:
     )
     with pytest.raises(BuildStepError, match="host=hosts/<name>"):
         bare.stage_steps()
+
+
+def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
+    from dau_build.build_steps import HardwarePlanTask
+    from dau_build.hardware_plan import RecoveryPlan
+    from dau_build.platforms import dpv1_platform
+
+    # a selected platform must state how the host reaches it; the dpv1
+    # defaults are never silently applied to another board
+    accessless = dpv1_platform().model_copy(update={"name": "probe", "host_access": None})
+    with pytest.raises(BuildStepError, match="declares no host_access"):
+        HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
+    # plan-only composition stays open (it renders, it does not touch hardware)
+    planned = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
+    assert "thunderbolt-hold" in planned.message

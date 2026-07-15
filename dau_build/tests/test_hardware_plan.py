@@ -1428,3 +1428,37 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:
         )
     )
     assert "stage_task" not in default
+
+
+def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
+    from pydantic import ValidationError
+
+    from dau_build.platforms import HostAccess, dpv1_platform
+
+    # rescan_bdfs / runtime_pm_patterns are required: a board must state its
+    # own values (empty is meaningful, silence is not)
+    with pytest.raises(ValidationError):
+        HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")
+
+    # empty tuples are authoritative — never silently the dpv1 defaults
+    bare = dpv1_platform().model_copy(deep=True)
+    bare.host_access.rescan_bdfs = ()
+    bare.host_access.runtime_pm_patterns = ()
+    config = HardwareToolchainConfig.for_platform(bare, work_root=Path("/w"))
+    steps = recovery_plan(config)
+    by_name = {step.name: step for step in steps}
+    assert by_name["thunderbolt-hold"].argv == ("dau-utils-pci-runtime-pm", "hold")
+    assert by_name["pci-rescan"].argv[2] == "echo 1 > /sys/bus/pci/rescan"
+
+
+def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="stage_task_name"):
+        VivadoProjectGenerationRequest(
+            source_shell_root=Path("/repo/projects/nite"),
+            work_root=tmp_path,
+            dau_core_root=Path("/repo/dau-core"),
+            dau_driver_root=Path("/repo/dau-driver"),
+            stage_task_name="",
+        )

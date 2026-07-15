@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from ccflow import BaseModel
+from pydantic import field_validator
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
 
@@ -122,6 +123,13 @@ class VivadoProjectGenerationRequest(BaseModel):
     # the recorded command re-composes the injection instead of demanding a
     # definition on a flat command line.
     stage_task_name: str = DEFAULT_STAGE_TASK_NAME
+
+    @field_validator("stage_task_name")
+    @classmethod
+    def _stage_task_name_nonempty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("stage_task_name must be non-empty (default: the packaged stage-vivado-overlay task)")
+        return value
 
     @property
     def dau_core_hdl_root(self) -> Path:

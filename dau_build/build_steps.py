@@ -1062,6 +1062,11 @@ class HardwarePlanTask(BuildCallableModel):
             from dau_build.platforms import require_measured
 
             require_measured(self.platform)
+            if getattr(self.platform, "host_access", None) is None:
+                raise BuildStepError(
+                    f"platform {self.platform.name!r} declares no host_access; add the board's measured "
+                    "access facts to its platform config (or run without platform=) before executing hardware plans"
+                )
         config = HardwareToolchainConfig.for_platform(
             self.platform,
             work_root=self.work_root,
