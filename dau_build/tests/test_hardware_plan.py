@@ -636,7 +636,7 @@ def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
         "lspci-endpoint",
     ]
     assert steps[0].argv == (
-        "dau-pci-runtime-pm",
+        "dau-utils-pci-runtime-pm",
         "hold",
         "--pattern",
         "Thunderbolt",
@@ -660,7 +660,7 @@ def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
 
     assert hold_step.name == "thunderbolt-hold"
     assert hold_step.argv == (
-        "dau-pci-runtime-pm",
+        "dau-utils-pci-runtime-pm",
         "hold",
         "--pattern",
         "Thunderbolt",
@@ -673,7 +673,7 @@ def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
     )
     assert release_step.name == "thunderbolt-release"
     assert release_step.argv == (
-        "dau-pci-runtime-pm",
+        "dau-utils-pci-runtime-pm",
         "release",
         "--pattern",
         "Thunderbolt",
@@ -690,7 +690,7 @@ def test_task_prints_recovery_plan_without_running_privileged_commands() -> None
     result = _run_plan("recovery", work_root="/repo/projects/vivado-shell")
 
     lines = result.message.splitlines()
-    assert lines[0] == "thunderbolt-hold\tdau-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    assert lines[0] == "thunderbolt-hold\tdau-utils-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
     assert lines[1:4] == [
         "remove-endpoint\tsh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
         "program-volatile\topenFPGALoader -c digilent_hs2 /repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
@@ -705,7 +705,7 @@ def test_task_prints_thunderbolt_release_plan() -> None:
 
     lines = result.message.splitlines()
     assert len(lines) == 1
-    assert lines[0] == "thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    assert lines[0] == "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
 
 
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_smoke() -> None:
@@ -1015,12 +1015,12 @@ def test_task_prints_local_build_and_program_plan() -> None:
 
     lines = result.message.splitlines()
     assert len(lines) == 11
-    assert lines[0].startswith("thunderbolt-hold\tdau-pci-runtime-pm hold ")
+    assert lines[0].startswith("thunderbolt-hold\tdau-utils-pci-runtime-pm hold ")
     assert lines[1].startswith("write-dau-overlay\tsh -c ")
     assert lines[2].startswith("write-vivado-build-script\tsh -c ")
     assert lines[3].startswith("vivado-overlay-build\tbash -lc ")
     assert lines[9] == "driver-hardware-smoke\tsh -c dau-smoke"
-    assert lines[10].startswith("thunderbolt-release\tdau-pci-runtime-pm release ")
+    assert lines[10].startswith("thunderbolt-release\tdau-utils-pci-runtime-pm release ")
 
 
 def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
@@ -1033,10 +1033,10 @@ def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
 
     lines = result.message.splitlines()
     assert len(lines) == 8
-    assert lines[0].startswith("thunderbolt-hold\tdau-pci-runtime-pm hold ")
+    assert lines[0].startswith("thunderbolt-hold\tdau-utils-pci-runtime-pm hold ")
     assert lines[3] == "program-volatile\topenFPGALoader -c digilent_hs2 /tmp/candidate.bit"
     assert lines[6] == "driver-hardware-smoke\tsh -c dau-smoke"
-    assert lines[7].startswith("thunderbolt-release\tdau-pci-runtime-pm release ")
+    assert lines[7].startswith("thunderbolt-release\tdau-utils-pci-runtime-pm release ")
     assert all("vivado" not in line.lower() for line in lines)
 
 
@@ -1056,7 +1056,7 @@ def test_task_execute_runs_plan_steps_in_order(monkeypatch) -> None:
 
     assert calls == [
         (
-            "dau-pci-runtime-pm",
+            "dau-utils-pci-runtime-pm",
             "release",
             "--pattern",
             "Thunderbolt",
@@ -1157,3 +1157,24 @@ def test_dau_overlay_tcl_ties_off_upgraded_quad_spi_ss_input() -> None:
     assert "CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}" in source
     assert "connect_bd_net -net dau_spi_ss_i_tieoff_dout" in source
     assert 'puts $manifest_file "spi_ss_i_tieoff=dau_spi_ss_i_tieoff"' in source
+
+
+def test_vivado_invocation_is_validated_at_model_construction(tmp_path: Path) -> None:
+    # config models are pydantic: an unsupported invocation must fail at
+    # construction, not survive into manifests/command plans
+    import pydantic
+
+    from dau_build.vivado_backend import VivadoProjectGenerationRequest
+
+    with pytest.raises(pydantic.ValidationError):
+        HardwareToolchainConfig(work_root=tmp_path, vivado_invocation="bogus")
+    with pytest.raises(pydantic.ValidationError):
+        VivadoBackendRequest(dau_core_hdl_root=tmp_path, build_root=tmp_path, vivado_invocation="bogus")
+    with pytest.raises(pydantic.ValidationError):
+        VivadoProjectGenerationRequest(
+            source_shell_root=tmp_path,
+            work_root=tmp_path,
+            dau_core_root=tmp_path,
+            dau_driver_root=tmp_path,
+            vivado_invocation="bogus",
+        )

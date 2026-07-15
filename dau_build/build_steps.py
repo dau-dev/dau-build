@@ -600,7 +600,16 @@ class FlashTask(BuildCallableModel):
             else:
                 manifest = _read_key_value_manifest(self.manifest_path)
                 _require_built_manifest(self.manifest_path, manifest)
-                bitstream = bitstream or _manifest_path(self.manifest_path.parent, manifest, "bitstream")
+                # a key=value backend manifest carries no digests: flash
+                # provenance comes from the packaged artlink manifest the
+                # validate step writes beside it (digest-verified below)
+                packaged = self.manifest_path.with_suffix(".artifacts.yaml")
+                if not packaged.is_file():
+                    raise BuildStepError(
+                        f"backend manifest has no packaged artlink manifest: {packaged.as_posix()}; "
+                        "run the validate step (execute=True) to package digested provenance before flashing"
+                    )
+                bitstream = bitstream or _bitstream_from_shell_build_manifest(packaged)
             manifest_segment = f" manifest={self.manifest_path}"
         if bitstream is None:
             raise BuildStepError("flash requires bitstream or manifest_path")

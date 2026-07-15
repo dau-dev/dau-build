@@ -5,6 +5,7 @@ import shlex
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from ccflow import BaseModel
 
@@ -67,10 +68,11 @@ class HardwareToolchainConfig(BaseModel):
     work_root: Path
     bitstream_path: Path | None = None
     vivado_executable: str = "vivado"
-    vivado_invocation: str = "standard"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader_executable: str = "openFPGALoader"
-    runtime_pm_executable: str = "dau-pci-runtime-pm"
+    # the console script dau-utils actually installs (dau_utils.pci_runtime_pm)
+    runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
     runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", DPV1_PCI_ID, "Xilinx")
     jtag_cable: str = "digilent_hs2"
     endpoint_bdf: str = "0000:04:00.0"

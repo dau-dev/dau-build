@@ -197,6 +197,43 @@ def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> Non
     )
 
 
+def _write_minimal_built_backend_manifest(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "Top_wrapper.bit").write_bytes(b"bit")
+    for name in ("dau_utilization.rpt", "dau_timing_summary.rpt", "vivado.log"):
+        (root / name).write_text("built\n", encoding="utf-8")
+    manifest_path = root / "dau-vivado.manifest"
+    manifest_path.write_text(
+        "bitstream=Top_wrapper.bit\n"
+        "resource_summary=dau_utilization.rpt\n"
+        "timing_summary=dau_timing_summary.rpt\n"
+        "vivado_log=vivado.log\n"
+        "build_status=built\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def test_flash_refuses_backend_manifest_without_packaged_provenance(tmp_path: Path) -> None:
+    # a key=value backend manifest alone carries no digests: flash must
+    # demand the packaged artlink manifest the validate step writes
+    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
+
+    with pytest.raises(BuildStepError, match="no packaged artlink manifest"):
+        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
+
+
+def test_flash_refuses_backend_manifest_bitstream_digest_mismatch(tmp_path: Path) -> None:
+    from dau_build.shell_build import write_overlay_build_manifest
+
+    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
+    write_overlay_build_manifest(tmp_path, manifest_path, name="dau-vivado")
+    (tmp_path / "Top_wrapper.bit").write_bytes(b"replaced-after-build")
+
+    with pytest.raises(BuildStepError, match="digest mismatch"):
+        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
+
+
 def test_execute_override_task_plans_identity_smoke_test() -> None:
     result = execute_override_task(("task=tasks/flash/smoke-test", "test=identity"))
 
@@ -217,7 +254,7 @@ def test_hardware_plan_task_via_plan_group() -> None:
 
     assert result == BuildStepResult(
         step="hardware-plan",
-        message="thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx",
+        message="thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx",
     )
 
 
@@ -391,7 +428,7 @@ def test_dau_build_cfg_dispatches_hardware_plan_via_group(capsys) -> None:
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
-        "thunderbolt-release\tdau-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+        "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
     ]
 
 
@@ -481,6 +518,11 @@ def _write_built_backend_outputs(build_root: Path, manifest_path: Path) -> Path:
         manifest_path.read_text(encoding="utf-8").replace("build_status=planned", "build_status=built"),
         encoding="utf-8",
     )
+    # mirror the validate step: package the digested artlink manifest beside
+    # the key=value handoff (flash provenance consumes the packaged form)
+    from dau_build.shell_build import write_overlay_build_manifest
+
+    write_overlay_build_manifest(build_root, manifest_path, name="dau-vivado")
     return paths["bitstream"]
 
 
