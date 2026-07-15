@@ -655,7 +655,10 @@ class BuildShellProjectTask(BuildCallableModel):
     """Run a generated shell project script through Vivado and package the
     outputs as an artlink shell-build manifest (bitstream digest, reports,
     log, generated inputs, contributing sources with repository state).
-    Plan-only unless ``execute=true``."""
+    Plan-only unless ``execute=true``. When the composed ``platform=`` group
+    is supplied, a real build refuses placeholder boards (unmeasured
+    hardware-derived values) — config-only generation and planning stay
+    open."""
 
     output_root: Path
     script: str = "build_mm_job.tcl"
@@ -663,12 +666,17 @@ class BuildShellProjectTask(BuildCallableModel):
     manifest_name: str = "dau-shell"
     source_paths: tuple[Path, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
+    platform: Any = None
     execute: bool = False
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
         from dau_build.shell_build import run_shell_project_build, write_shell_build_manifest
 
+        if self.execute and self.platform is not None:
+            from dau_build.platforms import require_measured
+
+            require_measured(self.platform)
         script_path = self.output_root / self.script
         if not script_path.is_file():
             raise BuildStepError(f"shell project script does not exist: {script_path.as_posix()}")

@@ -7,12 +7,14 @@ from pydantic import ValidationError
 
 from dau_build.platforms import (
     HostLink,
+    PlaceholderPlatformError,
     PlatformDefinition,
     PlatformMemory,
     ResourceBudget,
     XdmaPersonality,
     dpv1_platform,
     fits,
+    require_measured,
 )
 
 
@@ -42,14 +44,19 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
             pcie_lanes=8,
             xdma_personality=XdmaPersonality(params={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
         ),
-        memory=PlatformMemory(kind="ddr3", size_bytes=8 << 30),
+        memory=PlatformMemory(kind="ddr3", size_bytes=8 << 30, constraints_xdc="set_property IOSTANDARD LVDS [get_ports sys_clk_clk_p]\n"),
         constraints=("pins.xdc", "timing.xdc"),
+        constraints_xdc="set_property CFGBVS GND [current_design]\n",
+        lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
         program_method="flash",
+        placeholders=("host_link.xdma_personality",),
     )
     reloaded = PlatformDefinition.model_validate(platform.model_dump())
     assert reloaded == platform
     assert reloaded.host_link.xdma_personality.params["pl_link_cap_max_link_width"] == "X8"
     assert reloaded.constraints == ("pins.xdc", "timing.xdc")
+    assert reloaded.lane_placements == ((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9"))
+    assert reloaded.placeholders == ("host_link.xdma_personality",)
 
 
 def test_personality_emits_tcl_config_and_derives_link_width() -> None:
@@ -63,12 +70,24 @@ def test_validation_rejects_bad_values() -> None:
         ResourceBudget(lut=0, ff=1, bram36=1, dsp=1)
     with pytest.raises(ValidationError, match="pcie_lanes"):
         HostLink(interface="pcie-xdma", pcie_lanes=3)
+    with pytest.raises(ValidationError, match="expected_link_width"):
+        HostLink(interface="pcie-xdma", pcie_lanes=8, expected_link_width=3)
+    with pytest.raises(ValidationError, match="expected_link_speed_gts"):
+        HostLink(interface="pcie-xdma", pcie_lanes=8, expected_link_speed_gts=0)
     with pytest.raises(ValidationError, match="size_bytes"):
         PlatformMemory(kind="ddr3", size_bytes=0)
     with pytest.raises(ValidationError, match="program_method"):
         _dpv1_with(program_method="usb")
     with pytest.raises(ValidationError, match="part must be non-empty"):
         _dpv1_with(part="")
+
+
+def test_placeholder_platform_is_refused_for_real_builds() -> None:
+    placeholder = _dpv1_with(name="probe", placeholders=("host_link.xdma_personality", "budget"))
+    with pytest.raises(PlaceholderPlatformError, match="xdma_personality"):
+        require_measured(placeholder)
+    # a measured board (no placeholders) passes
+    require_measured(dpv1_platform())
 
 
 def test_fits_under_and_over_budget() -> None:
@@ -95,7 +114,7 @@ def test_fits_exactly_at_budget_is_ok() -> None:
 
 
 def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
-    from dau_build.dpv1_shell import DPV1_PART, dpv1_xdma_personality
+    from dau_build.dpv1_shell import DPV1_PART, GT_LANE_SWIZZLE, dpv1_constraints_xdc, dpv1_ddr_constraints_xdc, dpv1_xdma_personality
 
     platform = dpv1_platform()
     assert len(platform.host_link.xdma_personality.params) == 47
@@ -103,9 +122,19 @@ def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
     assert platform.part == DPV1_PART
     # lane count is consistent with the personality's link width
     assert platform.host_link.pcie_lanes == platform.host_link.xdma_personality.link_width() == 4
+    # the proven host trains x2 at 5.0 GT/s over Thunderbolt
+    assert platform.host_link.expected_link_width == 2
+    assert platform.host_link.expected_link_speed_gts == 5.0
     assert platform.memory.mig_prj == "dpv1_mig.prj"
     # the shell's personality accessor resolves the same config
     assert dpv1_xdma_personality() == platform.host_link.xdma_personality
+    # the lane swizzle and pin constraints are platform data; the shell
+    # constants/accessors must not drift from the config
+    assert platform.lane_placements == GT_LANE_SWIZZLE
+    assert dpv1_constraints_xdc().endswith(platform.constraints_xdc)
+    assert dpv1_ddr_constraints_xdc().endswith(platform.memory.constraints_xdc)
+    # dpv1 is hardware-proven: no placeholder values
+    assert platform.placeholders == ()
     # coerce-sensitive values survive yaml load intact
     params = platform.host_link.xdma_personality.params
     assert params["pf1_msix_cap_table_size"] == "000"

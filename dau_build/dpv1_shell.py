@@ -19,8 +19,12 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from ccflow import BaseModel
+from pydantic import Field, model_validator
+
+from dau_build.platforms import PlatformDefinition
 
 DPV1_PART = "xc7a200tfbg484-2"
 
@@ -28,28 +32,48 @@ DPV1_PART = "xc7a200tfbg484-2"
 GT_LANE_SWIZZLE = ((3, "GTPE2_CHANNEL_X0Y7"), (0, "GTPE2_CHANNEL_X0Y6"), (2, "GTPE2_CHANNEL_X0Y5"), (1, "GTPE2_CHANNEL_X0Y4"))
 
 
-# The XDMA personality (the 47 value_src=user XCI parameters, applied
-# verbatim — a hand-picked subset is memory-dead on hardware) lives in
-# config/platform/dpv1.yaml, the single source. Resolve it once per process.
+# The platform (part, the 47 value_src=user XCI personality parameters
+# applied verbatim — a hand-picked subset is memory-dead on hardware —
+# pin constraints, lane swizzle) lives in config/platform/platforms/dau/dpv1.yaml,
+# the single source. Resolve it once per process.
 @lru_cache(maxsize=1)
-def dpv1_xdma_personality():
-    """The dpv1 XDMA personality, resolved from the platform config."""
+def _dpv1_platform() -> PlatformDefinition:
     from dau_build.config import resolve_platform
 
-    return resolve_platform("platforms/dau/dpv1").host_link.xdma_personality
+    return resolve_platform("platforms/dau/dpv1")
+
+
+def dpv1_xdma_personality():
+    """The dpv1 XDMA personality, resolved from the platform config."""
+    return _dpv1_platform().host_link.xdma_personality
+
+
+def _part_from_platform(values: Any) -> Any:
+    """Default the request ``part`` from the composed platform so shells for
+    a registered board never restate the FPGA part; an explicit ``part``
+    still wins."""
+    if isinstance(values, dict) and not values.get("part"):
+        platform = values.get("platform")
+        part = platform.get("part") if isinstance(platform, dict) else getattr(platform, "part", None)
+        if part:
+            values["part"] = part
+    return values
 
 
 class MmJobShellRequest(BaseModel):
     """Inputs for generating the MM job shell project. The caller supplies
     the generated binding sources as (filename, text) pairs — dau-build is
     generic platform integration and generates the *project*, never the
-    domain HDL. Staging addresses are plain values; DAU flows pass their
-    register-contract numbers."""
+    domain HDL. The target board is the composed ``platform``
+    (``PlatformDefinition``, default dpv1): part, XDMA personality, pin
+    constraints, and lane swizzle all come from it. Staging addresses are
+    plain values; DAU flows pass their register-contract numbers."""
 
     output_root: Path
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
+    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
     part: str = DPV1_PART
     input_buffer_address: int = 0x0000_0000
     output_buffer_address: int = 0x0010_0000
@@ -58,12 +82,15 @@ class MmJobShellRequest(BaseModel):
     output_bram_bytes: int = 0x0000_1000  # 4 KiB
     jobs: int = 12
 
+    _fill_part = model_validator(mode="before")(_part_from_platform)
+
 
 class MmDdrJobShellRequest(BaseModel):
     """Inputs for generating the DDR-staged MM job shell project: the MM
     job shell with the block RAM staging replaced by the memory controller
     (MIG, configured from a caller-supplied .prj) shared between the XDMA
-    memory path and the job top's AXI4 master. The register aperture is
+    memory path and the job top's AXI4 master. The target board is the
+    composed ``platform`` (default dpv1). The register aperture is
     unchanged; the XADC feeds the controller's temperature compensation and
     is host-readable in the upper half of the AXI-Lite BAR."""
 
@@ -72,17 +99,29 @@ class MmDdrJobShellRequest(BaseModel):
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
     mig_prj: Path
+    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
     part: str = DPV1_PART
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000
     ddr_bytes: int = 0x4000_0000  # 1 GiB
     jobs: int = 12
 
+    _fill_part = model_validator(mode="before")(_part_from_platform)
 
-def gt_lane_swizzle_hook_tcl() -> str:
-    """Pre-opt_design hook applying the DAU platform variant 1 (dpv1) lane swizzle, version-robust
-    across XDMA internal hierarchy renames."""
-    swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in GT_LANE_SWIZZLE)
+    @property
+    def staged_mig_prj_name(self) -> str:
+        """The name the MIG ``.prj`` is vendored under inside the project —
+        the platform's registered name when it has one, else the caller's
+        filename."""
+        return self.platform.memory.mig_prj or self.mig_prj.name
+
+
+def gt_lane_swizzle_hook_tcl(lane_placements: tuple[tuple[int, str], ...] = GT_LANE_SWIZZLE) -> str:
+    """Pre-opt_design hook applying the platform's lane swizzle (default: the
+    DAU platform variant 1 (dpv1) mapping), version-robust across XDMA
+    internal hierarchy renames."""
+    swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in lane_placements)
+    lane_count = len(lane_placements)
     return f"""# GENERATED by dau_build.dpv1_shell — do not edit.
 # Pre-opt_design implementation hook: apply the DAU platform variant 1 (dpv1) PCIe lane swizzle
 # after the IP's own XDC constraints, per CRITICAL WARNING 18-4427 guidance.
@@ -94,8 +133,8 @@ foreach cell $gts {{
         dict set lane_cells $lane $cell
     }}
 }}
-if {{[dict size $lane_cells] != 4}} {{
-    error "gt_lane_swizzle: expected 4 GTPE2_CHANNEL lane cells, found [dict size $lane_cells]"
+if {{[dict size $lane_cells] != {lane_count}}} {{
+    error "gt_lane_swizzle: expected {lane_count} GTPE2_CHANNEL lane cells, found [dict size $lane_cells]"
 }}
 # two-phase: release every lane's LOC first, then place — interleaved
 # reset/set hits "bel is occupied" when a target site is still held by a
@@ -116,57 +155,38 @@ foreach {{lane channel}} $swizzle {{
 """
 
 
+_CONSTRAINTS_BANNER = "# GENERATED by dau_build.dpv1_shell — do not edit.\n"
+
+
+def shell_constraints_xdc(platform: PlatformDefinition) -> str:
+    """Pin constraints for the MM job shell of a registered platform (no GT
+    LOCs — a lane swizzle, when the board has one, is applied by the
+    implementation hook). The text is the platform's ``constraints_xdc``
+    config data behind the generator banner."""
+    return _CONSTRAINTS_BANNER + platform.constraints_xdc
+
+
+def ddr_shell_constraints_xdc(platform: PlatformDefinition) -> str:
+    """MM shell pin constraints extended with the platform memory system's
+    additions (``memory.constraints_xdc``)."""
+    base = shell_constraints_xdc(platform)
+    if not platform.memory.constraints_xdc:
+        return base
+    return base + "\n" + platform.memory.constraints_xdc
+
+
 def dpv1_constraints_xdc() -> str:
-    """Pin constraints for the MM job shell (no GT LOCs here — the swizzle is
-    applied by the implementation hook)."""
-    return """# GENERATED by dau_build.dpv1_shell — do not edit.
-# DAU platform variant 1 (dpv1) pin constraints. GT channel LOCs (the lane swizzle) are applied by
-# the pre-opt_design implementation hook, never here: XDC-time LOCs conflict
-# with the XDMA IP's internal BEL/LOC constraints.
-
-set_property PACKAGE_PIN A10 [get_ports {pcie_mgt_rxn[0]}]
-set_property PACKAGE_PIN B10 [get_ports {pcie_mgt_rxp[0]}]
-set_property PACKAGE_PIN A6 [get_ports {pcie_mgt_txn[0]}]
-set_property PACKAGE_PIN B6 [get_ports {pcie_mgt_txp[0]}]
-set_property PACKAGE_PIN A8 [get_ports {pcie_mgt_rxn[1]}]
-set_property PACKAGE_PIN B8 [get_ports {pcie_mgt_rxp[1]}]
-set_property PACKAGE_PIN A4 [get_ports {pcie_mgt_txn[1]}]
-set_property PACKAGE_PIN B4 [get_ports {pcie_mgt_txp[1]}]
-set_property PACKAGE_PIN C11 [get_ports {pcie_mgt_rxn[2]}]
-set_property PACKAGE_PIN D11 [get_ports {pcie_mgt_rxp[2]}]
-set_property PACKAGE_PIN C5 [get_ports {pcie_mgt_txn[2]}]
-set_property PACKAGE_PIN D5 [get_ports {pcie_mgt_txp[2]}]
-set_property PACKAGE_PIN C9 [get_ports {pcie_mgt_rxn[3]}]
-set_property PACKAGE_PIN D9 [get_ports {pcie_mgt_rxp[3]}]
-set_property PACKAGE_PIN C7 [get_ports {pcie_mgt_txn[3]}]
-set_property PACKAGE_PIN D7 [get_ports {pcie_mgt_txp[3]}]
-
-set_property PACKAGE_PIN F6 [get_ports {pcie_clkin_clk_p[0]}]
-set_property PACKAGE_PIN E6 [get_ports {pcie_clkin_clk_n[0]}]
-
-set_property PACKAGE_PIN J1 [get_ports pci_reset]
-set_property IOSTANDARD LVCMOS33 [get_ports pci_reset]
-set_false_path -from [get_ports pci_reset]
-
-set_property PACKAGE_PIN G1 [get_ports {pcie_clkreq_l[0]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {pcie_clkreq_l[0]}]
-
-set_property PACKAGE_PIN M1 [get_ports {LED_M2[0]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {LED_M2[0]}]
-set_property PULLUP true [get_ports {LED_M2[0]}]
-set_property DRIVE 8 [get_ports {LED_M2[0]}]
-
-set_property BITSTREAM.CONFIG.OVERTEMPPOWERDOWN ENABLE [current_design]
-set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
-set_property CONFIG_VOLTAGE 3.3 [current_design]
-set_property CFGBVS VCCO [current_design]
-"""
+    """Pin constraints for the dpv1 MM job shell, resolved from the platform
+    config (the single source; no GT LOCs here — the swizzle is applied by
+    the implementation hook)."""
+    return shell_constraints_xdc(_dpv1_platform())
 
 
 def _project_preamble_tcl(request, *, banner: str) -> str:
     """Shared create_project/add_files/constraints/XDMA-BD preamble: every
-    dpv1 shell starts from the same proven PCIe front end."""
-    xdma_config = dpv1_xdma_personality().to_tcl_config()
+    shell starts from the platform's PCIe front end (its complete XDMA
+    personality — dpv1's proven 47 parameters by default)."""
+    xdma_config = request.platform.host_link.xdma_personality.to_tcl_config()
     generated_paths = tuple(request.output_root / name for name, _ in request.generated_sources)
     sources = " \\\n".join(f'    "{path.as_posix()}"' for path in (*request.hdl_sources, *generated_paths))
     sv_typing = "\n".join(
@@ -216,9 +236,33 @@ set dau_job [create_bd_cell -type module -reference {request.top_module} {reques
 """
 
 
+def _lane_swizzle_verify_tcl(lane_placements: tuple[tuple[int, str], ...]) -> str:
+    """Post-route verification that every swizzled lane landed on its site."""
+    swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in lane_placements)
+    return f"""set routed_lanes [dict create]
+foreach cell [get_cells -hierarchical -quiet -filter {{REF_NAME == GTPE2_CHANNEL || ORIG_REF_NAME == GTPE2_CHANNEL}}] {{
+    if {{[regexp {{pipe_lane\\[(\\d+)\\]}} $cell -> lane]}} {{
+        dict set routed_lanes $lane [get_property LOC $cell]
+    }}
+}}
+foreach {{lane channel}} {{{swizzle_pairs}}} {{
+    if {{![dict exists $routed_lanes $lane] || [dict get $routed_lanes $lane] != $channel}} {{
+        puts "DAU_MM_JOB_BUILD_FAILED lane $lane misplaced (expected $channel)"
+        exit 1
+    }}
+}}
+puts "lane swizzle verified"
+
+"""
+
+
 def _build_postamble_tcl(request) -> str:
-    """Shared validate/synthesize/implement/verify-swizzle/bitstream tail."""
-    swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in GT_LANE_SWIZZLE)
+    """Shared validate/synthesize/implement/verify-swizzle/bitstream tail.
+    The lane-swizzle hook and its post-route verification are emitted only
+    when the platform declares lane placements."""
+    placements = request.platform.lane_placements
+    hook_line = 'set_property STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl" [get_runs impl_1]\n' if placements else ""
+    verify_block = _lane_swizzle_verify_tcl(placements) if placements else ""
     return f"""validate_bd_design
 save_bd_design
 
@@ -234,8 +278,7 @@ if {{[get_property PROGRESS [get_runs synth_1]] != "100%"}} {{
     exit 1
 }}
 
-set_property STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl" [get_runs impl_1]
-launch_runs impl_1 -to_step write_bitstream -jobs {request.jobs}
+{hook_line}launch_runs impl_1 -to_step write_bitstream -jobs {request.jobs}
 wait_on_run impl_1
 if {{[get_property PROGRESS [get_runs impl_1]] != "100%"}} {{
     puts "DAU_MM_JOB_BUILD_FAILED implementation"
@@ -245,21 +288,7 @@ open_run impl_1
 report_utilization -file "$origin_dir/utilization_mm.rpt"
 report_timing_summary -file "$origin_dir/timing_mm.rpt"
 
-set routed_lanes [dict create]
-foreach cell [get_cells -hierarchical -quiet -filter {{REF_NAME == GTPE2_CHANNEL || ORIG_REF_NAME == GTPE2_CHANNEL}}] {{
-    if {{[regexp {{pipe_lane\\[(\\d+)\\]}} $cell -> lane]}} {{
-        dict set routed_lanes $lane [get_property LOC $cell]
-    }}
-}}
-foreach {{lane channel}} {{{swizzle_pairs}}} {{
-    if {{![dict exists $routed_lanes $lane] || [dict get $routed_lanes $lane] != $channel}} {{
-        puts "DAU_MM_JOB_BUILD_FAILED lane $lane misplaced (expected $channel)"
-        exit 1
-    }}
-}}
-puts "lane swizzle verified"
-
-set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
+{verify_block}set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 file copy -force "$origin_dir/project_mm/project_mm.runs/impl_1/Top_wrapper.bit" "$origin_dir/dau_mm_job.bit"
 puts "DAU_MM_JOB_BUILD_OK wns=$wns"
 exit 0
@@ -267,22 +296,12 @@ exit 0
 
 
 def dpv1_ddr_constraints_xdc() -> str:
-    """MM shell pin constraints extended for the DDR shell: the memory
-    controller's 200 MHz reference enters on J19/H19 (bank 15, LVDS_25 —
-    pin placement lives in the MIG .prj, only the IOSTANDARD belongs here)
-    and calibration-complete drives LED_A4."""
-    return (
-        dpv1_constraints_xdc()
-        + """
-set_property IOSTANDARD LVDS_25 [get_ports sys_clk_clk_p]
-set_property IOSTANDARD LVDS_25 [get_ports sys_clk_clk_n]
-
-set_property PACKAGE_PIN H4 [get_ports LED_A4]
-set_property IOSTANDARD LVCMOS33 [get_ports LED_A4]
-set_property PULLUP true [get_ports LED_A4]
-set_property DRIVE 8 [get_ports LED_A4]
-"""
-    )
+    """dpv1 MM shell pin constraints extended for the DDR shell, resolved
+    from the platform config: the memory controller's 200 MHz reference
+    enters on J19/H19 (bank 15, LVDS_25 — pin placement lives in the MIG
+    .prj, only the IOSTANDARD belongs here) and calibration-complete drives
+    LED_A4."""
+    return ddr_shell_constraints_xdc(_dpv1_platform())
 
 
 def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
@@ -307,7 +326,7 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
 # the DDR3 and sys_clk pin placement
 set mig_0 [create_bd_cell -type ip -vlnv xilinx.com:ip:mig_7series mig_0]
 set_property -dict [list \\
-    CONFIG.XML_INPUT_FILE "$origin_dir/dpv1_mig.prj" \\
+    CONFIG.XML_INPUT_FILE "$origin_dir/{request.staged_mig_prj_name}" \\
     CONFIG.RESET_BOARD_INTERFACE {{Custom}} \\
     CONFIG.MIG_DONT_TOUCH_PARAM {{Custom}} \\
     CONFIG.BOARD_MIG_PARAM {{Custom}} \\
@@ -381,19 +400,25 @@ def write_mm_ddr_job_shell_artifacts(request: MmDdrJobShellRequest) -> tuple[Pat
         path.write_text(text)
         written.append(path)
 
-    prj_path = request.output_root / "dpv1_mig.prj"
+    prj_path = request.output_root / request.staged_mig_prj_name
     prj_path.write_text(request.mig_prj.read_text())
     written.append(prj_path)
 
-    for name, text in (
-        ("build_mm_job.tcl", mm_ddr_job_shell_project_tcl(request)),
-        ("constraints.xdc", dpv1_ddr_constraints_xdc()),
-        ("gt_lane_swizzle.tcl", gt_lane_swizzle_hook_tcl()),
-    ):
+    for name, text in _shell_script_files(request, constraints=ddr_shell_constraints_xdc(request.platform)):
         path = request.output_root / name
         path.write_text(text)
         written.append(path)
     return tuple(written)
+
+
+def _shell_script_files(request, *, constraints: str) -> tuple[tuple[str, str], ...]:
+    """The project script, constraints, and (when the platform swizzles
+    lanes) the swizzle hook, as (name, text) pairs."""
+    project_tcl = mm_ddr_job_shell_project_tcl(request) if isinstance(request, MmDdrJobShellRequest) else mm_job_shell_project_tcl(request)
+    files = [("build_mm_job.tcl", project_tcl), ("constraints.xdc", constraints)]
+    if request.platform.lane_placements:
+        files.append(("gt_lane_swizzle.tcl", gt_lane_swizzle_hook_tcl(request.platform.lane_placements)))
+    return tuple(files)
 
 
 def mm_job_shell_project_tcl(request: MmJobShellRequest) -> str:
@@ -470,11 +495,7 @@ def write_mm_job_shell_artifacts(request: MmJobShellRequest) -> tuple[Path, ...]
         path.write_text(text)
         written.append(path)
 
-    for name, text in (
-        ("build_mm_job.tcl", mm_job_shell_project_tcl(request)),
-        ("constraints.xdc", dpv1_constraints_xdc()),
-        ("gt_lane_swizzle.tcl", gt_lane_swizzle_hook_tcl()),
-    ):
+    for name, text in _shell_script_files(request, constraints=shell_constraints_xdc(request.platform)):
         path = request.output_root / name
         path.write_text(text)
         written.append(path)
