@@ -12,6 +12,7 @@ from ccflow import BaseModel
 from dau_build.vivado_backend import (
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
+    VivadoOverlayDefinition,
     VivadoProjectArtifactValidation,
     VivadoProjectGenerationRequest,
     dau_overlay_tcl,
@@ -132,18 +133,20 @@ def local_build_and_program_plan(
     smoke_command: str | None = None,
     python: str = "python3",
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[ToolStep, ...]:
     overlay_path = _work_path(config.work_root, overlay_tcl)
     build_tcl = Path("scripts/dau_build.tcl")
     build_tcl_path = _work_path(config.work_root, build_tcl)
     vivado_path_base = config.work_root.resolve(strict=False) if config.vivado_mount_root is not None else None
-    overlay_source = dau_overlay_tcl(dau_core_root / "dau_core" / "hdl", vivado_path_base=vivado_path_base)
+    overlay_source = dau_overlay_tcl(dau_core_root / "dau_core" / "hdl", vivado_path_base=vivado_path_base, overlay_definition=overlay_definition)
+    build_tcl_source = vivado_build_tcl(lane_placements=None if overlay_definition is None else overlay_definition.lane_placements)
     stage_steps = () if source_shell_root is None else stage_shell_plan(config, source_shell_root=source_shell_root)
     return (
         *stage_steps,
         thunderbolt_hold_step(config, dau_utils_root=dau_utils_root, python=python),
         write_dau_overlay_step(overlay_path=overlay_path, source=overlay_source),
-        write_vivado_build_script_step(build_tcl_path=build_tcl_path, source=vivado_build_tcl()),
+        write_vivado_build_script_step(build_tcl_path=build_tcl_path, source=build_tcl_source),
         *_local_vivado_driver_steps(config, overlay_tcl=overlay_tcl, build_tcl=build_tcl),
         vivado_overlay_build_step(config, overlay_tcl=overlay_tcl, build_tcl=build_tcl, vivado_settings=vivado_settings),
         jtag_detect_step(config),
@@ -175,6 +178,7 @@ def stage_vivado_overlay_plan(
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
     vivado_log_path: Path = Path("vivado.log"),
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_backend_artifacts(
         VivadoBackendRequest(
@@ -198,6 +202,7 @@ def stage_vivado_overlay_plan(
             vivado_executable=config.vivado_executable,
             vivado_invocation=config.vivado_invocation,
             vivado_mount_root=config.vivado_mount_root,
+            overlay_definition=overlay_definition,
         )
     )
     stage_steps = () if source_shell_root is None else stage_shell_plan(config, source_shell_root=source_shell_root)
@@ -233,6 +238,7 @@ def stage_vivado_project_plan(
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
     vivado_log_path: Path = Path("vivado.log"),
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_project_generation_artifacts(
         VivadoProjectGenerationRequest(
@@ -260,6 +266,7 @@ def stage_vivado_project_plan(
             vivado_executable=config.vivado_executable,
             vivado_invocation=config.vivado_invocation,
             vivado_mount_root=config.vivado_mount_root,
+            overlay_definition=overlay_definition,
         )
     )
     backend_artifacts = artifacts.backend_artifacts
@@ -676,6 +683,7 @@ class LocalBuildAndProgramPlan(HardwarePlan):
     smoke_command: str | None = None
     python: str = "python3"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     def compose(self, config):
         return local_build_and_program_plan(
@@ -687,6 +695,7 @@ class LocalBuildAndProgramPlan(HardwarePlan):
             smoke_command=self.smoke_command,
             python=self.python,
             vivado_settings=self.vivado_settings,
+            overlay_definition=self.overlay_definition,
         )
 
 

@@ -23,6 +23,7 @@ from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
+    VivadoOverlayDefinition,
     VivadoProjectArtifactValidation,
     generate_vivado_backend_artifacts,
 )
@@ -752,6 +753,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
     vivado_log_path: Path = Path("vivado.log")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    overlay_definition: VivadoOverlayDefinition | None = None
 
     def stage_steps(self):
         return stage_vivado_overlay_plan(
@@ -772,6 +774,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
             timing_summary_path=self.timing_summary_path,
             vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
+            overlay_definition=self.overlay_definition,
         )
 
     def _toolchain_config(self) -> HardwareToolchainConfig:
@@ -818,6 +821,7 @@ class VivadoProjectStageTask(VivadoOverlayStageTask):
             timing_summary_path=self.timing_summary_path,
             vivado_log_path=self.vivado_log_path,
             vivado_settings=self.vivado_settings,
+            overlay_definition=self.overlay_definition,
         )
 
 

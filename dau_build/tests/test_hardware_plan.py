@@ -1180,3 +1180,123 @@ def test_vivado_invocation_is_validated_at_model_construction(tmp_path: Path) ->
             dau_driver_root=tmp_path,
             vivado_invocation="bogus",
         )
+
+
+def _acme_overlay_definition() -> vivado_backend.VivadoOverlayDefinition:
+    return vivado_backend.VivadoOverlayDefinition(
+        hdl_source_vars=(("acme_registers_sv", "acme_registers.sv"),),
+        source_management_tcl="add_files -norecurse -fileset sources_1 $acme_registers_sv",
+        bd_overlay_tcl='puts "acme bd overlay"',
+        runtime_manifest_entries=(("acme_registers_sv", "$acme_registers_sv"),),
+        static_manifest_items=(("acme_cell", "acme_0"),),
+        lane_placements=(("Top_i/gt0", "GTPE2_CHANNEL_X0Y1"),),
+    )
+
+
+def test_default_overlay_definition_reproduces_the_undefined_texts() -> None:
+    # None and the packaged default must render identical scripts/manifests:
+    # callers that pin today's texts can inject an equal definition later
+    # without any byte drift
+    hdl_root = Path("/repo/dau-core/dau_core/hdl")
+    default = vivado_backend.DEFAULT_OVERLAY_DEFINITION
+
+    assert dau_overlay_tcl(hdl_root) == dau_overlay_tcl(hdl_root, overlay_definition=default)
+    assert dau_overlay_manifest(hdl_root) == dau_overlay_manifest(hdl_root, overlay_definition=default)
+    assert vivado_backend.vivado_build_tcl() == vivado_backend.vivado_build_tcl(lane_placements=default.lane_placements)
+
+
+def test_injected_overlay_definition_drives_overlay_tcl_and_manifest() -> None:
+    definition = _acme_overlay_definition()
+    hdl_root = Path("/repo/acme/hdl")
+
+    source = dau_overlay_tcl(hdl_root, overlay_definition=definition)
+
+    assert 'set acme_registers_sv [file normalize "/repo/acme/hdl/acme_registers.sv"]' in source
+    assert "add_files -norecurse -fileset sources_1 $acme_registers_sv" in source
+    assert 'puts "acme bd overlay"' in source
+    assert 'puts $manifest_file "acme_registers_sv=$acme_registers_sv"' in source
+    assert "open_project project.xpr" in source
+    assert "update_compile_order -fileset sources_1" in source
+    assert "dau_identity" not in source
+
+    manifest = dict(dau_overlay_manifest(hdl_root, overlay_definition=definition))
+
+    assert manifest["acme_registers_sv"] == "/repo/acme/hdl/acme_registers.sv"
+    assert manifest["acme_cell"] == "acme_0"
+    assert manifest["backend"] == "dau_build.vivado_backend.vivado_overlay"
+    assert "dau_identity_registers_sv" not in manifest
+
+
+def test_injected_lane_placements_drive_the_build_tcl_placement_block() -> None:
+    text = vivado_backend.vivado_build_tcl(lane_placements=(("Top_i/gt0", "GTPE2_CHANNEL_X0Y1"),))
+
+    assert "foreach lane [list     [list {Top_i/gt0} GTPE2_CHANNEL_X0Y1] ] {" in text
+    assert "pipe_lane" not in text
+
+
+def test_empty_lane_placements_omit_the_placement_block() -> None:
+    text = vivado_backend.vivado_build_tcl(lane_placements=())
+
+    assert "foreach lane" not in text
+    assert "open_run synth_1\n\nlaunch_runs impl_1" in text
+
+
+def test_backend_request_overlay_definition_threads_into_generated_artifacts(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    request = VivadoBackendRequest(dau_core_hdl_root=Path("/repo/acme/hdl"), build_root=tmp_path, overlay_definition=definition)
+
+    artifacts = generate_vivado_backend_artifacts(request)
+
+    assert 'set acme_registers_sv [file normalize "/repo/acme/hdl/acme_registers.sv"]' in artifacts.overlay_tcl_text
+    assert "[list {Top_i/gt0} GTPE2_CHANNEL_X0Y1]" in artifacts.build_tcl_text
+    assert "acme_cell=acme_0" in artifacts.manifest_text
+    assert "dau_identity" not in artifacts.overlay_tcl_text
+
+
+def test_project_request_forwards_the_overlay_definition_to_the_backend(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    request = VivadoProjectGenerationRequest(
+        source_shell_root=Path("/repo/projects/nite"),
+        work_root=tmp_path,
+        dau_core_root=Path("/repo/acme"),
+        dau_driver_root=Path("/repo/dau-driver"),
+        overlay_definition=definition,
+    )
+
+    assert request.backend_request.overlay_definition == definition
+
+
+def _decoded_write_step_payload(step) -> str:
+    tokens = shlex.split(step.argv[2])
+    payload = tokens[tokens.index("printf") + 2]
+    return base64.b64decode(payload).decode("utf-8")
+
+
+def test_stage_vivado_overlay_plan_stages_the_injected_definition(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    config = HardwareToolchainConfig(work_root=tmp_path)
+
+    steps = stage_vivado_overlay_plan(config, dau_core_root=Path("/repo/acme"), overlay_definition=definition)
+
+    overlay_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-dau-overlay"))
+    build_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-vivado-build-script"))
+    manifest_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-dau-manifest"))
+
+    assert 'puts "acme bd overlay"' in overlay_source
+    assert "[list {Top_i/gt0} GTPE2_CHANNEL_X0Y1]" in build_source
+    assert "acme_cell=acme_0" in manifest_source
+    assert "dau_identity" not in overlay_source
+
+
+def test_local_build_and_program_plan_honors_the_injected_definition(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    config = HardwareToolchainConfig(work_root=tmp_path)
+
+    steps = local_build_and_program_plan(config, dau_core_root=Path("/repo/acme"), overlay_definition=definition)
+
+    overlay_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-dau-overlay"))
+    build_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-vivado-build-script"))
+
+    assert 'set acme_registers_sv [file normalize "/repo/acme/dau_core/hdl/acme_registers.sv"]' in overlay_source
+    assert "[list {Top_i/gt0} GTPE2_CHANNEL_X0Y1]" in build_source
+    assert "pipe_lane" not in build_source
