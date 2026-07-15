@@ -496,8 +496,17 @@ quoted verbatim and order-preserved so the generated Vivado <code class="docutil
 byte-for-byte identical to the known-good core.</p>
 <p><code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code> is composed of <code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code> (<code class="docutils literal notranslate"><span class="pre">lut</span></code>, <code class="docutils literal notranslate"><span class="pre">ff</span></code>, <code class="docutils literal notranslate"><span class="pre">bram36</span></code>,
 <code class="docutils literal notranslate"><span class="pre">dsp</span></code>), <code class="docutils literal notranslate"><span class="pre">PlatformMemory</span></code> (<code class="docutils literal notranslate"><span class="pre">kind</span></code>, <code class="docutils literal notranslate"><span class="pre">size_bytes</span></code>, <code class="docutils literal notranslate"><span class="pre">mig_prj</span></code>,
-<code class="docutils literal notranslate"><span class="pre">bandwidth_bytes_per_s</span></code>), and <code class="docutils literal notranslate"><span class="pre">HostLink</span></code> (<code class="docutils literal notranslate"><span class="pre">interface</span></code>, <code class="docutils literal notranslate"><span class="pre">pcie_lanes</span></code>,
-<code class="docutils literal notranslate"><span class="pre">xdma_personality</span></code>).</p>
+<code class="docutils literal notranslate"><span class="pre">bandwidth_bytes_per_s</span></code>, <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>), and <code class="docutils literal notranslate"><span class="pre">HostLink</span></code> (<code class="docutils literal notranslate"><span class="pre">interface</span></code>,
+<code class="docutils literal notranslate"><span class="pre">pcie_lanes</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma_personality</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_width</span></code>,
+<code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>), plus the board-level <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code> (pin
+constraint text the shell project generators emit behind their banner),
+<code class="docutils literal notranslate"><span class="pre">lane_placements</span></code> (the GT lane swizzle, applied as a pre-<code class="docutils literal notranslate"><span class="pre">opt_design</span></code>
+implementation hook; empty means the board needs none), and <code class="docutils literal notranslate"><span class="pre">placeholders</span></code>
+(names of hardware-derived values not yet measured on the board —
+<code class="docutils literal notranslate"><span class="pre">require_measured</span></code> refuses placeholder boards for real builds while
+config-only generation stays open). The shell project requests
+(<code class="docutils literal notranslate"><span class="pre">MmJobShellRequest</span></code>, <code class="docutils literal notranslate"><span class="pre">MmDdrJobShellRequest</span></code>) take a <code class="docutils literal notranslate"><span class="pre">platform</span></code> and default
+to dpv1; <code class="docutils literal notranslate"><span class="pre">part</span></code> defaults from the platform.</p>
 </section>
 <section id="plan">
 <h2><code class="docutils literal notranslate"><span class="pre">plan</span></code><a class="headerlink" href="#plan" title="Link to this heading">¶</a></h2>
