@@ -19,10 +19,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from ccflow import BaseModel
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from dau_build.platforms import PlatformDefinition
 
@@ -43,21 +42,15 @@ def _dpv1_platform() -> PlatformDefinition:
     return resolve_platform("platforms/dau/dpv1")
 
 
+def _default_platform() -> PlatformDefinition:
+    """A fresh dpv1 platform per request (the resolved config is cached, the
+    instance is copied so no two requests share a mutable default)."""
+    return _dpv1_platform().model_copy(deep=True)
+
+
 def dpv1_xdma_personality():
     """The dpv1 XDMA personality, resolved from the platform config."""
     return _dpv1_platform().host_link.xdma_personality
-
-
-def _part_from_platform(values: Any) -> Any:
-    """Default the request ``part`` from the composed platform so shells for
-    a registered board never restate the FPGA part; an explicit ``part``
-    still wins."""
-    if isinstance(values, dict) and not values.get("part"):
-        platform = values.get("platform")
-        part = platform.get("part") if isinstance(platform, dict) else getattr(platform, "part", None)
-        if part:
-            values["part"] = part
-    return values
 
 
 class MmJobShellRequest(BaseModel):
@@ -66,15 +59,17 @@ class MmJobShellRequest(BaseModel):
     generic platform integration and generates the *project*, never the
     domain HDL. The target board is the composed ``platform``
     (``PlatformDefinition``, default dpv1): part, XDMA personality, pin
-    constraints, and lane swizzle all come from it. Staging addresses are
-    plain values; DAU flows pass their register-contract numbers."""
+    constraints, and lane swizzle all come from it (``part`` is an explicit
+    override; ``resolved_part`` is what the project builds with). Staging
+    addresses are plain values; DAU flows pass their register-contract
+    numbers."""
 
     output_root: Path
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
-    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
-    part: str = DPV1_PART
+    platform: PlatformDefinition = Field(default_factory=_default_platform)
+    part: str | None = None
     input_buffer_address: int = 0x0000_0000
     output_buffer_address: int = 0x0010_0000
     register_window_offset: int = 0x0000_1000
@@ -82,7 +77,11 @@ class MmJobShellRequest(BaseModel):
     output_bram_bytes: int = 0x0000_1000  # 4 KiB
     jobs: int = 12
 
-    _fill_part = model_validator(mode="before")(_part_from_platform)
+    @property
+    def resolved_part(self) -> str:
+        """The FPGA part the project builds with: the explicit ``part``
+        override when given, else the platform's part."""
+        return self.part or self.platform.part
 
 
 class MmDdrJobShellRequest(BaseModel):
@@ -99,14 +98,18 @@ class MmDdrJobShellRequest(BaseModel):
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
     mig_prj: Path
-    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
-    part: str = DPV1_PART
+    platform: PlatformDefinition = Field(default_factory=_default_platform)
+    part: str | None = None
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000
     ddr_bytes: int = 0x4000_0000  # 1 GiB
     jobs: int = 12
 
-    _fill_part = model_validator(mode="before")(_part_from_platform)
+    @property
+    def resolved_part(self) -> str:
+        """The FPGA part the project builds with: the explicit ``part``
+        override when given, else the platform's part."""
+        return self.part or self.platform.part
 
     @property
     def staged_mig_prj_name(self) -> str:
@@ -182,6 +185,23 @@ def dpv1_constraints_xdc() -> str:
     return shell_constraints_xdc(_dpv1_platform())
 
 
+def _placeholder_guard_tcl(platform: PlatformDefinition) -> str:
+    """A hard refusal at the top of a placeholder board's project script: the
+    project may be generated and inspected, but any build attempt — through
+    the task or a bare Vivado invocation — fails fast until the placeholder
+    values are measured on hardware and cleared."""
+    if not platform.placeholders:
+        return ""
+    placeholder_list = ", ".join(platform.placeholders)
+    return (
+        f"# PLACEHOLDER BOARD: {platform.name} carries unmeasured hardware-derived\n"
+        f"# values ({placeholder_list}); refuse to build until they are measured\n"
+        f"# and cleared from the platform's `placeholders` config.\n"
+        f'puts "DAU_MM_JOB_BUILD_FAILED placeholder-platform {platform.name}: {placeholder_list}"\n'
+        "exit 1\n"
+    )
+
+
 def _project_preamble_tcl(request, *, banner: str) -> str:
     """Shared create_project/add_files/constraints/XDMA-BD preamble: every
     shell starts from the platform's PCIe front end (its complete XDMA
@@ -194,9 +214,9 @@ def _project_preamble_tcl(request, *, banner: str) -> str:
     )
     return f"""# GENERATED by dau_build.dpv1_shell — do not edit.
 {banner}
-set origin_dir [file dirname [file normalize [info script]]]
+{_placeholder_guard_tcl(request.platform)}set origin_dir [file dirname [file normalize [info script]]]
 
-create_project -force project_mm "$origin_dir/project_mm" -part {request.part}
+create_project -force project_mm "$origin_dir/project_mm" -part {request.resolved_part}
 
 add_files [list \\
 {sources} \\
