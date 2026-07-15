@@ -3,12 +3,11 @@ from __future__ import annotations
 import os
 import shlex
 from pathlib import Path
+from typing import Literal
 
 from ccflow import BaseModel
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
-
-SUPPORTED_VIVADO_INVOCATIONS = frozenset(("standard", "source-only"))
 
 
 class VivadoBackendRequest(BaseModel):
@@ -32,12 +31,8 @@ class VivadoBackendRequest(BaseModel):
     vivado_log_path: Path = Path("vivado.log")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     vivado_executable: str = "vivado"
-    vivado_invocation: str = "standard"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
-
-    def __post_init__(self) -> None:
-        if self.vivado_invocation not in SUPPORTED_VIVADO_INVOCATIONS:
-            raise ValueError(f"unsupported Vivado invocation: {self.vivado_invocation}")
 
     @property
     def resolved_manifest_path(self) -> Path:
@@ -92,13 +87,9 @@ class VivadoProjectGenerationRequest(BaseModel):
     xdma_module_path: Path = Path("sw/xdma/xdma.ko")
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
     vivado_executable: str = "vivado"
-    vivado_invocation: str = "standard"
+    vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     plan_executable: str = "dau-build"
-
-    def __post_init__(self) -> None:
-        if self.vivado_invocation not in SUPPORTED_VIVADO_INVOCATIONS:
-            raise ValueError(f"unsupported Vivado invocation: {self.vivado_invocation}")
 
     @property
     def dau_core_hdl_root(self) -> Path:
