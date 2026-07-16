@@ -269,7 +269,7 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 </div>
 <p>Every group except <code class="docutils literal notranslate"><span class="pre">callable</span></code> is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
 overridden. A run selects exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to populate <code class="docutils literal notranslate"><span class="pre">model</span></code>,
-optionally augmented by <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
+optionally augmented by <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, <code class="docutils literal notranslate"><span class="pre">host=</span></code>, and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
 <p>Each option file begins with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that places its
 content under that top-level key. Tasks and steps use <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>; the
 other groups use their singular key (<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">board</span></code>, etc.).</p>
@@ -333,12 +333,17 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <td><p>a <code class="docutils literal notranslate"><span class="pre">HardwarePlan</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">RecoveryPlan</span></code>)</p></td>
 <td><p>The hardware-session plan (<code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code>).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">host</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">host</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.HostConfig</span></code></p></td>
+<td><p>The build host’s source checkout roots (none packaged).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
 <td><p>(none packaged)</p></td>
 <td><p>Reserved; registered by extension packages.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
 <td><p>—</p></td>
 <td><p>ccflow registry pointer</p></td>
 <td><p>Fixed evaluator wiring; not normally overridden.</p></td>
@@ -504,9 +509,22 @@ constraint text the shell project generators emit behind their banner),
 implementation hook; empty means the board needs none), and <code class="docutils literal notranslate"><span class="pre">placeholders</span></code>
 (names of hardware-derived values not yet measured on the board —
 <code class="docutils literal notranslate"><span class="pre">require_measured</span></code> refuses placeholder boards for real builds while
-config-only generation stays open). The shell project requests
+config-only generation stays open). <code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>,
+<code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>,
+<code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>) carries the bench host’s measured
+access facts; <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain config from it when
+<code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected (explicit task fields override). The shell project requests
 (<code class="docutils literal notranslate"><span class="pre">MmJobShellRequest</span></code>, <code class="docutils literal notranslate"><span class="pre">MmDdrJobShellRequest</span></code>) take a <code class="docutils literal notranslate"><span class="pre">platform</span></code> and default
 to dpv1; <code class="docutils literal notranslate"><span class="pre">part</span></code> defaults from the platform.</p>
+</section>
+<section id="host">
+<h2><code class="docutils literal notranslate"><span class="pre">host</span></code><a class="headerlink" href="#host" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">host=hosts/&lt;name&gt;</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.build_config.HostConfig</span></code> — where the
+build host keeps its source checkouts (<code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_driver_root</span></code>,
+<code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>). dau-build packages no host options (checkout layouts are
+site-specific); register them from a search-path package or a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>
+overlay. The stage tasks and hardware plans interpolate their checkout roots
+from the composed host, and a direct <code class="docutils literal notranslate"><span class="pre">&lt;field&gt;=...</span></code> override always wins.</p>
 </section>
 <section id="plan">
 <h2><code class="docutils literal notranslate"><span class="pre">plan</span></code><a class="headerlink" href="#plan" title="Link to this heading">¶</a></h2>
@@ -528,7 +546,7 @@ pydantic enforces them, rather than a runtime check).</p>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/local-build-and-program</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">LocalBuildAndProgramPlan</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code> (req), <code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>, <code class="docutils literal notranslate"><span class="pre">overlay_tcl</span></code>, <code class="docutils literal notranslate"><span class="pre">smoke_command</span></code>, <code class="docutils literal notranslate"><span class="pre">python</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado_settings</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code> (from <code class="docutils literal notranslate"><span class="pre">host=</span></code> or <code class="docutils literal notranslate"><span class="pre">plan.dau_core_root=</span></code>), <code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>, <code class="docutils literal notranslate"><span class="pre">overlay_tcl</span></code>, <code class="docutils literal notranslate"><span class="pre">smoke_command</span></code>, <code class="docutils literal notranslate"><span class="pre">python</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado_settings</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/validate-bitstream</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ValidateBitstreamPlan</span></code></p></td>
@@ -634,6 +652,7 @@ by default and is not normally overridden.</p>
 <li><a class="reference internal" href="#driver-and-memory"><code class="docutils literal notranslate"><span class="pre">driver</span></code> and <code class="docutils literal notranslate"><span class="pre">memory</span></code></a></li>
 <li><a class="reference internal" href="#simulator"><code class="docutils literal notranslate"><span class="pre">simulator</span></code></a></li>
 <li><a class="reference internal" href="#platform"><code class="docutils literal notranslate"><span class="pre">platform</span></code></a></li>
+<li><a class="reference internal" href="#host"><code class="docutils literal notranslate"><span class="pre">host</span></code></a></li>
 <li><a class="reference internal" href="#plan"><code class="docutils literal notranslate"><span class="pre">plan</span></code></a></li>
 <li><a class="reference internal" href="#design"><code class="docutils literal notranslate"><span class="pre">design</span></code></a></li>
 <li><a class="reference internal" href="#callable"><code class="docutils literal notranslate"><span class="pre">callable</span></code></a></li>
