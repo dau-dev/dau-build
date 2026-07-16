@@ -262,11 +262,12 @@ def test_execute_override_task_plans_identity_smoke_test() -> None:
 
 
 def test_hardware_plan_task_via_plan_group() -> None:
-    # the plan is the composed plan group: plan=plans/thunderbolt-release
+    # the plan is the composed plan group: plan=plans/thunderbolt-release;
+    # host access (the runtime-PM patterns) composes from the platform group
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/thunderbolt-release"],
+        overrides=["plan=plans/thunderbolt-release", "platform=platforms/dau/dpv1"],
         model_values={"work_root": "/repo/projects/vivado-shell"},
     )
 
@@ -442,7 +443,14 @@ def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys)
 def test_dau_build_cfg_dispatches_hardware_plan_via_group(capsys) -> None:
     from dau_build.cli import main as cfg_main
 
-    exit_code = cfg_main(["task=tasks/hardware/hardware-plan", "plan=plans/thunderbolt-release", "model.work_root=/repo/projects/vivado-shell"])
+    exit_code = cfg_main(
+        [
+            "task=tasks/hardware/hardware-plan",
+            "plan=plans/thunderbolt-release",
+            "platform=platforms/dau/dpv1",
+            "model.work_root=/repo/projects/vivado-shell",
+        ]
+    )
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
@@ -565,10 +573,21 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
     from dau_build.hardware_plan import RecoveryPlan
     from dau_build.platforms import PlaceholderPlatformError, dpv1_platform
 
-    default = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
+    explicit = HardwarePlanTask(
+        plan=RecoveryPlan(),
+        work_root=Path("/repo/projects/vivado-shell"),
+        jtag_cable="digilent_hs2",
+        endpoint_bdf="0000:04:00.0",
+        expected_endpoint_id="10ee:7011",
+        runtime_pm_patterns=("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
+        rescan_bdfs=("0000:03:01.0", "0000:02:00.0", "0000:00:0d.3", "0000:00:0d.2", "0000:00:0d.0", "0000:00:07.2", "0000:00:07.0"),
+    )(None)
     composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=dpv1_platform())(None)
-    # dpv1's host_access reproduces the default plan text byte-identically
-    assert composed == default
+    # dpv1's host_access reproduces the explicit bench-fact plan text
+    # byte-identically; without either, hardware steps refuse to render
+    assert composed == explicit
+    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+        HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
 
     # explicit task fields override the platform's host_access
     overridden = HardwarePlanTask(
@@ -644,6 +663,7 @@ def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
     accessless = dpv1_platform().model_copy(update={"name": "probe", "host_access": None})
     with pytest.raises(BuildStepError, match="declares no host_access"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
-    # plan-only composition stays open (it renders, it does not touch hardware)
-    planned = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
-    assert "thunderbolt-hold" in planned.message
+    # plan-only composition also needs the facts to render hardware steps
+    # (dau-build carries no board defaults to fall back on)
+    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+        HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)

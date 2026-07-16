@@ -36,12 +36,13 @@ from dau_build.vivado_backend import (
 
 
 def _run_plan(plan: str, *, plan_fields=(), **model_values):
-    """Run the hardware-plan task with plan=plans/<plan>; plan_fields are
-    plan.<k>=<v> overrides, the rest are model.<k> values."""
+    """Run the hardware-plan task with plan=plans/<plan> and the packaged
+    dpv1 platform for host access (dau-build carries no board defaults);
+    plan_fields are plan.<k>=<v> overrides, the rest are model.<k> values."""
     return run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=[f"plan=plans/{plan}", *plan_fields],
+        overrides=[f"plan=plans/{plan}", "platform=platforms/dau/dpv1", *plan_fields],
         model_values=model_values,
     )
 
@@ -63,6 +64,145 @@ EXPECTED_PCI_RESCAN_SCRIPT = (
 )
 EXPECTED_LSPCI_ENDPOINT_SNIPPET = "endpoint_output=$(lspci -Dnn -d 10ee:7011 || true)"
 EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI_RESCAN_SCRIPT};"
+
+
+# the dpv1 bench facts, stated explicitly: dau-build carries no board
+# defaults, so tests exercising hardware steps supply their host access
+# (values identical to the retired code defaults — plan texts unchanged)
+DPV1_HOST_ACCESS = {
+    "expected_endpoint_id": "10ee:7011",
+    "endpoint_bdf": "0000:04:00.0",
+    "jtag_cable": "digilent_hs2",
+    "runtime_pm_patterns": ("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
+    "rescan_bdfs": EXPECTED_PCI_RESCAN_BDFS,
+}
+
+
+def _bench_config(**overrides) -> "HardwareToolchainConfig":
+    return HardwareToolchainConfig(**{**DPV1_HOST_ACCESS, **overrides})
+
+
+# the historical dpv1 overlay payload dau-build used to package as
+# DEFAULT_OVERLAY_DEFINITION, kept test-local so the injection path retains
+# full byte-level coverage of the proven overlay/build/manifest texts
+_DPV1_SOURCE_MANAGEMENT_TCL = """set stale_dau_axil_source [get_files -quiet $dau_identity_axil_sv_legacy]
+if {[llength $stale_dau_axil_source] != 0} {
+    remove_files $stale_dau_axil_source
+}
+set locked_dau_ips [get_ips -quiet -filter {IS_LOCKED == 1}]
+if {[llength $locked_dau_ips] != 0} {
+    upgrade_ip $locked_dau_ips
+}
+foreach dau_hdl_source [list $dau_identity_registers_sv $dau_identity_axil_v] {
+    if {![file exists $dau_hdl_source]} {
+        error "missing DAU HDL source: $dau_hdl_source"
+    }
+    if {[llength [get_files -quiet $dau_hdl_source]] == 0} {
+        add_files -norecurse -fileset sources_1 $dau_hdl_source
+    }
+    set_property library xil_defaultlib [get_files $dau_hdl_source]
+    set_property used_in {synthesis implementation simulation} [get_files $dau_hdl_source]
+}
+set_property file_type SystemVerilog [get_files $dau_identity_registers_sv]
+set_property file_type Verilog [get_files $dau_identity_axil_v]"""
+
+_DPV1_BD_OVERLAY_TCL = """set top_bd [get_files -quiet project.srcs/sources_1/bd/Top/Top.bd]
+if {[llength $top_bd] == 0} {
+    error "missing Top block design at project.srcs/sources_1/bd/Top/Top.bd"
+}
+open_bd_design [get_files project.srcs/sources_1/bd/Top/Top.bd]
+foreach net_name {axi_interconnect_0_M00_AXI Model_dout Version_dout} {
+    set old_net [get_bd_intf_nets -quiet $net_name]
+    if {[llength $old_net] != 0} {
+        delete_bd_objs $old_net
+    }
+    set old_net [get_bd_nets -quiet $net_name]
+    if {[llength $old_net] != 0} {
+        delete_bd_objs $old_net
+    }
+}
+foreach cell_name {dau_identity_axil_0 axi_gpio_0 Model Version} {
+    set old_cell [get_bd_cells -quiet $cell_name]
+    if {[llength $old_cell] != 0} {
+        delete_bd_objs $old_cell
+    }
+}
+create_bd_cell -type module -reference dau_identity_axil dau_identity_axil_0
+connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins dau_identity_axil_0/S_AXI]
+connect_bd_net -net S00_ACLK_1 [get_bd_pins xdma_0/axi_aclk] [get_bd_pins dau_identity_axil_0/s_axi_aclk]
+connect_bd_net -net S00_ARESETN_1 [get_bd_pins xdma_0/axi_aresetn] [get_bd_pins dau_identity_axil_0/s_axi_aresetn]
+set dau_identity_addr_seg [lindex [get_bd_addr_segs -quiet dau_identity_axil_0/S_AXI/*] 0]
+if {$dau_identity_addr_seg eq ""} {
+    error "missing DAU AXI-Lite address segment for dau_identity_axil_0/S_AXI"
+}
+assign_bd_address -offset 0x00001000 -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] $dau_identity_addr_seg -force
+set spi_ss_i_pin [get_bd_pins -quiet axi_quad_spi_0/ss_i]
+if {[llength $spi_ss_i_pin] != 0} {
+    if {[llength [get_bd_cells -quiet dau_spi_ss_i_tieoff]] == 0} {
+        create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 dau_spi_ss_i_tieoff
+    }
+    set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] [get_bd_cells dau_spi_ss_i_tieoff]
+    set spi_ss_i_nets [get_bd_nets -quiet -of_objects $spi_ss_i_pin]
+    if {[llength $spi_ss_i_nets] == 0} {
+        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
+    } elseif {[lsearch -exact $spi_ss_i_nets /dau_spi_ss_i_tieoff_dout] < 0} {
+        delete_bd_objs $spi_ss_i_nets
+        connect_bd_net -net dau_spi_ss_i_tieoff_dout [get_bd_pins dau_spi_ss_i_tieoff/dout] $spi_ss_i_pin
+    }
+}
+validate_bd_design
+save_bd_design
+set wrapper_path [make_wrapper -files [get_files project.srcs/sources_1/bd/Top/Top.bd] -top]
+if {[llength [get_files -quiet $wrapper_path]] == 0} {
+    add_files -norecurse -fileset sources_1 $wrapper_path
+}
+set_property -name "top" -value "Top_wrapper" -objects [get_filesets sources_1]
+update_compile_order -fileset sources_1
+set dau_identity_ooc_runs [get_runs -quiet *dau_identity_axil*]
+if {[llength $dau_identity_ooc_runs] != 0} {
+    reset_run $dau_identity_ooc_runs
+}"""
+
+
+def _dpv1_overlay_definition():
+    return vivado_backend.VivadoOverlayDefinition(
+        hdl_source_vars=(
+            ("dau_identity_registers_sv", "dau_identity_registers.sv"),
+            ("dau_identity_axil_v", "dau_identity_axil.v"),
+            ("dau_identity_axil_sv_legacy", "dau_identity_axil.sv"),
+        ),
+        source_management_tcl=_DPV1_SOURCE_MANAGEMENT_TCL,
+        bd_overlay_tcl=_DPV1_BD_OVERLAY_TCL,
+        runtime_manifest_entries=(
+            ("dau_identity_registers_sv", "$dau_identity_registers_sv"),
+            ("dau_identity_axil_v", "$dau_identity_axil_v"),
+            ("dau_identity_axil_cell", "dau_identity_axil_0"),
+            ("dau_identity_ooc_runs", "$dau_identity_ooc_runs"),
+            ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
+        ),
+        static_manifest_items=(
+            ("dau_identity_axil_cell", "dau_identity_axil_0"),
+            ("spi_ss_i_tieoff", "dau_spi_ss_i_tieoff"),
+        ),
+        lane_placements=(
+            (
+                "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[3].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+                "GTPE2_CHANNEL_X0Y7",
+            ),
+            (
+                "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[0].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+                "GTPE2_CHANNEL_X0Y6",
+            ),
+            (
+                "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[2].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+                "GTPE2_CHANNEL_X0Y5",
+            ),
+            (
+                "Top_i/xdma_0/inst/Top_xdma_0_0_pcie2_to_pcie3_wrapper_i/pcie2_ip_i/inst/inst/gt_top_i/pipe_wrapper_i/pipe_lane[1].gt_wrapper_i/gtp_channel.gtpe2_channel_i",
+                "GTPE2_CHANNEL_X0Y4",
+            ),
+        ),
+    )
 
 
 def test_hardware_plan_source_fixtures_do_not_embed_local_hardware_paths() -> None:
@@ -241,6 +381,7 @@ def test_structured_vivado_backend_request_supports_source_only_mount_root(tmp_p
         dau_artifact_bundle_path=bundle_path,
         vivado_invocation="source-only",
         vivado_mount_root=repo_root,
+        overlay_definition=_dpv1_overlay_definition(),
     )
 
     artifacts = generate_vivado_backend_artifacts(request)
@@ -571,7 +712,7 @@ def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp
 
 
 def test_backend_build_tcl_guards_legacy_xdma_lane_cells() -> None:
-    build_tcl = vivado_backend.vivado_build_tcl()
+    build_tcl = vivado_backend.vivado_build_tcl(lane_placements=_dpv1_overlay_definition().lane_placements)
 
     assert "get_cells -quiet $cell_path" in build_tcl
     assert "skipping missing PCIe lane cell" in build_tcl
@@ -604,7 +745,7 @@ def test_stage_shell_plan_copies_seed_to_generated_workdir() -> None:
 
 
 def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
 
     steps = recovery_plan(config)
 
@@ -623,7 +764,7 @@ def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -
 
 
 def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado2025.1")
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado2025.1")
 
     steps = build_and_program_plan(config)
 
@@ -653,7 +794,7 @@ def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
 
 
 def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
 
     hold_step = thunderbolt_hold_plan(config)[0]
     release_step = thunderbolt_release_plan(config)[0]
@@ -711,7 +852,7 @@ def test_task_prints_thunderbolt_release_plan() -> None:
 
 
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_smoke() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(
         config,
@@ -748,7 +889,7 @@ def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_
 
 
 def test_local_build_and_program_plan_omits_smoke_step_without_a_command() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(config, dau_core_root=Path("/repo/dau-core"))
 
@@ -767,7 +908,7 @@ def test_local_build_and_program_plan_omits_smoke_step_without_a_command() -> No
 
 
 def test_local_build_and_program_plan_can_stage_shell_seed_before_overlay() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/dau-build/outputs/vivado"), vivado_executable="vivado")
+    config = _bench_config(work_root=Path("/repo/dau-build/outputs/vivado"), vivado_executable="vivado")
 
     steps = local_build_and_program_plan(
         config,
@@ -789,7 +930,7 @@ def test_local_build_and_program_plan_can_stage_shell_seed_before_overlay() -> N
 
 
 def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() -> None:
-    config = HardwareToolchainConfig(
+    config = _bench_config(
         work_root=Path("/repo/projects/vivado-shell"),
         bitstream_path=Path("artifacts/candidate.bit"),
         vivado_executable="vivado",
@@ -815,7 +956,7 @@ def test_validate_bitstream_plan_programs_existing_bitstream_without_vivado() ->
 
 
 def test_validate_bitstream_plan_omits_smoke_step_without_a_command() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"))
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
 
     steps = validate_bitstream_plan(config)
 
@@ -899,7 +1040,7 @@ def test_stage_vivado_overlay_plan_emits_structured_backend_artifacts() -> None:
     assert manifest["command_plan"] == "dau-ci.plan"
     assert manifest["build_tcl"] == "scripts/dau_build.tcl"
     build_tcl = _decode_write_text_step_source(steps[2])
-    assert "skipping missing PCIe lane cell" in build_tcl
+    assert "foreach lane" not in build_tcl  # no injected definition, no placements
     assert "file copy -force $default_bitstream_path $expected_bitstream_path" in build_tcl
     assert 'report_utilization -file "reports/dau_utilization.rpt"' in build_tcl
     assert 'report_timing_summary -file "reports/dau_timing_summary.rpt"' in build_tcl
@@ -959,7 +1100,7 @@ def test_stage_vivado_project_plan_writes_project_and_backend_artifacts_without_
 
 
 def test_dau_overlay_manifest_records_backend_contract() -> None:
-    manifest = dict(dau_overlay_manifest(Path("/repo/dau-core/dau_core/hdl")))
+    manifest = dict(dau_overlay_manifest(Path("/repo/dau-core/dau_core/hdl"), overlay_definition=_dpv1_overlay_definition()))
 
     assert {
         "backend": "dau_build.vivado_backend.vivado_overlay",
@@ -980,7 +1121,7 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
 
 
 def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = flash_plan(config)
 
@@ -1101,7 +1242,7 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
 
 
 def test_dau_overlay_tcl_imports_core_identity_hdl_and_writes_manifest(tmp_path: Path) -> None:
-    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"))
+    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"), overlay_definition=_dpv1_overlay_definition())
 
     assert 'set dau_identity_registers_sv [file normalize "/repo/dau-core/dau_core/hdl/dau_identity_registers.sv"]' in source
     assert 'set dau_identity_axil_v [file normalize "/repo/dau-core/dau_core/hdl/dau_identity_axil.v"]' in source
@@ -1124,11 +1265,12 @@ def test_dau_overlay_tcl_imports_core_identity_hdl_and_writes_manifest(tmp_path:
     overlay_path = write_dau_overlay_tcl(tmp_path / "scripts" / "dau_overlay.tcl", dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"))
 
     assert overlay_path == tmp_path / "scripts" / "dau_overlay.tcl"
-    assert overlay_path.read_text() == source
+    # the write helper stages the overlay-less default (no injected payload)
+    assert overlay_path.read_text() == dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"))
 
 
 def test_dau_overlay_tcl_wires_axi_lite_identity_block_at_existing_register_window() -> None:
-    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"))
+    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"), overlay_definition=_dpv1_overlay_definition())
 
     assert "open_bd_design [get_files project.srcs/sources_1/bd/Top/Top.bd]" in source
     assert "foreach cell_name {dau_identity_axil_0 axi_gpio_0 Model Version}" in source
@@ -1143,7 +1285,7 @@ def test_dau_overlay_tcl_wires_axi_lite_identity_block_at_existing_register_wind
 
 
 def test_dau_overlay_tcl_regenerates_wrapper_and_pins_top_module() -> None:
-    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"))
+    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"), overlay_definition=_dpv1_overlay_definition())
 
     assert "set wrapper_path [make_wrapper -files [get_files project.srcs/sources_1/bd/Top/Top.bd] -top]" in source
     assert "add_files -norecurse -fileset sources_1 $wrapper_path" in source
@@ -1152,7 +1294,7 @@ def test_dau_overlay_tcl_regenerates_wrapper_and_pins_top_module() -> None:
 
 
 def test_dau_overlay_tcl_ties_off_upgraded_quad_spi_ss_input() -> None:
-    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"))
+    source = dau_overlay_tcl(Path("/repo/dau-core/dau_core/hdl"), overlay_definition=_dpv1_overlay_definition())
 
     assert "set spi_ss_i_pin [get_bd_pins -quiet axi_quad_spi_0/ss_i]" in source
     assert "create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 dau_spi_ss_i_tieoff" in source
@@ -1193,16 +1335,30 @@ def _acme_overlay_definition() -> vivado_backend.VivadoOverlayDefinition:
     )
 
 
-def test_default_overlay_definition_reproduces_the_undefined_texts() -> None:
-    # None and the packaged default must render identical scripts/manifests:
-    # callers that pin today's texts can inject an equal definition later
-    # without any byte drift
+def test_undefined_overlay_definition_renders_overlay_less_texts() -> None:
+    # dau-build packages no overlay payload: with no injected definition the
+    # staged texts carry no HDL grafts, no BD edit, and no lane placements
+    # (the smoke_command:null pattern), identical to an empty definition
     hdl_root = Path("/repo/dau-core/dau_core/hdl")
-    default = vivado_backend.DEFAULT_OVERLAY_DEFINITION
+    empty = vivado_backend.VivadoOverlayDefinition()
 
-    assert dau_overlay_tcl(hdl_root) == dau_overlay_tcl(hdl_root, overlay_definition=default)
-    assert dau_overlay_manifest(hdl_root) == dau_overlay_manifest(hdl_root, overlay_definition=default)
-    assert vivado_backend.vivado_build_tcl() == vivado_backend.vivado_build_tcl(lane_placements=default.lane_placements)
+    source = dau_overlay_tcl(hdl_root)
+    assert source == dau_overlay_tcl(hdl_root, overlay_definition=empty)
+    assert "dau_identity" not in source
+    manifest = dict(dau_overlay_manifest(hdl_root))
+    assert dau_overlay_manifest(hdl_root) == dau_overlay_manifest(hdl_root, overlay_definition=empty)
+    assert "dau_identity_registers_sv" not in manifest
+    assert vivado_backend.vivado_build_tcl() == vivado_backend.vivado_build_tcl(lane_placements=())
+    assert "foreach lane" not in vivado_backend.vivado_build_tcl()
+
+
+def test_no_packaged_overlay_payload_remains_in_source() -> None:
+    # the dpv1 payload lives with its owner (the dau integration package);
+    # public dau-build carries neither the default nor its Tcl fragments
+    assert not hasattr(vivado_backend, "DEFAULT_OVERLAY_DEFINITION")
+    source = Path(vivado_backend.__file__).read_text()
+    for fragment in ("dau_identity_axil_0", "GTPE2_CHANNEL", "dau_spi_ss_i_tieoff"):
+        assert fragment not in source
 
 
 def test_injected_overlay_definition_drives_overlay_tcl_and_manifest() -> None:
@@ -1290,7 +1446,7 @@ def test_stage_vivado_overlay_plan_stages_the_injected_definition(tmp_path: Path
 
 def test_local_build_and_program_plan_honors_the_injected_definition(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
-    config = HardwareToolchainConfig(work_root=tmp_path)
+    config = _bench_config(work_root=tmp_path)
 
     steps = local_build_and_program_plan(config, dau_core_root=Path("/repo/acme"), overlay_definition=definition)
 
@@ -1357,8 +1513,8 @@ def test_project_command_validation_requires_the_injected_definition_marker(tmp_
 def test_toolchain_config_composes_from_platform_host_access() -> None:
     from dau_build.platforms import dpv1_platform
 
-    # dpv1's host_access config reproduces the code defaults exactly
-    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == HardwareToolchainConfig(work_root=Path("/w"))
+    # dpv1's host_access config reproduces the proven bench facts exactly
+    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(work_root=Path("/w"))
 
     # a board with different access data changes the plans through config alone
     other = dpv1_platform().model_copy(deep=True)

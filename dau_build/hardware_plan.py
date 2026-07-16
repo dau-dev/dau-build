@@ -27,20 +27,6 @@ from dau_build.vivado_backend import (
     vivado_build_tcl,
 )
 
-# dpv1 board identity (platform integration lives here; the private DAU
-# packages carry their own copy and the dau integration suite pins the two)
-DPV1_PCI_ID = "10ee:7011"
-
-PCI_RESCAN_BDFS = (
-    "0000:03:01.0",
-    "0000:02:00.0",
-    "0000:00:0d.3",
-    "0000:00:0d.2",
-    "0000:00:0d.0",
-    "0000:00:07.2",
-    "0000:00:07.0",
-)
-
 SHELL_STAGE_EXCLUDES = (
     ".Xil",
     "project.cache",
@@ -74,18 +60,23 @@ class HardwareToolchainConfig(BaseModel):
     openfpgaloader_executable: str = "openFPGALoader"
     # the console script dau-utils actually installs (dau_utils.pci_runtime_pm)
     runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
-    runtime_pm_patterns: tuple[str, ...] = ("Thunderbolt", "JHL", DPV1_PCI_ID, "Xilinx")
-    jtag_cable: str = "digilent_hs2"
-    endpoint_bdf: str = "0000:04:00.0"
-    expected_endpoint_id: str = DPV1_PCI_ID
-    rescan_bdfs: tuple[str, ...] = PCI_RESCAN_BDFS
+    # host access is board/host configuration, never code defaults: compose
+    # it from a platform's host_access (for_platform) or set the fields
+    # explicitly. Steps that need an unset (None) fact fail with guidance;
+    # an explicit empty tuple is meaningful (global rescan only / no
+    # runtime-PM holds) and renders as such.
+    runtime_pm_patterns: tuple[str, ...] | None = None
+    jtag_cable: str | None = None
+    endpoint_bdf: str | None = None
+    expected_endpoint_id: str | None = None
+    rescan_bdfs: tuple[str, ...] | None = None
 
     @classmethod
     def for_platform(cls, platform, *, work_root: Path, **overrides) -> "HardwareToolchainConfig":
         """Compose the toolchain config from a registered platform's
         ``host_access`` (board/host config, not code defaults). Explicit
-        keyword overrides win; a platform without ``host_access`` keeps the
-        model defaults."""
+        keyword overrides win; with neither, the host-access facts stay
+        unset and any step that needs them fails with guidance."""
         access = getattr(platform, "host_access", None)
         values: dict = {}
         if access is not None:
@@ -116,7 +107,18 @@ class HardwareToolchainConfig(BaseModel):
 
     @property
     def lspci_slot(self) -> str:
-        return self.endpoint_bdf.removeprefix("0000:")
+        return self.required_host_access("endpoint_bdf").removeprefix("0000:")
+
+    def required_host_access(self, field_name: str) -> str | tuple[str, ...]:
+        """A host-access fact a plan step needs; unset means the caller
+        composed no board/host configuration (dau-build carries none)."""
+        value = getattr(self, field_name)
+        if value is None:
+            raise ValueError(
+                f"{field_name} is unset: hardware access is board/host configuration — "
+                f"compose platform=platforms/<vendor>/<board> with host_access (or set {field_name}=...)"
+            )
+        return value
 
 
 # resolve forward-ref annotations (this module uses `from __future__ import
@@ -131,7 +133,7 @@ def build_and_program_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, .
         vivado_build_step(config),
         jtag_detect_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.rescan_bdfs),
+        pci_rescan_step(config.required_host_access("rescan_bdfs")),
         lspci_endpoint_step(config),
     )
 
@@ -141,7 +143,7 @@ def recovery_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
         thunderbolt_hold_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.rescan_bdfs),
+        pci_rescan_step(config.required_host_access("rescan_bdfs")),
         lspci_endpoint_step(config),
     )
 
@@ -175,7 +177,7 @@ def local_build_and_program_plan(
         jtag_detect_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.rescan_bdfs),
+        pci_rescan_step(config.required_host_access("rescan_bdfs")),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -326,7 +328,7 @@ def validate_bitstream_plan(
         jtag_detect_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.rescan_bdfs),
+        pci_rescan_step(config.required_host_access("rescan_bdfs")),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -521,15 +523,15 @@ def thunderbolt_release_step(config: HardwareToolchainConfig, *, dau_utils_root:
 
 
 def jtag_detect_step(config: HardwareToolchainConfig) -> ToolStep:
-    return ToolStep("jtag-detect", (config.openfpgaloader_executable, "-c", config.jtag_cable, "--detect"))
+    return ToolStep("jtag-detect", (config.openfpgaloader_executable, "-c", config.required_host_access("jtag_cable"), "--detect"))
 
 
 def program_volatile_step(config: HardwareToolchainConfig) -> ToolStep:
-    return ToolStep("program-volatile", (config.openfpgaloader_executable, "-c", config.jtag_cable, str(config.bitstream)))
+    return ToolStep("program-volatile", (config.openfpgaloader_executable, "-c", config.required_host_access("jtag_cable"), str(config.bitstream)))
 
 
 def remove_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
-    remove_path = f"/sys/bus/pci/devices/{config.endpoint_bdf}/remove"
+    remove_path = f"/sys/bus/pci/devices/{config.required_host_access('endpoint_bdf')}/remove"
     return ToolStep("remove-endpoint", ("sh", "-c", f"test ! -e {remove_path} || echo 1 > {remove_path}"))
 
 
@@ -537,7 +539,7 @@ def pci_global_rescan_step() -> ToolStep:
     return ToolStep("pci-global-rescan", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan"))
 
 
-def pci_rescan_step(bridge_bdfs: Sequence[str] = PCI_RESCAN_BDFS) -> ToolStep:
+def pci_rescan_step(bridge_bdfs: Sequence[str] = ()) -> ToolStep:
     return ToolStep("pci-rescan", ("sh", "-c", _pci_rescan_script(bridge_bdfs)))
 
 
@@ -547,15 +549,15 @@ def lspci_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
 
 def _runtime_pm_argv(config: HardwareToolchainConfig, mode: str) -> tuple[str, ...]:
     argv = [config.runtime_pm_executable, mode]
-    for pattern in config.runtime_pm_patterns:
+    for pattern in config.required_host_access("runtime_pm_patterns"):
         argv.extend(("--pattern", pattern))
     return tuple(argv)
 
 
 def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequence[str] | None = None) -> str:
     if bridge_bdfs is None:
-        bridge_bdfs = config.rescan_bdfs
-    expected_id = shlex.quote(config.expected_endpoint_id.lower())
+        bridge_bdfs = config.required_host_access("rescan_bdfs")
+    expected_id = shlex.quote(config.required_host_access("expected_endpoint_id").lower())
     expected_slot = shlex.quote(config.lspci_slot)
     retry_rescan = _pci_rescan_script(bridge_bdfs)
     return " ".join(
@@ -592,7 +594,7 @@ def _pci_rescan_script(bridge_bdfs: Sequence[str]) -> str:
 
 def _local_runtime_pm_script(config: HardwareToolchainConfig, mode: str, dau_utils_root: Path, python: str) -> str:
     argv = [python, "-c", "from dau_utils.pci_runtime_pm import main; raise SystemExit(main())", mode]
-    for pattern in config.runtime_pm_patterns:
+    for pattern in config.required_host_access("runtime_pm_patterns"):
         argv.extend(("--pattern", pattern))
     return f"PYTHONPATH={shlex.quote(str(dau_utils_root))} {shlex.join(argv)}"
 
