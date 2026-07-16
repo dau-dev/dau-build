@@ -1121,7 +1121,7 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
 
 
 def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -> None:
-    config = HardwareToolchainConfig(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
 
     steps = flash_plan(config)
 

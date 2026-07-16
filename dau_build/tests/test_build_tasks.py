@@ -586,7 +586,7 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
     # dpv1's host_access reproduces the explicit bench-fact plan text
     # byte-identically; without either, hardware steps refuse to render
     assert composed == explicit
-    with pytest.raises(ValueError, match="endpoint_bdf is unset"):
+    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
 
     # explicit task fields override the platform's host_access
@@ -665,5 +665,5 @@ def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
     # plan-only composition also needs the facts to render hardware steps
     # (dau-build carries no board defaults to fall back on)
-    with pytest.raises(ValueError, match="endpoint_bdf is unset"):
+    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
