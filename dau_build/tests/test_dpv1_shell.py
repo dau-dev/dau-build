@@ -183,6 +183,13 @@ def test_constraints_match_committed_goldens() -> None:
     assert dpv1_ddr_constraints_xdc() == (fixtures / "constraints_ddr.xdc").read_text()
 
 
+def test_swizzle_hook_matches_committed_golden() -> None:
+    """The dpv1 swizzle hook is a hardware-proven text: deriving the GT
+    channel family from the placement sites must not change a byte of it."""
+    fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
+    assert gt_lane_swizzle_hook_tcl() == (fixtures / "gt_lane_swizzle.tcl").read_text()
+
+
 def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
     """A registered non-dpv1 board changes the generated project through
     config data alone: part, personality, constraints, and (no) swizzle all
