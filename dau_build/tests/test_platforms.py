@@ -205,3 +205,20 @@ def _dpv1_with(**overrides: object) -> PlatformDefinition:
     )
     base.update(overrides)
     return PlatformDefinition(**base)  # type: ignore[arg-type]
+
+
+def test_dpv1_host_access_matches_the_hardware_plan_constants() -> None:
+    from pathlib import Path
+
+    from dau_build.hardware_plan import DPV1_PCI_ID, PCI_RESCAN_BDFS, HardwareToolchainConfig
+
+    access = dpv1_platform().host_access
+    assert access is not None
+    # the config is the composed source; the code constants must not drift
+    assert access.pci_id == DPV1_PCI_ID
+    assert access.rescan_bdfs == PCI_RESCAN_BDFS
+    defaults = HardwareToolchainConfig(work_root=Path("/w"))
+    assert access.endpoint_bdf == defaults.endpoint_bdf
+    assert access.runtime_pm_patterns == defaults.runtime_pm_patterns
+    assert access.runtime_pm_executable == defaults.runtime_pm_executable
+    assert access.jtag_cable == defaults.jtag_cable

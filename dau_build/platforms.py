@@ -144,6 +144,29 @@ class PlatformMemory(BaseModel):
         return value
 
 
+class HostAccess(BaseModel):
+    """How the bench host reaches the board: the PCI identity/topology the
+    hardware plans probe and the programming cable. These are measured
+    bench facts (BDFs, bridge rescan order, runtime-PM device patterns) —
+    board/host configuration, not code defaults."""
+
+    pci_id: str
+    endpoint_bdf: str
+    # explicit, not defaulted: an empty tuple is meaningful (global rescan
+    # only / no runtime-PM holds), so each board states its own values
+    rescan_bdfs: tuple[str, ...]
+    runtime_pm_patterns: tuple[str, ...]
+    runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
+    jtag_cable: str = "digilent_hs2"
+
+    @field_validator("pci_id", "endpoint_bdf")
+    @classmethod
+    def _nonempty(cls, value: str, info) -> str:
+        if not value:
+            raise ValueError(f"host access {info.field_name} must be non-empty")
+        return value
+
+
 class PlatformDefinition(BaseModel):
     """One target board as data.
 
@@ -154,13 +177,16 @@ class PlatformDefinition(BaseModel):
     that have *not* been measured on the board yet (e.g.
     ``host_link.xdma_personality`` before the XCI delta is audited) —
     ``require_measured`` refuses such boards for real builds while config-only
-    generation stays open."""
+    generation stays open. ``host_access`` carries the bench host's measured
+    access facts (PCI identity, endpoint/bridge BDFs, runtime-PM patterns,
+    JTAG cable) that ``HardwareToolchainConfig.for_platform`` composes from."""
 
     name: str
     part: str
     budget: ResourceBudget
     host_link: HostLink
     memory: PlatformMemory
+    host_access: HostAccess | None = None
     constraints: tuple[str, ...] = ()
     constraints_xdc: str = ""
     lane_placements: tuple[tuple[int, str], ...] = ()

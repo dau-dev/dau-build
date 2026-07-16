@@ -8,9 +8,11 @@ bitstream: null
 vivado: vivado
 vivado_invocation: standard
 vivado_mount_root: null
-dau_core_root: ???
-dau_driver_root: ???
-dau_utils_root: null
+# sourced from the composed host group (host=hosts/<name>); direct
+# <field>=... overrides win
+dau_core_root: ${oc.select:host.dau_core_root,null}
+dau_driver_root: ${oc.select:host.dau_driver_root,null}
+dau_utils_root: ${oc.select:host.dau_utils_root,null}
 dau_artifact_bundle: null
 overlay_tcl: scripts/dau_overlay.tcl
 artifact_stem: dau-vivado
@@ -27,4 +29,7 @@ timing_summary_path: reports/dau_timing_summary.rpt
 vivado_log_path: vivado.log
 vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
 overlay_definition: null
+# the task name the recorded stage_command replays; set to the caller's
+# injecting task overlay when overlay_definition is composed by it
+stage_task_name: null
 execute: false

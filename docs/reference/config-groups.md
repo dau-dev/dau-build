@@ -27,7 +27,7 @@ defaults:
 
 Every group except `callable` is `optional … null`: nothing is selected unless
 overridden. A run selects exactly one of `task=` or `step=` to populate `model`,
-optionally augmented by `spec=`, `board=`, `backend=`, `driver=`, `memory=`, `simulator=`, `platform=`, and `plan=`.
+optionally augmented by `spec=`, `board=`, `backend=`, `driver=`, `memory=`, `simulator=`, `platform=`, `host=`, and `plan=`.
 
 Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
@@ -45,6 +45,7 @@ other groups use their singular key (`# @package board`, etc.).
 | `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                          |
 | `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
 | `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).                  |
+| `host`      | `host`         | `dau_build.build_config.HostConfig`       | The build host's source checkout roots (none packaged).          |
 | `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
 | `callable`  | —              | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
 
@@ -175,9 +176,22 @@ constraint text the shell project generators emit behind their banner),
 implementation hook; empty means the board needs none), and `placeholders`
 (names of hardware-derived values not yet measured on the board —
 `require_measured` refuses placeholder boards for real builds while
-config-only generation stays open). The shell project requests
+config-only generation stays open). `host_access` (`HostAccess`: `pci_id`,
+`endpoint_bdf`, `rescan_bdfs`, `runtime_pm_patterns`,
+`runtime_pm_executable`, `jtag_cable`) carries the bench host's measured
+access facts; `HardwarePlanTask` composes its toolchain config from it when
+`platform=` is selected (explicit task fields override). The shell project requests
 (`MmJobShellRequest`, `MmDdrJobShellRequest`) take a `platform` and default
 to dpv1; `part` defaults from the platform.
+
+## `host`
+
+`host=hosts/<name>` composes `dau_build.build_config.HostConfig` — where the
+build host keeps its source checkouts (`dau_core_root`, `dau_driver_root`,
+`dau_utils_root`). dau-build packages no host options (checkout layouts are
+site-specific); register them from a search-path package or a `--config-dir`
+overlay. The stage tasks and hardware plans interpolate their checkout roots
+from the composed host, and a direct `<field>=...` override always wins.
 
 ## `plan`
 
@@ -188,7 +202,7 @@ pydantic enforces them, rather than a runtime check).
 | Option                          | Model                      | Extra fields                                                                                                                |
 | ------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `plans/build-and-program`       | `BuildAndProgramPlan`      | —                                                                                                                           |
-| `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root` (req), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `smoke_command`, `python`, `vivado_settings`   |
+| `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root` (from `host=` or `plan.dau_core_root=`), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `smoke_command`, `python`, `vivado_settings` |
 | `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `smoke_command`, `dau_utils_root`, `python`                                                                                 |
 | `plans/flash`                   | `FlashPlan`                | `dau_utils_root`, `python`, `vivado_settings`                                                                               |
 | `plans/recovery`                | `RecoveryPlan`             | —                                                                                                                           |

@@ -4,12 +4,20 @@ _target_: dau_build.build_steps.HardwarePlanTask
 # the plan is the composed plan group; select+configure with
 # plan=plans/local-build-and-program plan.dau_core_root=... plan.smoke_command=...
 plan: ${oc.select:plan,null}
+# hardware access composes from the platform group's host_access
+# (platform=platforms/<vendor>/<board>); the explicit fields below override
+# it, and with neither the model defaults (the proven dpv1 bench values) apply
+platform: ${oc.select:platform,null}
 work_root: ???
 bitstream: null
 vivado: vivado
 vivado_invocation: standard
 vivado_mount_root: null
 openfpgaloader: openFPGALoader
-jtag_cable: digilent_hs2
-endpoint_bdf: "0000:04:00.0"
+jtag_cable: null
+endpoint_bdf: null
+expected_endpoint_id: null
+runtime_pm_executable: null
+runtime_pm_patterns: null
+rescan_bdfs: null
 execute: false

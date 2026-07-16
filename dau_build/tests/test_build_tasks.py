@@ -558,3 +558,92 @@ def _write_backend_artifacts(artifacts) -> None:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+
+
+def test_hardware_plan_task_composes_platform_host_access() -> None:
+    from dau_build.build_steps import HardwarePlanTask
+    from dau_build.hardware_plan import RecoveryPlan
+    from dau_build.platforms import PlaceholderPlatformError, dpv1_platform
+
+    default = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
+    composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=dpv1_platform())(None)
+    # dpv1's host_access reproduces the default plan text byte-identically
+    assert composed == default
+
+    # explicit task fields override the platform's host_access
+    overridden = HardwarePlanTask(
+        plan=RecoveryPlan(),
+        work_root=Path("/repo/projects/vivado-shell"),
+        platform=dpv1_platform(),
+        jtag_cable="ft4232",
+    )(None)
+    assert "-c ft4232" in overridden.message
+
+    # a placeholder board is refused for hardware-affecting execution
+    placeholder = dpv1_platform().model_copy(update={"name": "probe", "placeholders": ("host_access",)})
+    with pytest.raises(PlaceholderPlatformError, match="host_access"):
+        HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=placeholder, execute=True)(None)
+
+
+def test_host_group_supplies_checkout_roots(tmp_path: Path) -> None:
+    from hydra.utils import instantiate
+
+    from dau_build.config import compose_config
+
+    overlay = tmp_path / "user-configs"
+    (overlay / "host" / "hosts").mkdir(parents=True)
+    (overlay / "host" / "hosts" / "bench.yaml").write_text(
+        "# @package host\n"
+        "_target_: dau_build.build_config.HostConfig\n"
+        "name: bench\n"
+        "dau_core_root: /repo/dau-core\n"
+        "dau_driver_root: /repo/dau-driver\n"
+        "dau_utils_root: /repo/dau-utils\n"
+    )
+    cfg = compose_config(
+        [
+            "task=tasks/stage/stage-vivado-project",
+            "host=hosts/bench",
+            "model.work_root=/repo/outputs/vivado",
+            "model.source_shell_root=/repo/reference/vivado-shell",
+        ],
+        config_dir=str(overlay),
+    )
+    model = instantiate(cfg.cfg.model)
+    assert model.dau_core_root == Path("/repo/dau-core")
+    assert model.dau_driver_root == Path("/repo/dau-driver")
+    assert model.dau_utils_root == Path("/repo/dau-utils")
+
+    # the composed host also feeds the hardware plans
+    plan_cfg = compose_config(["plan=plans/local-build-and-program", "host=hosts/bench"], config_dir=str(overlay))
+    plan = instantiate(plan_cfg.cfg.plan)
+    assert plan.dau_core_root == Path("/repo/dau-core")
+    assert plan.dau_utils_root == Path("/repo/dau-utils")
+
+    # without a host the roots stay unset and the task demands them at call time
+    bare = instantiate(
+        compose_config(
+            [
+                "task=tasks/stage/stage-vivado-project",
+                "model.work_root=/repo/outputs/vivado",
+                "model.source_shell_root=/repo/reference/vivado-shell",
+            ]
+        ).cfg.model
+    )
+    with pytest.raises(BuildStepError, match="host=hosts/<name>"):
+        bare.stage_steps()
+
+
+def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
+    from dau_build.build_steps import HardwarePlanTask
+    from dau_build.hardware_plan import RecoveryPlan
+    from dau_build.platforms import dpv1_platform
+
+    # a selected platform must state how the host reaches it; the dpv1
+    # defaults are never silently applied to another board
+    accessless = dpv1_platform().model_copy(update={"name": "probe", "host_access": None})
+    with pytest.raises(BuildStepError, match="declares no host_access"):
+        HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
+    # plan-only composition stays open (it renders, it does not touch hardware)
+    planned = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
+    assert "thunderbolt-hold" in planned.message

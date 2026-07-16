@@ -1352,3 +1352,113 @@ def test_project_command_validation_requires_the_injected_definition_marker(tmp_
         command_plan_path=command_plan_path,
     )
     assert any("overlay-definition" in error for error in stripped)
+
+
+def test_toolchain_config_composes_from_platform_host_access() -> None:
+    from dau_build.platforms import dpv1_platform
+
+    # dpv1's host_access config reproduces the code defaults exactly
+    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == HardwareToolchainConfig(work_root=Path("/w"))
+
+    # a board with different access data changes the plans through config alone
+    other = dpv1_platform().model_copy(deep=True)
+    other.host_access.pci_id = "10ee:9038"
+    other.host_access.endpoint_bdf = "0000:65:00.0"
+    other.host_access.rescan_bdfs = ("0000:64:00.0",)
+    other.host_access.runtime_pm_patterns = ("Acme",)
+    other.host_access.jtag_cable = "ft4232"
+    config = HardwareToolchainConfig.for_platform(other, work_root=Path("/w"))
+    steps = recovery_plan(config)
+    by_name = {step.name: step for step in steps}
+    assert by_name["thunderbolt-hold"].argv == ("dau-utils-pci-runtime-pm", "hold", "--pattern", "Acme")
+    assert "0000:65:00.0/remove" in by_name["remove-endpoint"].argv[2]
+    assert by_name["program-volatile"].argv[1:3] == ("-c", "ft4232")
+    assert "0000:64:00.0" in by_name["pci-rescan"].argv[2]
+    assert "0000:03:01.0" not in by_name["pci-rescan"].argv[2]
+    assert "lspci -Dnn -d 10ee:9038" in by_name["lspci-endpoint"].argv[2]
+    assert "0000:64:00.0" in by_name["lspci-endpoint"].argv[2]
+
+    # explicit overrides beat platform data
+    assert HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2").jtag_cable == "digilent_hs2"
+
+
+def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:
+    definition = _acme_overlay_definition()
+    request = VivadoProjectGenerationRequest(
+        source_shell_root=Path("/repo/projects/nite"),
+        work_root=tmp_path,
+        dau_core_root=Path("/repo/dau-core"),
+        dau_driver_root=Path("/repo/dau-driver"),
+        overlay_definition=definition,
+        stage_task_name="tasks/stage/acme-stage-vivado-overlay",
+    )
+    manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
+    manifest_path = request.backend_request.resolved_manifest_path
+    command_plan_path = request.backend_request.resolved_command_plan_path
+
+    # the recorded command replays the caller's (definition-composing) task,
+    # so no hydra-missing marker is needed
+    assert manifest["stage_task"] == "tasks/stage/acme-stage-vivado-overlay"
+    assert "task=tasks/stage/acme-stage-vivado-overlay" in manifest["stage_command"]
+    assert "overlay_definition=???" not in manifest["stage_command"]
+    assert (
+        vivado_backend._validate_project_manifest_commands(
+            project_manifest=manifest, manifest_path=manifest_path, command_plan_path=command_plan_path
+        )
+        == ()
+    )
+
+    # a stage_command rewritten to the packaged default task fails validation
+    tampered = dict(manifest)
+    tampered["stage_command"] = tampered["stage_command"].replace("task=tasks/stage/acme-stage-vivado-overlay", "task=stage-vivado-overlay")
+    errors = vivado_backend._validate_project_manifest_commands(
+        project_manifest=tampered, manifest_path=manifest_path, command_plan_path=command_plan_path
+    )
+    assert any("stage_command" in error for error in errors)
+
+    # the default task name records no stage_task key (byte-identity)
+    default = dict(
+        vivado_backend.vivado_project_generation_manifest(
+            VivadoProjectGenerationRequest(
+                source_shell_root=Path("/repo/projects/nite"),
+                work_root=tmp_path,
+                dau_core_root=Path("/repo/dau-core"),
+                dau_driver_root=Path("/repo/dau-driver"),
+            )
+        )
+    )
+    assert "stage_task" not in default
+
+
+def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
+    from pydantic import ValidationError
+
+    from dau_build.platforms import HostAccess, dpv1_platform
+
+    # rescan_bdfs / runtime_pm_patterns are required: a board must state its
+    # own values (empty is meaningful, silence is not)
+    with pytest.raises(ValidationError):
+        HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")
+
+    # empty tuples are authoritative — never silently the dpv1 defaults
+    bare = dpv1_platform().model_copy(deep=True)
+    bare.host_access.rescan_bdfs = ()
+    bare.host_access.runtime_pm_patterns = ()
+    config = HardwareToolchainConfig.for_platform(bare, work_root=Path("/w"))
+    steps = recovery_plan(config)
+    by_name = {step.name: step for step in steps}
+    assert by_name["thunderbolt-hold"].argv == ("dau-utils-pci-runtime-pm", "hold")
+    assert by_name["pci-rescan"].argv[2] == "echo 1 > /sys/bus/pci/rescan"
+
+
+def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="stage_task_name"):
+        VivadoProjectGenerationRequest(
+            source_shell_root=Path("/repo/projects/nite"),
+            work_root=tmp_path,
+            dau_core_root=Path("/repo/dau-core"),
+            dau_driver_root=Path("/repo/dau-driver"),
+            stage_task_name="",
+        )
