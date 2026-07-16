@@ -16,6 +16,12 @@ The named plans are `local-build-and-program`, `build-and-program`,
 `thunderbolt-release`. Full field lists are in the
 [task catalog](../reference/tasks-and-steps.md).
 
+Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns, and
+JTAG cable) is board/host configuration, not code defaults: compose
+`platform=platforms/<vendor>/<board>` so the plan takes the board's
+`host_access` facts (or set the `model.<field>=` overrides explicitly). Steps
+that need an unset fact refuse to render.
+
 > **Programming can wedge the PCIe link.** Removing and reprogramming an endpoint
 > while the host holds it can hang a rescan hard enough to need a power cycle. On
 > a host where that is a risk, arm a watchdog / auto-reboot before you run any
@@ -31,6 +37,7 @@ The plan is a config group (`plan=plans/<name>`); its own fields are
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
+  platform=platforms/dau/dpv1 \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -48,6 +55,7 @@ programs and verifies the device. Add `execute=true` to run it on the host:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
+  platform=platforms/dau/dpv1 \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -83,6 +91,7 @@ command the plan ends at the endpoint check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
+  platform=platforms/dau/dpv1 \
   plan=plans/validate-bitstream \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
@@ -102,6 +111,7 @@ known-good volatile bitstream, then rescan and re-check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
+  platform=platforms/dau/dpv1 \
   plan=plans/recovery \
   model.work_root=outputs/vivado \
   model.execute=true

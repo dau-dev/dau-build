@@ -357,7 +357,10 @@ Required: <code class="docutils literal notranslate"><span class="pre">work_root
 <p>Produces a live hardware-session command sequence for the plan composed from the
 <code class="docutils literal notranslate"><span class="pre">plan</span></code> group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>). The task holds the shared toolchain fields
 (<code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>, …); each plan owns its own
-fields (e.g. <code class="docutils literal notranslate"><span class="pre">plan.dau_core_root</span></code>). Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>
+fields (e.g. <code class="docutils literal notranslate"><span class="pre">plan.dau_core_root</span></code>). Host access composes from the <code class="docutils literal notranslate"><span class="pre">platform</span></code>
+group’s <code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>); dau-build
+carries no board defaults, so steps that need an unset fact refuse to render.
+Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>
 (pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the hardware host). See the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the plan models.</p>
 </section>

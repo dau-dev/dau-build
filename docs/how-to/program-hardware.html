@@ -258,6 +258,11 @@ host. Run these on the machine physically attached to the board.</p>
 <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">thunderbolt-hold</span></code>, and
 <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
+<p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns, and
+JTAG cable) is board/host configuration, not code defaults: compose
+<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code> so the plan takes the board’s
+<code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts (or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly). Steps
+that need an unset fact refuse to render.</p>
 <blockquote>
 <div><p><strong>Programming can wedge the PCIe link.</strong> Removing and reprogramming an endpoint
 while the host holds it can hang a rescan hard enough to need a power cycle. On
@@ -271,6 +276,7 @@ ordered steps without touching the board:</p>
 <p>The plan is a config group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>); its own fields are
 <code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -286,6 +292,7 @@ ordered steps without touching the board:</p>
 <p><code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code> stages the shell, runs the Vivado overlay build, then
 programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the host:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -317,6 +324,7 @@ pass <code class="docutils literal notranslate"><span class="pre">plan.smoke_com
 one, e.g. the private dau package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>); with no
 command the plan ends at the endpoint check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
@@ -334,6 +342,7 @@ against a resident dead image is what hangs. The <code class="docutils literal n
 the safe order: hold power management, remove the endpoint via sysfs, program a
 known-good volatile bitstream, then rescan and re-check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/recovery<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
