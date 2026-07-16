@@ -6,7 +6,8 @@ _target_: dau_build.build_steps.HardwarePlanTask
 plan: ${oc.select:plan,null}
 # hardware access composes from the platform group's host_access
 # (platform=platforms/<vendor>/<board>); the explicit fields below override
-# it, and with neither the model defaults (the proven dpv1 bench values) apply
+# it, and with neither the facts stay unset — steps that need them fail
+# with guidance (dau-build carries no board defaults)
 platform: ${oc.select:platform,null}
 work_root: ???
 bitstream: null

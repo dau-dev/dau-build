@@ -117,7 +117,10 @@ Required: `work_root`. Mode: **plan**.
 Produces a live hardware-session command sequence for the plan composed from the
 `plan` group (`plan=plans/<name>`). The task holds the shared toolchain fields
 (`work_root`, `bitstream`, `vivado`, `jtag_cable`, …); each plan owns its own
-fields (e.g. `plan.dau_core_root`). Required: `plan`, `work_root`. Mode: **plan**
+fields (e.g. `plan.dau_core_root`). Host access composes from the `platform`
+group's `host_access` (`platform=platforms/<vendor>/<board>`); dau-build
+carries no board defaults, so steps that need an unset fact refuse to render.
+Required: `plan`, `work_root`. Mode: **plan**
 (pass `execute=true` on the hardware host). See the
 [config group reference](config-groups.md) for the plan models.
 

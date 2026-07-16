@@ -207,18 +207,22 @@ def _dpv1_with(**overrides: object) -> PlatformDefinition:
     return PlatformDefinition(**base)  # type: ignore[arg-type]
 
 
-def test_dpv1_host_access_matches_the_hardware_plan_constants() -> None:
-    from pathlib import Path
-
-    from dau_build.hardware_plan import DPV1_PCI_ID, PCI_RESCAN_BDFS, HardwareToolchainConfig
-
+def test_dpv1_host_access_pins_the_proven_bench_facts() -> None:
+    # the platform config is the only source (the code fallbacks are
+    # retired); these literals pin the proven bench facts
     access = dpv1_platform().host_access
     assert access is not None
-    # the config is the composed source; the code constants must not drift
-    assert access.pci_id == DPV1_PCI_ID
-    assert access.rescan_bdfs == PCI_RESCAN_BDFS
-    defaults = HardwareToolchainConfig(work_root=Path("/w"))
-    assert access.endpoint_bdf == defaults.endpoint_bdf
-    assert access.runtime_pm_patterns == defaults.runtime_pm_patterns
-    assert access.runtime_pm_executable == defaults.runtime_pm_executable
-    assert access.jtag_cable == defaults.jtag_cable
+    assert access.pci_id == "10ee:7011"
+    assert access.endpoint_bdf == "0000:04:00.0"
+    assert access.rescan_bdfs == (
+        "0000:03:01.0",
+        "0000:02:00.0",
+        "0000:00:0d.3",
+        "0000:00:0d.2",
+        "0000:00:0d.0",
+        "0000:00:07.2",
+        "0000:00:07.0",
+    )
+    assert access.runtime_pm_patterns == ("Thunderbolt", "JHL", "10ee:7011", "Xilinx")
+    assert access.runtime_pm_executable == "dau-utils-pci-runtime-pm"
+    assert access.jtag_cable == "digilent_hs2"

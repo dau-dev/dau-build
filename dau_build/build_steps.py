@@ -1037,8 +1037,9 @@ class HardwarePlanTask(BuildCallableModel):
     # owns its own required fields); the task holds the shared toolchain
     # config. Hardware access (endpoint identity, BDFs, runtime-PM patterns,
     # JTAG cable) composes from the `platform=` group's host_access when
-    # given; explicit task fields override it; with neither, the model
-    # defaults (the proven dpv1 bench values) apply.
+    # given; explicit task fields override it; with neither, the facts stay
+    # unset and steps that need them fail with guidance (dau-build carries
+    # no board defaults).
     plan: Any = None
     platform: Any = None
     work_root: Path
