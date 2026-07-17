@@ -50,7 +50,18 @@ class LaneTile(TileInstance):
     (filter -> map -> ... -> terminal tile). Chain stages speak the same
     stream+status contract but need no count port; their statuses feed the
     lane's status mux upstream-first, so a mid-chain close-out (zero rows,
-    torn row, bad config) wins over the terminal tile's."""
+    torn row, bad config) wins over the terminal tile's.
+
+    Status contract (composer's obligation — the walker is generic and
+    cannot check module semantics): exactly one success close-out per lane
+    per batch. Chain stages and partition filters must be SILENT on
+    success (status only when the downstream cannot see the batch end);
+    only the terminal tile closes out every batch — the record writer
+    consumes exactly one producer status. A close-out-on-success stage
+    mid-chain would leave a second status pending after the writer is
+    done; registry-aware composers (dau-core ScanCompositionSpec) reject
+    that shape up front. On an error close-out the shell's
+    pipeline_error_reset resets the lane, clearing any mid-stream stage."""
 
     count_port: str
     partition: TileInstance | None = None
