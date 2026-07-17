@@ -2,8 +2,9 @@
 
 A scan composition is the one-scan-N-lanes shape: an AXI burst reader scans
 the input window once and fans the row stream to N lanes — each an optional
-partition filter feeding an operator tile and a record writer with its own
-output-address register — behind an AXI-Lite register aperture. The walker
+partition filter feeding an ordered chain of operator stages into a
+terminal operator tile and a record writer with its own output-address
+register — behind an AXI-Lite register aperture. The walker
 consumes plain data (module names, config-port bindings, register offsets)
 and emits the plain-Verilog top (Vivado block-design module references
 reject SystemVerilog tops), so it carries no registry and no private
@@ -44,10 +45,16 @@ class TileInstance(BaseModel):
 
 class LaneTile(TileInstance):
     """One lane of the scan: an operator tile (with the name of its trailing
-    status-counter port) behind an optional row-atomic partition filter."""
+    status-counter port) behind an optional row-atomic partition filter and
+    an optional ordered ``chain`` of mid-lane operator stages
+    (filter -> map -> ... -> terminal tile). Chain stages speak the same
+    stream+status contract but need no count port; their statuses feed the
+    lane's status mux upstream-first, so a mid-chain close-out (zero rows,
+    torn row, bad config) wins over the terminal tile's."""
 
     count_port: str
     partition: TileInstance | None = None
+    chain: tuple[TileInstance, ...] = ()
 
 
 class RegisterLayout(BaseModel):
@@ -359,8 +366,33 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
 def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
     """The per-unit status mux for lane ``i``: a filterless lane forwards
     the tile status; a filtered lane muxes the partition status (which
-    wins) over the tile status."""
-    if composition.lanes[i].partition is None and composition.partitioner is None:
+    wins) over the tile status; a chained lane muxes every stage's status
+    upstream-first (the most upstream pending status wins, and each stage's
+    ready fires only when nothing upstream of it is pending)."""
+    lane = composition.lanes[i]
+    if lane.chain:
+        front_filtered = lane.partition is not None or composition.partitioner is not None
+        stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in range(len(lane.chain))]
+        valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
+        error_mux = f"tile_status_error_{i}"
+        code_mux = f"tile_status_error_code_{i}"
+        for stem in reversed(stems):
+            error_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_{i} : {error_mux}"
+            code_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_code_{i} : {code_mux}"
+        lines = [
+            f"    assign unit_status_valid_{i} = tile_status_valid_{i} || {valids};",
+            f"    assign unit_status_error_{i} = {error_mux};",
+            f"    assign unit_status_error_code_{i} = {code_mux};",
+        ]
+        upstream: list[str] = []
+        for stem in stems:
+            gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
+            lines.append(f"    assign {stem}_status_ready_{i} = unit_status_ready_{i}{gate} && {stem}_status_valid_{i};")
+            upstream.append(stem)
+        gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
+        lines.append(f"    assign tile_status_ready_{i} = unit_status_ready_{i}{gate};")
+        return "\n".join(lines) + "\n"
+    if lane.partition is None and composition.partitioner is None:
         return f"""    assign unit_status_valid_{i} = tile_status_valid_{i};
     assign unit_status_error_{i} = tile_status_error_{i};
     assign unit_status_error_code_{i} = tile_status_error_code_{i};
@@ -374,9 +406,26 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
 """
 
 
+def _lane_chain_wire_decls_sv(composition: ScanComposition, i: int) -> str:
+    """Per-chain-stage wire declarations for lane ``i`` (empty for a
+    chainless lane, keeping the chainless emission byte-identical)."""
+    return "".join(
+        f"""    wire chain{j}_out_valid_{i};
+    wire chain{j}_out_ready_{i};
+    wire [63:0] chain{j}_out_data_{i};
+    wire chain{j}_out_last_{i};
+    wire chain{j}_status_valid_{i};
+    wire chain{j}_status_ready_{i};
+    wire chain{j}_status_error_{i};
+    wire [7:0] chain{j}_status_error_code_{i};
+"""
+        for j in range(len(composition.lanes[i].chain))
+    )
+
+
 def _lane_wire_decls_sv(composition: ScanComposition) -> str:
-    """Per-lane internal wire declarations (lane front, tile, status glue,
-    writer, and the latched count register)."""
+    """Per-lane internal wire declarations (lane front, chain stages, tile,
+    status glue, writer, and the latched count register)."""
     addr_width = composition.addr_width
     return "\n".join(
         f"""    wire filt_out_valid_{i};
@@ -387,7 +436,7 @@ def _lane_wire_decls_sv(composition: ScanComposition) -> str:
     wire filt_status_ready_{i};
     wire filt_status_error_{i};
     wire [7:0] filt_status_error_code_{i};
-    wire tile_out_valid_{i};
+{_lane_chain_wire_decls_sv(composition, i)}    wire tile_out_valid_{i};
     wire tile_out_ready_{i};
     wire [63:0] tile_out_data_{i};
     wire tile_out_last_{i};
@@ -455,20 +504,57 @@ def _lane_flat_assigns_sv(composition: ScanComposition) -> str:
     )
 
 
+def _lane_chain_sv(composition: ScanComposition, i: int, *, clk: str) -> str:
+    """The ordered chain-stage instances for lane ``i``, each consuming the
+    previous stage's row stream (empty for a chainless lane, keeping the
+    chainless emission byte-identical)."""
+    parts = []
+    for j, stage in enumerate(composition.lanes[i].chain):
+        upstream = "filt_out" if j == 0 else f"chain{j - 1}_out"
+        parts.append(
+            f"""    {stage.module} chain_{i}_{j} (
+        .clk({clk}),
+        .rst(lane_rst),
+{_tile_config_binds_sv(stage.config)}        .input_valid({upstream}_valid_{i}),
+        .input_ready({upstream}_ready_{i}),
+        .input_data({upstream}_data_{i}),
+        .input_last({upstream}_last_{i}),
+        .output_valid(chain{j}_out_valid_{i}),
+        .output_ready(chain{j}_out_ready_{i}),
+        .output_data(chain{j}_out_data_{i}),
+        .output_last(chain{j}_out_last_{i}),
+        .status_valid(chain{j}_status_valid_{i}),
+        .status_ready(chain{j}_status_ready_{i}),
+        .status_error(chain{j}_status_error_{i}),
+        .status_error_code(chain{j}_status_error_code_{i})
+    );
+
+"""
+        )
+    return "".join(parts)
+
+
+def _lane_tile_upstream(composition: ScanComposition, i: int) -> str:
+    """The stream-wire prefix feeding lane ``i``'s terminal tile: the lane
+    front directly, or the last chain stage."""
+    chain = composition.lanes[i].chain
+    return "filt_out" if not chain else f"chain{len(chain) - 1}_out"
+
+
 def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -> str:
     """Every lane unit: front (partitioner tap / broadcast tap / partition
-    filter), operator tile, status glue, and record writer."""
+    filter), chain stages, operator tile, status glue, and record writer."""
     addr_width = composition.addr_width
     burst_beats = composition.burst_beats
     return "\n\n".join(
         f"""{_lane_front_sv(composition, i, clk=clk)}
-    {composition.lanes[i].module} tile_{i} (
+{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module} tile_{i} (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid(filt_out_valid_{i}),
-        .input_ready(filt_out_ready_{i}),
-        .input_data(filt_out_data_{i}),
-        .input_last(filt_out_last_{i}),
+{_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid({_lane_tile_upstream(composition, i)}_valid_{i}),
+        .input_ready({_lane_tile_upstream(composition, i)}_ready_{i}),
+        .input_data({_lane_tile_upstream(composition, i)}_data_{i}),
+        .input_last({_lane_tile_upstream(composition, i)}_last_{i}),
         .output_valid(tile_out_valid_{i}),
         .output_ready(tile_out_ready_{i}),
         .output_data(tile_out_data_{i}),
@@ -601,6 +687,8 @@ def _validate_against_sources(composition: ScanComposition, sources: Sequence[Pa
     for lane in composition.lanes:
         if lane.partition is not None:
             tiles.append((lane.partition, None))
+        for stage in lane.chain:
+            tiles.append((stage, None))
         tiles.append((lane, lane.count_port))
 
     violations: list[str] = []
