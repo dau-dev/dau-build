@@ -289,7 +289,10 @@ def test_job_clock_convert_wraps_the_ddr_shell(tmp_path: Path) -> None:
     assert "CONFIG.NUM_SI {2} CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {3}" in text
     assert "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {2}" in text
     assert "[get_bd_pins mig_0/ui_clk] [get_bd_pins smc/aclk1]" in text
-    assert "connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc/aclk2] [get_bd_pins smc_lite/aclk1] [get_bd_pins my_ddr_top_0/s_axi_aclk]" in text
+    assert (
+        "connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc/aclk2] [get_bd_pins smc_lite/aclk1] [get_bd_pins my_ddr_top_0/s_axi_aclk]"
+        in text
+    )
     assert "connect_bd_net [get_bd_pins job_rst/peripheral_aresetn] [get_bd_pins my_ddr_top_0/s_axi_aresetn]" in text
     assert "[get_bd_pins xadc_0/s_axi_aclk]\n" in text  # XADC stays on axi_aclk
     assert "CONFIG.DCLK_FREQUENCY {250}" in text  # XADC DCLK follows the personality
