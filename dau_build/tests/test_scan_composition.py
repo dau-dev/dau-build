@@ -176,6 +176,90 @@ def test_shared_partitioner_excludes_lane_partitions() -> None:
         )
 
 
+def _chained_composition() -> ScanComposition:
+    """A lane with a two-stage mid-lane chain (filter -> map) ahead of the
+    terminal tile, plus a chainless lane to pin cross-lane independence."""
+    return ScanComposition(
+        name="chained",
+        module_name="dau_chained_job",
+        lanes=(
+            LaneTile(
+                module="dau_terminal_tile",
+                config={"cfg_mode": "2'd0"},
+                count_port="row_count",
+                partition=TileInstance(module="dau_key_filter", config={"cfg_key_match": "32'd0"}),
+                chain=(
+                    TileInstance(module="dau_stage_filter", config={"cfg_op": "3'd1"}),
+                    TileInstance(module="dau_stage_map", config={"cfg_shift": "5'd15"}),
+                ),
+            ),
+            LaneTile(module="dau_terminal_tile", count_port="row_count"),
+        ),
+    )
+
+
+def test_chain_stages_wire_front_to_terminal_in_order() -> None:
+    text = generate_scan_composition_top_sv(_chained_composition())
+    # stage 0 consumes the lane front, stage 1 consumes stage 0, the
+    # terminal tile consumes stage 1
+    assert "    dau_stage_filter chain_0_0 (" in text
+    assert ".input_valid(filt_out_valid_0)," in text
+    assert "    dau_stage_map chain_0_1 (" in text
+    assert ".input_valid(chain0_out_valid_0)," in text
+    assert ".output_valid(chain1_out_valid_0)," in text
+    tile_block = text.split("dau_terminal_tile tile_0 (")[1].split(");")[0]
+    assert ".input_valid(chain1_out_valid_0)," in tile_block
+    # config bindings land on their stages
+    assert ".cfg_op(3'd1)," in text
+    assert ".cfg_shift(5'd15)," in text
+    # the chainless lane still consumes its front directly
+    tile1_block = text.split("dau_terminal_tile tile_1 (")[1].split(");")[0]
+    assert ".input_valid(filt_out_valid_1)," in tile1_block
+    assert "chain0_out_valid_1" not in text
+
+
+def test_chain_status_mux_is_upstream_first() -> None:
+    text = generate_scan_composition_top_sv(_chained_composition())
+    assert "assign unit_status_valid_0 = tile_status_valid_0 || filt_status_valid_0 || chain0_status_valid_0 || chain1_status_valid_0;" in text
+    assert (
+        "assign unit_status_error_0 = filt_status_valid_0 ? filt_status_error_0 : "
+        "chain0_status_valid_0 ? chain0_status_error_0 : "
+        "chain1_status_valid_0 ? chain1_status_error_0 : tile_status_error_0;"
+    ) in text
+    assert "assign filt_status_ready_0 = unit_status_ready_0 && filt_status_valid_0;" in text
+    assert "assign chain0_status_ready_0 = unit_status_ready_0 && !filt_status_valid_0 && chain0_status_valid_0;" in text
+    assert "assign chain1_status_ready_0 = unit_status_ready_0 && !filt_status_valid_0 && !chain0_status_valid_0 && chain1_status_valid_0;" in text
+    assert "assign tile_status_ready_0 = unit_status_ready_0 && !filt_status_valid_0 && !chain0_status_valid_0 && !chain1_status_valid_0;" in text
+    # the chainless lane keeps the plain forwarding glue
+    assert "assign unit_status_valid_1 = tile_status_valid_1;" in text
+
+
+def test_filterless_chained_lane_muxes_chain_before_tile() -> None:
+    composition = ScanComposition(
+        name="chained-filterless",
+        module_name="dau_chained_filterless_job",
+        lanes=(
+            LaneTile(
+                module="dau_terminal_tile",
+                count_port="row_count",
+                chain=(TileInstance(module="dau_stage_filter"),),
+            ),
+        ),
+    )
+    text = generate_scan_composition_top_sv(composition)
+    assert "assign unit_status_valid_0 = tile_status_valid_0 || chain0_status_valid_0;" in text
+    assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in text
+    assert "assign tile_status_ready_0 = unit_status_ready_0 && !chain0_status_valid_0;" in text
+
+
+def test_sim_harness_carries_the_same_chain() -> None:
+    text = generate_scan_composition_sim_sv(_chained_composition())
+    assert "    dau_stage_filter chain_0_0 (" in text
+    assert "    dau_stage_map chain_0_1 (" in text
+    tile_block = text.split("dau_terminal_tile tile_0 (")[1].split(");")[0]
+    assert ".input_valid(chain1_out_valid_0)," in tile_block
+
+
 _CONFORMING_TILE = """
 module lane_tile (
     input  wire logic        clk,
@@ -237,6 +321,41 @@ def test_sim_generator_arms_the_same_interface_validation(tmp_path: Path) -> Non
     assert "lane_tile tile_0 (" in text
     with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_thingz' is not an input port"):
         generate_scan_composition_sim_sv(_lane_tile_composition({"cfg_thingz": "32'd7"}), sources=(source,))
+
+
+def test_sources_validate_chain_stages(tmp_path: Path) -> None:
+    """Chain stages arm the same slang interface validation as terminal
+    tiles (contract conformance, config-binding names) but need no count
+    port."""
+    source = tmp_path / "lane_tile.sv"
+    source.write_text(_CONFORMING_TILE)
+    chained = _lane_tile_composition({}).model_copy(
+        update={
+            "lanes": (LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="lane_tile", config={"cfg_thing": "32'd1"}),)),)
+        }
+    )
+    text = generate_scan_composition_top_sv(chained, sources=(source,))
+    assert "lane_tile chain_0_0 (" in text
+
+    with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_typo' is not an input port"):
+        generate_scan_composition_top_sv(
+            chained.model_copy(
+                update={
+                    "lanes": (
+                        LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="lane_tile", config={"cfg_typo": "32'd1"}),)),
+                    )
+                }
+            ),
+            sources=(source,),
+        )
+
+    with pytest.raises(ScanCompositionError, match="dau_absent_stage.*not found"):
+        generate_scan_composition_top_sv(
+            chained.model_copy(
+                update={"lanes": (LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="dau_absent_stage"),)),)}
+            ),
+            sources=(source,),
+        )
 
 
 def test_sources_reject_a_missing_count_port(tmp_path: Path) -> None:
