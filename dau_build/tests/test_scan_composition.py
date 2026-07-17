@@ -50,6 +50,7 @@ def _sorted_scan_composition() -> ScanComposition:
             module="dau_int32_range_partitioner",
             config={"cfg_splitters": "{32'h0000001E, 32'h00000014, 32'h0000000A}"},
         ),
+        sort_capacity=16,  # caller-computed capability data (the sorter's batch row capacity)
     )
 
 
@@ -61,6 +62,27 @@ def test_bar_noc_top_matches_golden() -> None:
 
 def test_sorted_scan_top_matches_golden() -> None:
     assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+
+
+def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
+    """The identity block advertises exactly what the composer computed:
+    the bitmaps default to zero (never a static advertisement), the lane
+    count is always the composed lane count, and non-default words flow
+    into the top parameters and the identity instance."""
+    default = generate_scan_composition_top_sv(_bar_noc_composition())
+    assert "    parameter [31:0] OPERATOR_BITMAP = 32'h00000000,\n" in default
+    assert "    parameter [31:0] LANE_COUNT = 32'd4,\n" in default
+    assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000000,\n" in default
+    assert "    parameter [31:0] SORT_CAPACITY = 32'd0\n" in default
+
+    composed = generate_scan_composition_top_sv(
+        _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16})
+    )
+    assert "    parameter [31:0] OPERATOR_BITMAP = 32'h0000001E,\n" in composed
+    assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000020,\n" in composed
+    assert "    parameter [31:0] SORT_CAPACITY = 32'd16\n" in composed
+    for parameter in ("OPERATOR_BITMAP", "LANE_COUNT", "HOST_OPCODE_BITMAP", "SORT_CAPACITY"):
+        assert f"        .{parameter}({parameter}),\n" in composed or f"        .{parameter}({parameter})\n" in composed
 
 
 def test_generated_by_names_the_banner_only() -> None:

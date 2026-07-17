@@ -91,7 +91,14 @@ class ScanComposition(BaseModel):
     partitioner: TileInstance | None = None
     burst_beats: int = 32
     addr_width: int = 32
-    operator_bitmap: int = 0x0000_001E
+    # capability words the identity block advertises (register map 0.2).
+    # These are caller-computed data — the walker never guesses them: the
+    # bitmaps default to zero ("advertise nothing") so a composition only
+    # advertises what its composer declared, and the lane-count word is
+    # always the composed lane count.
+    operator_bitmap: int = 0x0000_0000
+    host_opcode_bitmap: int = 0x0000_0000
+    sort_capacity: int = 0
     registers: RegisterLayout = RegisterLayout()
 
     def model_post_init(self, context) -> None:
@@ -230,9 +237,17 @@ def _axi_lite_decode_assigns_sv() -> str:
 
 def _identity_registers_instance_sv() -> str:
     """The read-only identity/capability register file that backs the
-    default read path (OPERATOR_BITMAP parameterized at the top)."""
+    default read path (capability words parameterized at the top).
+
+    The caller-supplied ``dau_identity_registers`` module must accept the
+    four capability parameters (register map 0.2) — an older identity
+    block that only knows OPERATOR_BITMAP rejects the parameter override
+    at elaboration."""
     return """    dau_identity_registers #(
-        .OPERATOR_BITMAP(OPERATOR_BITMAP)
+        .OPERATOR_BITMAP(OPERATOR_BITMAP),
+        .LANE_COUNT(LANE_COUNT),
+        .HOST_OPCODE_BITMAP(HOST_OPCODE_BITMAP),
+        .SORT_CAPACITY(SORT_CAPACITY)
     ) identity_registers (
         .addr({4'h0, selected_addr[11:0]}),
         .wen(1'b0),
@@ -717,7 +732,10 @@ def generate_scan_composition_top_sv(
 // lane(s) behind the DAU stream-job register contract with the NoC lane
 // register block. Plain-Verilog top (BD module references require it).
 module {module_name} #(
-    parameter [31:0] OPERATOR_BITMAP = 32'h{composition.operator_bitmap:08X}
+    parameter [31:0] OPERATOR_BITMAP = 32'h{composition.operator_bitmap:08X},
+    parameter [31:0] LANE_COUNT = 32'd{num_lanes},
+    parameter [31:0] HOST_OPCODE_BITMAP = 32'h{composition.host_opcode_bitmap:08X},
+    parameter [31:0] SORT_CAPACITY = 32'd{composition.sort_capacity}
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 s_axi_aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF S_AXI:M_AXI, ASSOCIATED_RESET s_axi_aresetn" *)
