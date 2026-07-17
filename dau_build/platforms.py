@@ -49,6 +49,15 @@ class XdmaPersonality(BaseModel):
             raise ValueError(f"cannot parse pcie lane width from personality: {width!r}")
         return int(width[1:])
 
+    def axi_clock_mhz(self) -> int:
+        """The XDMA ``axi_aclk`` frequency in MHz from ``axisten_freq`` —
+        the clock the endpoint presents its AXI interfaces on (125 on dpv1's
+        Gen2 x4 personality; the IP forces 250 at Gen2 x8/128-bit)."""
+        freq = self.params.get("axisten_freq", "")
+        if not freq.isdigit():
+            raise ValueError(f"cannot parse axi clock from personality axisten_freq: {freq!r}")
+        return int(freq)
+
 
 class ResourceBudget(BaseModel):
     """Placeable capacity of a platform, in ``ResourceEnvelope`` units."""
@@ -179,7 +188,15 @@ class PlatformDefinition(BaseModel):
     ``require_measured`` refuses such boards for real builds while config-only
     generation stays open. ``host_access`` carries the bench host's measured
     access facts (PCI identity, endpoint/bridge BDFs, runtime-PM patterns,
-    JTAG cable) that ``HardwareToolchainConfig.for_platform`` composes from."""
+    JTAG cable) that ``HardwareToolchainConfig.for_platform`` composes from.
+
+    ``job_clock_mhz`` decouples the job logic's clock from the XDMA's
+    ``axi_aclk``: when set, the shell generators derive a job clock at that
+    frequency from ``axi_aclk`` (MMCM) and clock-convert both the register
+    aperture and the memory path in the smartconnects, so a personality
+    that forces a faster ``axi_aclk`` (250 MHz at Gen2 x8) never drags the
+    proven job-logic timing closure with it. ``None`` (the dpv1 default)
+    keeps the job logic on ``axi_aclk`` unchanged."""
 
     name: str
     part: str
@@ -191,6 +208,7 @@ class PlatformDefinition(BaseModel):
     constraints_xdc: str = ""
     lane_placements: tuple[tuple[int, str], ...] = ()
     program_method: str = "jtag"
+    job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
 
     @field_validator("name", "part")
@@ -205,6 +223,13 @@ class PlatformDefinition(BaseModel):
     def _valid_program_method(cls, value: str) -> str:
         if value not in ("jtag", "flash"):
             raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
+        return value
+
+    @field_validator("job_clock_mhz")
+    @classmethod
+    def _valid_job_clock(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("job_clock_mhz must be positive when set")
         return value
 
 
