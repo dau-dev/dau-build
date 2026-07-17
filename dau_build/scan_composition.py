@@ -237,7 +237,12 @@ def _axi_lite_decode_assigns_sv() -> str:
 
 def _identity_registers_instance_sv() -> str:
     """The read-only identity/capability register file that backs the
-    default read path (capability words parameterized at the top)."""
+    default read path (capability words parameterized at the top).
+
+    The caller-supplied ``dau_identity_registers`` module must accept the
+    four capability parameters (register map 0.2) — an older identity
+    block that only knows OPERATOR_BITMAP rejects the parameter override
+    at elaboration."""
     return """    dau_identity_registers #(
         .OPERATOR_BITMAP(OPERATOR_BITMAP),
         .LANE_COUNT(LANE_COUNT),
