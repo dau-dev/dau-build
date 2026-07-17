@@ -257,6 +257,64 @@ def test_placeholder_platform_projects_refuse_to_build(tmp_path: Path) -> None:
     assert "placeholder-platform" not in mm_ddr_job_shell_project_tcl(_ddr_request(tmp_path))
 
 
+def test_job_clock_convert_wraps_the_bram_shell(tmp_path: Path) -> None:
+    """A platform with ``job_clock_mhz`` runs the job top in its own MMCM-derived
+    clock domain: the register aperture crosses inside smc_lite (NUM_CLKS 2) and
+    the staging BRAMs stay on axi_aclk (the true-dual-port RAM is the crossing)."""
+    platform = _probe_platform(job_clock_mhz=125)
+    platform.host_link.xdma_personality.params["axisten_freq"] = "250"
+    request = _request(tmp_path).model_copy(update={"platform": platform})
+    text = mm_job_shell_project_tcl(request)
+    # the job clock domain: MMCM from axi_aclk, synchronized reset
+    assert "CONFIG.PRIM_IN_FREQ {250}" in text
+    assert "CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {125}" in text
+    assert "connect_bd_net [get_bd_pins xdma_0/axi_aclk] [get_bd_pins job_clk/clk_in1]" in text
+    assert "[get_bd_pins job_clk/locked] [get_bd_pins job_rst/dcm_locked]" in text
+    # the register aperture crosses in smc_lite; the job top leaves axi_aclk
+    assert "CONFIG.NUM_SI {1} CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {2}" in text
+    assert "connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc_lite/aclk1] [get_bd_pins my_mm_top_0/s_axi_aclk]" in text
+    assert "connect_bd_net [get_bd_pins job_rst/peripheral_aresetn] [get_bd_pins my_mm_top_0/s_axi_aresetn]" in text
+    assert "[get_bd_pins dw_out/s_axi_aclk] \\" not in text  # axi_aclk net no longer reaches the top
+    # the XDMA-side staging stays on axi_aclk
+    assert "[get_bd_pins bram_ctrl_in/s_axi_aclk]" in text
+
+
+def test_job_clock_convert_wraps_the_ddr_shell(tmp_path: Path) -> None:
+    """The DDR shell gains the job domain as a third smartconnect clock next
+    to the memory controller's ui_clk; the XADC stays on axi_aclk."""
+    platform = _probe_platform(job_clock_mhz=125)
+    platform.host_link.xdma_personality.params["axisten_freq"] = "250"
+    request = _ddr_request(tmp_path).model_copy(update={"platform": platform})
+    text = mm_ddr_job_shell_project_tcl(request)
+    assert "CONFIG.NUM_SI {2} CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {3}" in text
+    assert "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {2}" in text
+    assert "[get_bd_pins mig_0/ui_clk] [get_bd_pins smc/aclk1]" in text
+    assert "connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc/aclk2] [get_bd_pins smc_lite/aclk1] [get_bd_pins my_ddr_top_0/s_axi_aclk]" in text
+    assert "connect_bd_net [get_bd_pins job_rst/peripheral_aresetn] [get_bd_pins my_ddr_top_0/s_axi_aresetn]" in text
+    assert "[get_bd_pins xadc_0/s_axi_aclk]\n" in text  # XADC stays on axi_aclk
+
+
+def test_no_job_clock_means_no_conversion(tmp_path: Path) -> None:
+    """``job_clock_mhz`` unset (the dpv1 default) emits no clock-domain
+    machinery at all — the byte-identity goldens above pin the exact text."""
+    for text in (mm_job_shell_project_tcl(_request(tmp_path)), mm_ddr_job_shell_project_tcl(_ddr_request(tmp_path))):
+        assert "job_clk" not in text
+        assert "job_rst" not in text
+        assert "clk_wiz" not in text
+        assert "proc_sys_reset" not in text
+
+
+def test_personality_axi_clock_parses_axisten_freq() -> None:
+    import pytest
+
+    from dau_build.platforms import XdmaPersonality
+
+    assert dpv1_xdma_personality().axi_clock_mhz() == 125
+    assert XdmaPersonality(params={"axisten_freq": "250"}).axi_clock_mhz() == 250
+    with pytest.raises(ValueError, match="axisten_freq"):
+        XdmaPersonality(params={}).axi_clock_mhz()
+
+
 def test_project_tcl_matches_pre_fragment_goldens() -> None:
     """The fragment refactor (shared preamble/postamble emitters) must not
     change a byte of the generated scripts — these fixtures were captured

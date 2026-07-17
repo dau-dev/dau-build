@@ -267,6 +267,36 @@ set dau_job [create_bd_cell -type module -reference {request.top_module} {reques
 """
 
 
+def _job_clock_domain_tcl(request) -> str:
+    """The job clock domain, emitted when the platform sets ``job_clock_mhz``:
+    an MMCM (clk_wiz) derives the job clock from the XDMA's ``axi_aclk`` (7-series
+    has no BUFGCE_DIV and the XDMA offers no divided user clock), and
+    proc_sys_reset synchronizes ``axi_aresetn`` into the job domain. The AXI
+    clock conversion itself happens inside the smartconnects (the structure the
+    dpv1 DDR shell already proves against the memory controller's ui_clk)."""
+    platform = request.platform
+    job_mhz = platform.job_clock_mhz
+    axi_mhz = platform.host_link.xdma_personality.axi_clock_mhz()
+    return f"""
+# job clock domain: job logic runs at {job_mhz} MHz behind the XDMA's
+# {axi_mhz} MHz axi_aclk (platform job_clock_mhz) — MMCM-derived job clock,
+# reset synchronized by proc_sys_reset, clock conversion in the smartconnects
+set job_clk [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz job_clk]
+set_property -dict [list \\
+    CONFIG.PRIM_SOURCE {{No_buffer}} \\
+    CONFIG.PRIM_IN_FREQ {{{axi_mhz}}} \\
+    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {{{job_mhz}}} \\
+    CONFIG.USE_RESET {{false}} \\
+] $job_clk
+set job_rst [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset job_rst]
+set_property CONFIG.C_EXT_RESET_HIGH {{0}} $job_rst
+connect_bd_net [get_bd_pins xdma_0/axi_aclk] [get_bd_pins job_clk/clk_in1]
+connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins job_rst/slowest_sync_clk]
+connect_bd_net [get_bd_pins job_clk/locked] [get_bd_pins job_rst/dcm_locked]
+connect_bd_net [get_bd_pins xdma_0/axi_aresetn] [get_bd_pins job_rst/ext_reset_in]
+"""
+
+
 def _lane_swizzle_verify_tcl(lane_placements: tuple[tuple[int, str], ...]) -> str:
     """Post-route verification that every swizzled lane landed on its site."""
     swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in lane_placements)
@@ -353,7 +383,22 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
             "# (dpv1) PCIe personality) with DDR staging behind the memory controller."
         ),
     )
-    staging = f"""
+    convert = request.platform.job_clock_mhz is not None
+    job_domain = _job_clock_domain_tcl(request) if convert else ""
+    smc_clocks = "3" if convert else "2"
+    smc_lite_config = "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {2}" if convert else "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2}"
+    top_clk_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aclk]"
+    top_rst_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aresetn]"
+    job_wiring = (
+        (
+            f"connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc/aclk2] [get_bd_pins smc_lite/aclk1] "
+            f"[get_bd_pins {request.top_module}_0/s_axi_aclk]\n"
+            f"connect_bd_net [get_bd_pins job_rst/peripheral_aresetn] [get_bd_pins {request.top_module}_0/s_axi_aresetn]\n"
+        )
+        if convert
+        else ""
+    )
+    staging = f"""{job_domain}
 # memory controller from the vendored proven configuration; the .prj owns
 # the DDR3 and sys_clk pin placement
 set mig_0 [create_bd_cell -type ip -vlnv xilinx.com:ip:mig_7series mig_0]
@@ -389,7 +434,7 @@ connect_bd_net [get_bd_pins xadc_0/temp_out] [get_bd_pins mig_0/device_temp_i]
 # one memory-side smartconnect: XDMA (128-bit) and the job master (64-bit)
 # into the controller's 128-bit S_AXI, bridging 125 MHz -> ui_clk
 set smc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect smc]
-set_property -dict [list CONFIG.NUM_SI {{2}} CONFIG.NUM_MI {{1}} CONFIG.NUM_CLKS {{2}}] $smc
+set_property -dict [list CONFIG.NUM_SI {{2}} CONFIG.NUM_MI {{1}} CONFIG.NUM_CLKS {{{smc_clocks}}}] $smc
 connect_bd_intf_net [get_bd_intf_pins xdma_0/M_AXI] [get_bd_intf_pins smc/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins {request.top_module}_0/M_AXI] [get_bd_intf_pins smc/S01_AXI]
 connect_bd_intf_net [get_bd_intf_pins smc/M00_AXI] [get_bd_intf_pins mig_0/S_AXI]
@@ -398,19 +443,17 @@ connect_bd_intf_net [get_bd_intf_pins smc/M00_AXI] [get_bd_intf_pins mig_0/S_AXI
 # into a register block; smc_lite mirrors that (pipelined, spec-strict
 # handshakes between the XDMA AXI-Lite master and the module reference)
 set smc_lite [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect smc_lite]
-set_property -dict [list CONFIG.NUM_SI {{1}} CONFIG.NUM_MI {{2}}] $smc_lite
+set_property -dict [list {smc_lite_config}] $smc_lite
 connect_bd_intf_net [get_bd_intf_pins xdma_0/M_AXI_LITE] [get_bd_intf_pins smc_lite/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins smc_lite/M00_AXI] [get_bd_intf_pins {request.top_module}_0/S_AXI]
 connect_bd_intf_net [get_bd_intf_pins smc_lite/M01_AXI] [get_bd_intf_pins xadc_0/s_axi_lite]
 
 connect_bd_net [get_bd_pins xdma_0/axi_aclk] \\
-    [get_bd_pins smc/aclk] [get_bd_pins smc_lite/aclk] [get_bd_pins xadc_0/s_axi_aclk] \\
-    [get_bd_pins {request.top_module}_0/s_axi_aclk]
+    [get_bd_pins smc/aclk] [get_bd_pins smc_lite/aclk] [get_bd_pins xadc_0/s_axi_aclk]{top_clk_sink}
 connect_bd_net [get_bd_pins mig_0/ui_clk] [get_bd_pins smc/aclk1]
 connect_bd_net [get_bd_pins xdma_0/axi_aresetn] \\
-    [get_bd_pins smc/aresetn] [get_bd_pins smc_lite/aresetn] [get_bd_pins xadc_0/s_axi_aresetn] \\
-    [get_bd_pins {request.top_module}_0/s_axi_aresetn]
-
+    [get_bd_pins smc/aresetn] [get_bd_pins smc_lite/aresetn] [get_bd_pins xadc_0/s_axi_aresetn]{top_rst_sink}
+{job_wiring}
 assign_bd_address -offset 0x00000000 -range 0x{request.ddr_bytes:08X} -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
 assign_bd_address -offset 0x00000000 -range 0x{request.ddr_bytes:08X} -target_address_space [get_bd_addr_spaces {request.top_module}_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
 assign_bd_address -offset 0x{request.register_window_offset:08X} -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs {request.top_module}_0/S_AXI/*] -force
@@ -464,7 +507,20 @@ def mm_job_shell_project_tcl(request: MmJobShellRequest) -> str:
             "# with BRAM staging at the stream-job contract addresses."
         ),
     )
-    staging = f"""
+    convert = request.platform.job_clock_mhz is not None
+    job_domain = _job_clock_domain_tcl(request) if convert else ""
+    smc_lite_config = "CONFIG.NUM_SI {1} CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {2}" if convert else "CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}"
+    top_clk_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aclk]"
+    top_rst_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aresetn]"
+    job_wiring = (
+        (
+            f"connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins smc_lite/aclk1] [get_bd_pins {request.top_module}_0/s_axi_aclk]\n"
+            f"connect_bd_net [get_bd_pins job_rst/peripheral_aresetn] [get_bd_pins {request.top_module}_0/s_axi_aresetn]\n"
+        )
+        if convert
+        else ""
+    )
+    staging = f"""{job_domain}
 set bram_ctrl_in [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_bram_ctrl bram_ctrl_in]
 set_property -dict [list CONFIG.DATA_WIDTH {{64}} CONFIG.SINGLE_PORT_BRAM {{1}}] $bram_ctrl_in
 set bram_ctrl_out [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_bram_ctrl bram_ctrl_out]
@@ -495,19 +551,17 @@ connect_bd_intf_net [get_bd_intf_pins dw_out/M_AXI] [get_bd_intf_pins bram_ctrl_
 # into a register block; smc_lite mirrors that (pipelined, spec-strict
 # handshakes between the XDMA AXI-Lite master and the module reference)
 set smc_lite [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect smc_lite]
-set_property -dict [list CONFIG.NUM_SI {{1}} CONFIG.NUM_MI {{1}}] $smc_lite
+set_property -dict [list {smc_lite_config}] $smc_lite
 connect_bd_intf_net [get_bd_intf_pins xdma_0/M_AXI_LITE] [get_bd_intf_pins smc_lite/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins smc_lite/M00_AXI] [get_bd_intf_pins {request.top_module}_0/S_AXI]
 
 connect_bd_net [get_bd_pins xdma_0/axi_aclk] \\
     [get_bd_pins smc/aclk] [get_bd_pins smc_lite/aclk] [get_bd_pins bram_ctrl_in/s_axi_aclk] [get_bd_pins bram_ctrl_out/s_axi_aclk] \\
-    [get_bd_pins dw_in/s_axi_aclk] [get_bd_pins dw_out/s_axi_aclk] \\
-    [get_bd_pins {request.top_module}_0/s_axi_aclk]
+    [get_bd_pins dw_in/s_axi_aclk] [get_bd_pins dw_out/s_axi_aclk]{top_clk_sink}
 connect_bd_net [get_bd_pins xdma_0/axi_aresetn] \\
     [get_bd_pins smc/aresetn] [get_bd_pins smc_lite/aresetn] [get_bd_pins bram_ctrl_in/s_axi_aresetn] [get_bd_pins bram_ctrl_out/s_axi_aresetn] \\
-    [get_bd_pins dw_in/s_axi_aresetn] [get_bd_pins dw_out/s_axi_aresetn] \\
-    [get_bd_pins {request.top_module}_0/s_axi_aresetn]
-
+    [get_bd_pins dw_in/s_axi_aresetn] [get_bd_pins dw_out/s_axi_aresetn]{top_rst_sink}
+{job_wiring}
 assign_bd_address -offset 0x{request.input_buffer_address:08X} -range 0x{request.input_bram_bytes:08X} -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs bram_ctrl_in/S_AXI/*] -force
 assign_bd_address -offset 0x{request.output_buffer_address:08X} -range 0x{request.output_bram_bytes:08X} -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs bram_ctrl_out/S_AXI/*] -force
 assign_bd_address -offset 0x{request.register_window_offset:08X} -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs {request.top_module}_0/S_AXI/*] -force
