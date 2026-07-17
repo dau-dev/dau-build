@@ -280,7 +280,8 @@ def _job_clock_domain_tcl(request) -> str:
     return f"""
 # job clock domain: job logic runs at {job_mhz} MHz behind the XDMA's
 # {axi_mhz} MHz axi_aclk (platform job_clock_mhz) — MMCM-derived job clock,
-# reset synchronized by proc_sys_reset, clock conversion in the smartconnects
+# reset synchronized by proc_sys_reset (its ext_reset_in polarity propagates
+# from axi_aresetn's ACTIVE_LOW), clock conversion in the smartconnects
 set job_clk [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz job_clk]
 set_property -dict [list \\
     CONFIG.PRIM_SOURCE {{No_buffer}} \\
@@ -289,7 +290,6 @@ set_property -dict [list \\
     CONFIG.USE_RESET {{false}} \\
 ] $job_clk
 set job_rst [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset job_rst]
-set_property CONFIG.C_EXT_RESET_HIGH {{0}} $job_rst
 connect_bd_net [get_bd_pins xdma_0/axi_aclk] [get_bd_pins job_clk/clk_in1]
 connect_bd_net [get_bd_pins job_clk/clk_out1] [get_bd_pins job_rst/slowest_sync_clk]
 connect_bd_net [get_bd_pins job_clk/locked] [get_bd_pins job_rst/dcm_locked]
@@ -385,6 +385,9 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     )
     convert = request.platform.job_clock_mhz is not None
     job_domain = _job_clock_domain_tcl(request) if convert else ""
+    # the XADC rides axi_aclk; its DCLK setting follows the personality
+    # (125 on dpv1, 250 on a Gen2 x8 personality)
+    xadc_dclk_mhz = request.platform.host_link.xdma_personality.axi_clock_mhz()
     smc_clocks = "3" if convert else "2"
     smc_lite_config = "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {2}" if convert else "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2}"
     top_clk_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aclk]"
@@ -425,7 +428,7 @@ set xadc_0 [create_bd_cell -type ip -vlnv xilinx.com:ip:xadc_wiz xadc_0]
 set_property -dict [list \\
     CONFIG.INTERFACE_SELECTION {{Enable_AXI}} \\
     CONFIG.ENABLE_TEMP_BUS {{true}} \\
-    CONFIG.DCLK_FREQUENCY {{125}} \\
+    CONFIG.DCLK_FREQUENCY {{{xadc_dclk_mhz}}} \\
     CONFIG.ADC_CONVERSION_RATE {{1000}} \\
     CONFIG.ENABLE_RESET {{false}} \\
 ] $xadc_0
