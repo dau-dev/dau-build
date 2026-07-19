@@ -197,6 +197,22 @@ def test_nested_board_and_backend_config_groups_compose() -> None:
     assert isinstance(backend, VivadoEngine) and backend.name == "vivado"
 
 
+def test_programmer_config_group_composes_the_adapter() -> None:
+    # programmer=programmers/<name> selects a Programmer model, symmetric to
+    # backend=backends/<name>; adding a group yaml is all it takes to select
+    # a programming adapter.
+    from hydra import compose, initialize_config_module
+    from hydra.utils import instantiate
+
+    from dau_build.programmers import OpenFpgaLoaderProgrammer, VivadoHwServerProgrammer
+
+    with initialize_config_module(config_module="dau_build.config", version_base=None):
+        jtag = instantiate(compose(config_name="base", overrides=["programmer=programmers/openfpgaloader"]).programmer)
+        flash = instantiate(compose(config_name="base", overrides=["programmer=programmers/vivado-hwserver"]).programmer)
+    assert isinstance(jtag, OpenFpgaLoaderProgrammer) and jtag.name == "openfpgaloader" and jtag.executable == "openFPGALoader"
+    assert isinstance(flash, VivadoHwServerProgrammer) and flash.name == "vivado-hwserver"
+
+
 def test_dau_build_registers_a_hydra_searchpath_entry_point() -> None:
     # the config tree is on the Hydra search path (lerna bridge) so packages
     # and users can extend it; dau-build must register itself

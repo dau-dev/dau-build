@@ -13,6 +13,7 @@ defaults:
   - optional simulator: null
   - optional spec: null
   - optional plan: null
+  - optional programmer: null
   - optional design: null
   - callable: callable
 

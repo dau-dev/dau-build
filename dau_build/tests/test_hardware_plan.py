@@ -1120,16 +1120,28 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
     assert dau_overlay_manifest_text(Path("/repo/dau-core/dau_core/hdl")).splitlines()[0] == "backend=dau_build.vivado_backend.vivado_overlay"
 
 
-def test_local_flash_plan_uses_vivado_flash_script_inside_runtime_pm_session() -> None:
-    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado")
-
-    steps = flash_plan(config)
-
+def test_flash_plan_routes_through_the_program_method_selector() -> None:
+    # a flash board flashes through the Vivado hw_server path (byte-identical
+    # to the pre-adapter flash step)
+    flash_config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado", program_method="flash")
+    steps = flash_plan(flash_config)
     assert [step.name for step in steps] == ["thunderbolt-hold", "flash", "thunderbolt-release"]
     assert steps[1].argv[0:2] == ("bash", "-lc")
     assert "cd /repo/projects/vivado-shell" in steps[1].argv[2]
     assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
     assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
+
+    # a JTAG board flashes persistently through openFPGALoader (-f)
+    jtag_config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
+    jtag_steps = flash_plan(jtag_config)
+    program = {step.name: step for step in jtag_steps}["program-persistent"]
+    assert program.argv == (
+        "openFPGALoader",
+        "-c",
+        "digilent_hs2",
+        "-f",
+        "/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
+    )
 
 
 def test_task_local_build_can_stage_shell_before_overlay() -> None:
@@ -1536,6 +1548,57 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
 
     # explicit overrides beat platform data
     assert HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2").jtag_cable == "digilent_hs2"
+
+
+def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
+    from dau_build.hardware_plan import jtag_detect_step, program_volatile_step
+    from dau_build.programmers import OpenFpgaLoaderProgrammer
+
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
+    # the jtag default composes the openFPGALoader adapter
+    assert isinstance(config.resolve_programmer(), OpenFpgaLoaderProgrammer)
+    # byte-identical to the pre-adapter jtag-detect / program-volatile argv
+    assert jtag_detect_step(config).argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
+    assert program_volatile_step(config).argv == (
+        "openFPGALoader",
+        "-c",
+        "digilent_hs2",
+        "/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
+    )
+
+
+def test_program_method_flash_selects_the_vivado_programmer() -> None:
+    from dau_build.platforms import dpv1_platform
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    flash_board = dpv1_platform().model_copy(deep=True)
+    flash_board.program_method = "flash"
+    config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
+    programmer = config.resolve_programmer()
+    assert isinstance(programmer, VivadoHwServerProgrammer)
+    step = programmer.program_step(config)
+    assert step.name == "flash"
+    assert "vivado -mode batch -source scripts/flash.tcl" in step.argv[2]
+
+
+def test_explicit_programmer_override_beats_program_method() -> None:
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    # an explicit programmer wins over a jtag board's default (symmetric to
+    # an explicit backend= over the spec-derived default)
+    config = _bench_config(work_root=Path("/w"), programmer=VivadoHwServerProgrammer())
+    assert isinstance(config.resolve_programmer(), VivadoHwServerProgrammer)
+
+
+def test_detect_less_programmer_yields_a_plan_without_a_detect_step() -> None:
+    # detection is optional: a flash board (Vivado has no JTAG detect) composes
+    # a valid build-and-program plan that simply omits the detect step
+    config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", program_method="flash")
+    assert config.resolve_programmer().detect_step(config) is None
+    step_names = [step.name for step in build_and_program_plan(config)]
+    assert "jtag-detect" not in step_names
+    # the program step is the Vivado flash step, and the plan is otherwise intact
+    assert step_names == ["thunderbolt-hold", "vivado-build", "flash", "pci-rescan", "lspci-endpoint"]
 
 
 def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ import shlex
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from ccflow import BaseModel
 
@@ -16,7 +16,6 @@ from dau_build.vivado_backend import (
     VivadoProjectArtifactValidation,
     VivadoProjectGenerationRequest,
     dau_overlay_tcl,
-    flash_script as vivado_flash_script,
     generate_vivado_backend_artifacts,
     generate_vivado_project_generation_artifacts,
     overlay_build_script as vivado_overlay_build_script,
@@ -70,13 +69,20 @@ class HardwareToolchainConfig(BaseModel):
     endpoint_bdf: str | None = None
     expected_endpoint_id: str | None = None
     rescan_bdfs: tuple[str, ...] | None = None
+    # the board's default programming method (PlatformDefinition.program_method:
+    # jtag->openFPGALoader, flash->vivado-hwserver); an explicit `programmer`
+    # (a Programmer model composed from the `programmer` group) wins.
+    program_method: str = "jtag"
+    programmer: Any = None
 
     @classmethod
-    def for_platform(cls, platform, *, work_root: Path, **overrides) -> "HardwareToolchainConfig":
+    def for_platform(cls, platform, *, work_root: Path, programmer=None, **overrides) -> "HardwareToolchainConfig":
         """Compose the toolchain config from a registered platform's
-        ``host_access`` (board/host config, not code defaults). Explicit
-        keyword overrides win; with neither, the host-access facts stay
-        unset and any step that needs them fails with guidance."""
+        ``host_access`` (board/host config, not code defaults) and its
+        ``program_method``. Explicit keyword overrides win; with neither, the
+        host-access facts stay unset and any step that needs them fails with
+        guidance. An explicit ``programmer`` model overrides the
+        ``program_method``-selected default."""
         access = getattr(platform, "host_access", None)
         values: dict = {}
         if access is not None:
@@ -90,8 +96,27 @@ class HardwareToolchainConfig(BaseModel):
                 "rescan_bdfs": access.rescan_bdfs,
                 "runtime_pm_patterns": access.runtime_pm_patterns,
             }
+        method = getattr(platform, "program_method", None)
+        if method is not None:
+            values["program_method"] = method
+        if programmer is not None:
+            values["programmer"] = programmer
         values.update({key: value for key, value in overrides.items() if value is not None})
         return cls(work_root=work_root, **values)
+
+    def resolve_programmer(self, *, vivado_settings: Path | None = None):
+        """The composed ``Programmer``: an explicit ``programmer`` override,
+        else the ``program_method`` default (``jtag`` openFPGALoader with this
+        config's executable/cable, ``flash`` the Vivado hw_server path).
+        ``vivado_settings`` supplies the flash plan's settings path to the
+        default Vivado programmer (an explicit ``programmer`` carries its own)."""
+        from dau_build.programmers import OpenFpgaLoaderProgrammer, Programmer, VivadoHwServerProgrammer
+
+        if isinstance(self.programmer, Programmer):
+            return self.programmer
+        if self.program_method == "flash":
+            return VivadoHwServerProgrammer() if vivado_settings is None else VivadoHwServerProgrammer(vivado_settings=vivado_settings)
+        return OpenFpgaLoaderProgrammer(executable=self.openfpgaloader_executable)
 
     @property
     def project_tcl(self) -> Path:
@@ -131,7 +156,7 @@ def build_and_program_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, .
     return (
         thunderbolt_hold_step(config),
         vivado_build_step(config),
-        jtag_detect_step(config),
+        *detect_steps(config),
         program_volatile_step(config),
         pci_rescan_step(config.required_host_access("rescan_bdfs")),
         lspci_endpoint_step(config),
@@ -174,7 +199,7 @@ def local_build_and_program_plan(
         write_vivado_build_script_step(build_tcl_path=build_tcl_path, source=build_tcl_source),
         *_local_vivado_driver_steps(config, overlay_tcl=overlay_tcl, build_tcl=build_tcl),
         vivado_overlay_build_step(config, overlay_tcl=overlay_tcl, build_tcl=build_tcl, vivado_settings=vivado_settings),
-        jtag_detect_step(config),
+        *detect_steps(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
         pci_rescan_step(config.required_host_access("rescan_bdfs")),
@@ -325,7 +350,7 @@ def validate_bitstream_plan(
 ) -> tuple[ToolStep, ...]:
     return (
         thunderbolt_hold_step(config, dau_utils_root=dau_utils_root, python=python),
-        jtag_detect_step(config),
+        *detect_steps(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
         pci_rescan_step(config.required_host_access("rescan_bdfs")),
@@ -495,13 +520,10 @@ def _smoke_steps(smoke_command: str | None) -> tuple[ToolStep, ...]:
 
 
 def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path) -> ToolStep:
-    script = vivado_flash_script(
-        work_root=config.work_root,
-        vivado_settings=vivado_settings,
-        vivado_executable=config.vivado_executable,
-        vivado_invocation=config.vivado_invocation,
-    )
-    return ToolStep("flash", ("bash", "-lc", script))
+    # a persistent write through the composed programmer (Vivado hw_server for
+    # a flash board, openFPGALoader -f for a JTAG board) — the selector, not a
+    # hardcoded backend
+    return config.resolve_programmer(vivado_settings=vivado_settings).program_step(config, mode="persistent")
 
 
 def thunderbolt_hold_step(config: HardwareToolchainConfig, *, dau_utils_root: Path | None = None, python: str = "python3") -> ToolStep:
@@ -522,12 +544,20 @@ def thunderbolt_release_step(config: HardwareToolchainConfig, *, dau_utils_root:
     )
 
 
-def jtag_detect_step(config: HardwareToolchainConfig) -> ToolStep:
-    return ToolStep("jtag-detect", (config.openfpgaloader_executable, "-c", config.required_host_access("jtag_cable"), "--detect"))
+def jtag_detect_step(config: HardwareToolchainConfig) -> ToolStep | None:
+    # optional: None when the composed programmer has no separate detect step
+    return config.resolve_programmer().detect_step(config)
+
+
+def detect_steps(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
+    """The composed programmer's detect step, or ``()`` when it has none —
+    so a plan can splat it and skip a detect-less programmer (e.g. Vivado)."""
+    step = jtag_detect_step(config)
+    return () if step is None else (step,)
 
 
 def program_volatile_step(config: HardwareToolchainConfig) -> ToolStep:
-    return ToolStep("program-volatile", (config.openfpgaloader_executable, "-c", config.required_host_access("jtag_cable"), str(config.bitstream)))
+    return config.resolve_programmer().program_step(config)
 
 
 def remove_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:

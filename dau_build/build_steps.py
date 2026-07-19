@@ -589,15 +589,16 @@ def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
 
 
 class FlashTask(BuildCallableModel):
-    tool: str = "openFPGAloader"
+    # the programmer is the composed `programmer` group option (a Programmer
+    # model); defaults to openFPGALoader, symmetric to SynthesizeTask's backend
+    programmer: Any = None
     bitstream: Path | None = None
     manifest_path: Path | None = None
     mode: Literal["volatile", "persistent"] = "volatile"
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        if self.tool.lower() != "openfpgaloader":
-            raise BuildStepError(f"unknown flash tool {self.tool!r}; expected openFPGAloader")
+        programmer = self._programmer()
         bitstream = self.bitstream
         manifest_segment = ""
         if self.manifest_path is not None:
@@ -623,8 +624,18 @@ class FlashTask(BuildCallableModel):
             raise BuildStepError(f"bitstream does not exist: {bitstream}")
         return BuildStepResult(
             step="flash",
-            message=f"dau-build-flash\ttask=flash tool={self.tool} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
+            message=f"dau-build-flash\ttask=flash programmer={programmer.name} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
         )
+
+    def _programmer(self):
+        # the composed `programmer` group option; default to openFPGALoader
+        from dau_build.programmers import OpenFpgaLoaderProgrammer, Programmer
+
+        if isinstance(self.programmer, Programmer):
+            return self.programmer
+        if self.programmer is None:
+            return OpenFpgaLoaderProgrammer()
+        raise BuildStepError(f"programmer {getattr(self.programmer, 'name', self.programmer)!r} is not a Programmer")
 
 
 class SmokeTestTask(BuildCallableModel):
@@ -1042,6 +1053,9 @@ class HardwarePlanTask(BuildCallableModel):
     # no board defaults).
     plan: Any = None
     platform: Any = None
+    # the programmer is the composed `programmer` group option (a Programmer
+    # model); with none, the platform's program_method selects the default
+    programmer: Any = None
     work_root: Path
     bitstream: Path | None = None
     vivado: str = "vivado"
@@ -1071,6 +1085,7 @@ class HardwarePlanTask(BuildCallableModel):
         config = HardwareToolchainConfig.for_platform(
             self.platform,
             work_root=self.work_root,
+            programmer=self.programmer,
             vivado_executable=self.vivado,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,

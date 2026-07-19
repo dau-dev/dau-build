@@ -152,6 +152,21 @@ def test_flash_task_resolves_and_verifies_shell_build_manifest(tmp_path: Path) -
         FlashTask(manifest_path=manifest_path)(None)
 
 
+def test_flash_task_delegates_to_the_composed_programmer(tmp_path: Path) -> None:
+    # FlashTask composes a Programmer from the `programmer` group (no string
+    # tool dispatch): the default is openFPGALoader, an explicit adapter wins,
+    # and a non-Programmer value is refused
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    output_root = _fake_shell_output(tmp_path)
+    manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "built"})
+
+    assert "programmer=openfpgaloader" in FlashTask(manifest_path=manifest_path)(None).message
+    assert "programmer=vivado-hwserver" in FlashTask(programmer=VivadoHwServerProgrammer(), manifest_path=manifest_path)(None).message
+    with pytest.raises(BuildStepError, match="is not a Programmer"):
+        FlashTask(programmer="nonesuch", manifest_path=manifest_path)(None)
+
+
 def test_flash_task_rejects_unbuilt_manifest(tmp_path: Path) -> None:
     output_root = _fake_shell_output(tmp_path)
     manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "failed"})
