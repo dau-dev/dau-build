@@ -589,19 +589,16 @@ def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
 
 
 class FlashTask(BuildCallableModel):
-    tool: str = "openFPGAloader"
+    # the programmer is the composed `programmer` group option (a Programmer
+    # model); defaults to openFPGALoader, symmetric to SynthesizeTask's backend
+    programmer: Any = None
     bitstream: Path | None = None
     manifest_path: Path | None = None
     mode: Literal["volatile", "persistent"] = "volatile"
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        from dau_build.programmers import programmer_for_tool
-
-        try:
-            programmer_for_tool(self.tool)
-        except ValueError as exc:
-            raise BuildStepError(str(exc)) from exc
+        programmer = self._programmer()
         bitstream = self.bitstream
         manifest_segment = ""
         if self.manifest_path is not None:
@@ -627,8 +624,18 @@ class FlashTask(BuildCallableModel):
             raise BuildStepError(f"bitstream does not exist: {bitstream}")
         return BuildStepResult(
             step="flash",
-            message=f"dau-build-flash\ttask=flash tool={self.tool} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
+            message=f"dau-build-flash\ttask=flash programmer={programmer.name} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
         )
+
+    def _programmer(self):
+        # the composed `programmer` group option; default to openFPGALoader
+        from dau_build.programmers import OpenFpgaLoaderProgrammer, Programmer
+
+        if isinstance(self.programmer, Programmer):
+            return self.programmer
+        if self.programmer is None:
+            return OpenFpgaLoaderProgrammer()
+        raise BuildStepError(f"programmer {getattr(self.programmer, 'name', self.programmer)!r} is not a Programmer")
 
 
 class SmokeTestTask(BuildCallableModel):

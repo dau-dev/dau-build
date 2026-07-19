@@ -134,7 +134,7 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
 
     assert flash_result == BuildStepResult(
         step="flash",
-        message=f"dau-build-flash\ttask=flash tool=openFPGAloader bitstream={bitstream} manifest={backend_manifest_path} mode=volatile status=planned",
+        message=f"dau-build-flash\ttask=flash programmer=openfpgaloader bitstream={bitstream} manifest={backend_manifest_path} mode=volatile status=planned",
     )
     assert smoke_result == BuildStepResult(
         step="smoke-test",
@@ -189,11 +189,31 @@ def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> Non
     bitstream = tmp_path / "Top_wrapper.bit"
     bitstream.write_bytes(b"bit")
 
-    result = execute_override_task(("task=tasks/flash/flash", "tool=openFPGAloader", f"bitstream={bitstream}"))
+    # default programmer (openFPGALoader)
+    result = execute_override_task(("task=tasks/flash/flash", f"bitstream={bitstream}"))
 
     assert result == BuildStepResult(
         step="flash",
-        message=f"dau-build-flash\ttask=flash tool=openFPGAloader bitstream={bitstream} mode=volatile status=planned",
+        message=f"dau-build-flash\ttask=flash programmer=openfpgaloader bitstream={bitstream} mode=volatile status=planned",
+    )
+
+
+def test_flash_task_composes_the_programmer_group(tmp_path: Path) -> None:
+    from dau_build.config import run_request_config
+
+    bitstream = tmp_path / "Top_wrapper.bit"
+    bitstream.write_bytes(b"bit")
+
+    # programmer=programmers/<name> composes the adapter into the flash task
+    result = run_request_config(
+        "task",
+        "tasks/flash/flash",
+        overrides=["programmer=programmers/vivado-hwserver"],
+        model_values={"bitstream": bitstream},
+    )
+    assert result == BuildStepResult(
+        step="flash",
+        message=f"dau-build-flash\ttask=flash programmer=vivado-hwserver bitstream={bitstream} mode=volatile status=planned",
     )
 
 

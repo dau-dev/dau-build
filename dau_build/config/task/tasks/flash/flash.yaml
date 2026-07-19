@@ -1,7 +1,9 @@
 # @package model
 
 _target_: dau_build.build_steps.FlashTask
-tool: openFPGAloader
+# the programmer composes from the `programmer` group
+# (programmer=programmers/<name>); with none, FlashTask defaults to openFPGALoader
+programmer: ${oc.select:programmer,null}
 bitstream: null
 manifest_path: null
 mode: volatile
