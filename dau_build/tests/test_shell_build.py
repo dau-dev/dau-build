@@ -152,6 +152,17 @@ def test_flash_task_resolves_and_verifies_shell_build_manifest(tmp_path: Path) -
         FlashTask(manifest_path=manifest_path)(None)
 
 
+def test_flash_task_rejects_an_unknown_programmer_tool(tmp_path: Path) -> None:
+    # the programmer registry replaces the old hardcoded openFPGALoader-only
+    # check: an unrecognized tool is refused, a known one is accepted
+    output_root = _fake_shell_output(tmp_path)
+    manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "built"})
+    with pytest.raises(BuildStepError, match="unknown flash tool"):
+        FlashTask(tool="nonesuch", manifest_path=manifest_path)(None)
+    # vivado-hwserver is now a recognized tool (no raise before bitstream checks)
+    assert "dau_mm_job.bit" in FlashTask(tool="vivado-hwserver", manifest_path=manifest_path)(None).message
+
+
 def test_flash_task_rejects_unbuilt_manifest(tmp_path: Path) -> None:
     output_root = _fake_shell_output(tmp_path)
     manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "failed"})

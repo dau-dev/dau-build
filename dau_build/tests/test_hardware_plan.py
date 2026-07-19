@@ -1538,6 +1538,46 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     assert HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2").jtag_cable == "digilent_hs2"
 
 
+def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
+    from dau_build.hardware_plan import jtag_detect_step, program_volatile_step
+    from dau_build.programmers import OpenFpgaLoaderProgrammer
+
+    config = _bench_config(work_root=Path("/repo/projects/vivado-shell"))
+    # the jtag default composes the openFPGALoader adapter
+    assert isinstance(config.resolve_programmer(), OpenFpgaLoaderProgrammer)
+    # byte-identical to the pre-adapter jtag-detect / program-volatile argv
+    assert jtag_detect_step(config).argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
+    assert program_volatile_step(config).argv == (
+        "openFPGALoader",
+        "-c",
+        "digilent_hs2",
+        "/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
+    )
+
+
+def test_program_method_flash_selects_the_vivado_programmer() -> None:
+    from dau_build.platforms import dpv1_platform
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    flash_board = dpv1_platform().model_copy(deep=True)
+    flash_board.program_method = "flash"
+    config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
+    programmer = config.resolve_programmer()
+    assert isinstance(programmer, VivadoHwServerProgrammer)
+    step = programmer.program_step(config)
+    assert step.name == "flash"
+    assert "vivado -mode batch -source scripts/flash.tcl" in step.argv[2]
+
+
+def test_explicit_programmer_override_beats_program_method() -> None:
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    # an explicit programmer wins over a jtag board's default (symmetric to
+    # an explicit backend= over the spec-derived default)
+    config = _bench_config(work_root=Path("/w"), programmer=VivadoHwServerProgrammer())
+    assert isinstance(config.resolve_programmer(), VivadoHwServerProgrammer)
+
+
 def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(

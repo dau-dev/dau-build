@@ -596,8 +596,12 @@ class FlashTask(BuildCallableModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:
-        if self.tool.lower() != "openfpgaloader":
-            raise BuildStepError(f"unknown flash tool {self.tool!r}; expected openFPGAloader")
+        from dau_build.programmers import programmer_for_tool
+
+        try:
+            programmer_for_tool(self.tool)
+        except ValueError as exc:
+            raise BuildStepError(str(exc)) from exc
         bitstream = self.bitstream
         manifest_segment = ""
         if self.manifest_path is not None:
@@ -1042,6 +1046,9 @@ class HardwarePlanTask(BuildCallableModel):
     # no board defaults).
     plan: Any = None
     platform: Any = None
+    # the programmer is the composed `programmer` group option (a Programmer
+    # model); with none, the platform's program_method selects the default
+    programmer: Any = None
     work_root: Path
     bitstream: Path | None = None
     vivado: str = "vivado"
@@ -1071,6 +1078,7 @@ class HardwarePlanTask(BuildCallableModel):
         config = HardwareToolchainConfig.for_platform(
             self.platform,
             work_root=self.work_root,
+            programmer=self.programmer,
             vivado_executable=self.vivado,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,

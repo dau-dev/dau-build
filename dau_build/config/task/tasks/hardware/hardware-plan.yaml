@@ -9,6 +9,10 @@ plan: ${oc.select:plan,null}
 # it, and with neither the facts stay unset — steps that need them fail
 # with guidance (dau-build carries no board defaults)
 platform: ${oc.select:platform,null}
+# the programmer composes from the `programmer` group
+# (programmer=programmers/<name>); with none, the platform's program_method
+# selects the default (jtag->openfpgaloader, flash->vivado-hwserver)
+programmer: ${oc.select:programmer,null}
 work_root: ???
 bitstream: null
 vivado: vivado

@@ -1,0 +1,7 @@
+# @package programmer
+
+# programmer=programmers/vivado-hwserver — programming through the Vivado
+# hw_server flash.tcl path (the flash plan).
+_target_: dau_build.programmers.VivadoHwServerProgrammer
+name: vivado-hwserver
+vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
