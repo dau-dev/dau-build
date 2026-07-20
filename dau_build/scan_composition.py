@@ -107,12 +107,21 @@ class ScanComposition(BaseModel):
     Two fan-out shapes: the default broadcasts the scan to every lane (each
     lane's optional ``partition`` filter selects its rows), or a shared
     ``partitioner`` routes each row to exactly one lane — lanes then carry
-    no per-lane partition."""
+    no per-lane partition.
+
+    An optional ``front_unpack`` feed tile is placed between the burst
+    reader and the fan-out: the reader's row stream feeds it, and its
+    widened output stream feeds the broadcast/partition (so the fan-out
+    still sees the clean 32-bit key). Its config carries the four field
+    descriptors (``cfg_field{0..3}_{offset,width,signed}``) and
+    ``cfg_bypass``. Absent (``None``), the top emits exactly as before —
+    every param-less golden stays byte-identical."""
 
     name: str
     module_name: str
     lanes: tuple[LaneTile, ...]
     partitioner: TileInstance | None = None
+    front_unpack: TileInstance | None = None
     burst_beats: int = 32
     addr_width: int = 32
     # capability words the identity block advertises (register map 0.2).
@@ -636,10 +645,12 @@ def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -
     )
 
 
-def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
+def _fanout_sv(composition: ScanComposition, *, clk: str, stream_prefix: str = "scan") -> tuple[str, str]:
     """The scan fan-out: wire declarations and the instance — the shared
     partitioner when the composition carries one, the stream broadcast
-    otherwise."""
+    otherwise. ``stream_prefix`` names the row stream driving the fan-out
+    input (``scan`` from the burst reader by default, ``feed`` from the
+    front unpacker when the composition carries one)."""
     num_lanes = len(composition.lanes)
     if composition.partitioner is not None:
         wire_decls = f"""    wire [{num_lanes - 1}:0] part_out_valid;
@@ -658,10 +669,10 @@ def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
     ) partitioner (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(composition.partitioner.config)}        .input_valid(scan_valid),
-        .input_ready(scan_ready),
-        .input_data(scan_data),
-        .input_last(scan_last),
+{_tile_config_binds_sv(composition.partitioner.config)}        .input_valid({stream_prefix}_valid),
+        .input_ready({stream_prefix}_ready),
+        .input_data({stream_prefix}_data),
+        .input_last({stream_prefix}_last),
         .output_valid(part_out_valid),
         .output_ready(part_out_ready),
         .output_data(part_out_data),
@@ -681,16 +692,117 @@ def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
     ) broadcast (
         .clk({clk}),
         .rst(lane_rst),
-        .input_valid(scan_valid),
-        .input_ready(scan_ready),
-        .input_data(scan_data),
-        .input_last(scan_last),
+        .input_valid({stream_prefix}_valid),
+        .input_ready({stream_prefix}_ready),
+        .input_data({stream_prefix}_data),
+        .input_last({stream_prefix}_last),
         .output_valid(bcast_valid),
         .output_ready(bcast_ready),
         .output_data(bcast_data),
         .output_last(bcast_last)
     );"""
     return wire_decls, instance
+
+
+def _front_unpack_wire_decls_sv(composition: ScanComposition) -> str:
+    """The front unpacker's widened row stream (``feed_*``, driving the
+    fan-out input), its status bundle, and the sticky error latch. Empty
+    string when the composition carries no front unpacker, so the block stays
+    byte-identical."""
+    if composition.front_unpack is None:
+        return ""
+    return """    wire feed_valid;
+    wire feed_ready;
+    wire [63:0] feed_data;
+    wire feed_last;
+    wire front_unpack_status_valid;
+    wire front_unpack_status_ready;
+    wire front_unpack_status_error;
+    wire [7:0] front_unpack_status_error_code;
+    reg front_unpack_error;
+    reg [7:0] front_unpack_error_code;
+"""
+
+
+def _front_unpack_instance_sv(composition: ScanComposition, *, clk: str) -> str:
+    """The front unpacker instance: the burst reader's row stream
+    (``scan_*``) in, the widened row stream (``feed_*``) out to the fan-out,
+    its config the four field descriptors + ``cfg_bypass``. Its status is a
+    front-stage close-out (silent on success, ERR_CONFIG/ERR_STREAM only):
+    consumed here (``status_ready`` tied high) and latched into the sticky
+    ``front_unpack_error`` reg for the job error mux. Unlike the reader — which
+    flushes the batch's ``last`` even on a read error, so the lanes still
+    close out — the unpacker withholds ``last`` on a bad-config / torn-row
+    batch, so that batch never completes the lane writers (they re-arm only
+    from ``UNIT_IDLE`` and reset only on the peripheral ``aresetn``). The
+    error is therefore a fatal job abort: it is held for the LAST_ERROR
+    readback until the host issues a peripheral reset. A well-formed feed
+    (valid config, whole rows) never raises it. Empty string when the
+    composition carries no front unpacker, so the emission stays
+    byte-identical."""
+    tile = composition.front_unpack
+    if tile is None:
+        return ""
+    return f"""    {tile.module}{_tile_param_override_sv(tile)} front_unpack (
+        .clk({clk}),
+        .rst(lane_rst),
+{_tile_config_binds_sv(tile.config)}        .input_valid(scan_valid),
+        .input_ready(scan_ready),
+        .input_data(scan_data),
+        .input_last(scan_last),
+        .output_valid(feed_valid),
+        .output_ready(feed_ready),
+        .output_data(feed_data),
+        .output_last(feed_last),
+        .status_valid(front_unpack_status_valid),
+        .status_ready(front_unpack_status_ready),
+        .status_error(front_unpack_status_error),
+        .status_error_code(front_unpack_status_error_code)
+    );
+
+    assign front_unpack_status_ready = 1'b1;
+
+"""
+
+
+def _front_unpack_error_branch_sv(composition: ScanComposition, *, error: str, error_code: str) -> str:
+    """The first-error-wins branch that surfaces the latched front-unpack
+    error into the job error mux, wedged between the reader's branch and the
+    lane writers'. Reads the sticky ``front_unpack_error`` reg (the close-out
+    is a one-cycle pulse), so LAST_ERROR holds the code until the host resets.
+    Empty string when the composition carries no front unpacker, so the mux
+    stays byte-identical."""
+    if composition.front_unpack is None:
+        return ""
+    return f"""            end else if (front_unpack_error) begin
+                {error} = 1'b1;
+                {error_code} = front_unpack_error_code;
+"""
+
+
+def _front_unpack_error_reset_sv(composition: ScanComposition) -> str:
+    """Reset fragment (12-space indent) clearing the latched front-unpack
+    error. Empty string when no front unpacker."""
+    if composition.front_unpack is None:
+        return ""
+    return "            front_unpack_error <= 1'b0;\n            front_unpack_error_code <= 8'd0;\n"
+
+
+def _front_unpack_error_latch_sv(composition: ScanComposition) -> str:
+    """Latch fragment (12-space indent): a front-unpack close-out error is
+    sampled sticky (``status_ready`` is tied high, so the close-out is one
+    cycle) and held until a peripheral reset. A torn/bad-config feed hangs the
+    lane writers (no ``last`` arrives) and they recover only on reset, so the
+    error must NOT be cleared on job start. Empty string when no front
+    unpacker."""
+    if composition.front_unpack is None:
+        return ""
+    return (
+        "            if (front_unpack_status_valid && front_unpack_status_error) begin\n"
+        "                front_unpack_error <= 1'b1;\n"
+        "                front_unpack_error_code <= front_unpack_status_error_code;\n"
+        "            end\n"
+    )
 
 
 def _writer_error_priority_sv(num_lanes: int, *, error: str, error_code: str) -> str:
@@ -714,6 +826,8 @@ def _validate_against_sources(composition: ScanComposition, sources: Sequence[Pa
     from dau_build.sv_contract import StreamContractError, module_ports, validate_stream_tile
 
     tiles: list[tuple[TileInstance, str | None]] = []
+    if composition.front_unpack is not None:
+        tiles.append((composition.front_unpack, None))
     if composition.partitioner is not None:
         tiles.append((composition.partitioner, None))
     for lane in composition.lanes:
@@ -780,7 +894,22 @@ def generate_scan_composition_top_sv(
     lane_wire_decls = _lane_wire_decls_sv(composition)
     lane_flat_assigns = _lane_flat_assigns_sv(composition)
     lane_instances = _lane_units_sv(composition, clk="s_axi_aclk", writer_rst="!s_axi_aresetn")
-    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="s_axi_aclk")
+    stream_prefix = "feed" if composition.front_unpack is not None else "scan"
+    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
+    front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
+    front_unpack_instance = _front_unpack_instance_sv(composition, clk="s_axi_aclk")
+    front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="job_error", error_code="job_error_code")
+    front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
+    front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
+    # packed rows land one per 8-byte word (unpack mode); pre-widened quad
+    # rows are two 8-byte words. Both sit on an 8-byte grid, so a front-unpack
+    # composition relaxes the reader/length gate from the 16-byte quad grid to
+    # 8 bytes (an odd packed-row count would round to a non-16-multiple length
+    # and be rejected otherwise); bypass-mode odd-word framing stays the
+    # unpacker's ERR_STREAM job.
+    length_align_bits = 3 if composition.front_unpack is not None else 4
+    grid_bytes = 1 << length_align_bits
+    length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
 
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
@@ -817,7 +946,7 @@ def generate_scan_composition_top_sv(
             input_length_bytes <= 32'd0;
             job_start <= 1'b0;
             length_fail <= 1'b0;
-            prev_done <= 1'b1;
+{front_unpack_error_reset}            prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
 {lane_reset_items}
 {lane_count_clear_items.replace("                ", "            ")}
@@ -828,7 +957,7 @@ def generate_scan_composition_top_sv(
                 length_fail <= !length_ok;
 {lane_count_clear_items}
             end
-{lane_count_latch_items}
+{front_unpack_error_latch}{lane_count_latch_items}
 """,
         write_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[{addr_width - 1}:0];
                     ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
@@ -891,14 +1020,14 @@ module {module_name} #(
     wire scan_ready;
     wire [63:0] scan_data;
     wire scan_last;
-{fanout_wire_decls}
+{front_unpack_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
 {lane_wire_decls}
 
-    // the 16-byte row grid is enforced before any unit starts: a rejected
+    // the {grid_bytes}-byte row grid is enforced before any unit starts: a rejected
     // length must not leave the writers waiting on a status
     reg length_fail;
-    wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[3:0] == 4'd0);
+    wire length_ok = (input_length_bytes != 32'd0) && ({length_ok_check});
     wire unit_start = job_start && length_ok;
 
     wire job_busy = reader_busy || {any_writer_busy};
@@ -919,7 +1048,7 @@ module {module_name} #(
             if (reader_error) begin
                 job_error = 1'b1;
                 job_error_code = reader_error_code;
-{error_priority}
+{front_unpack_error_branch}{error_priority}
             end else begin
                 job_error = 1'b0;
                 job_error_code = 8'd0;
@@ -932,7 +1061,7 @@ module {module_name} #(
     dau_axi_burst_reader #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats}),
-        .LENGTH_ALIGN_BITS(4)
+        .LENGTH_ALIGN_BITS({length_align_bits})
     ) reader (
         .clk(s_axi_aclk),
         .rst(!s_axi_aresetn),
@@ -964,7 +1093,7 @@ module {module_name} #(
         .dbg_final_fifo_count(dbg_final_fifo_count)
     );
 
-{fanout_instance}
+{front_unpack_instance}{fanout_instance}
 
 {lane_instances}
 
@@ -1053,7 +1182,16 @@ def generate_scan_composition_sim_sv(
     assign lane_count[{64 * (i + 1) - 1}:{64 * i}] = lane_bar_count_{i};"""
         for i in lanes
     )
-    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="clk")
+    stream_prefix = "feed" if composition.front_unpack is not None else "scan"
+    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
+    front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
+    front_unpack_instance = _front_unpack_instance_sv(composition, clk="clk")
+    front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="error", error_code="error_code")
+    front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
+    front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
+    length_align_bits = 3 if composition.front_unpack is not None else 4
+    grid_bytes = 1 << length_align_bits
+    length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
     lane_instances = _lane_units_sv(composition, clk="clk", writer_rst="rst")
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
@@ -1113,7 +1251,7 @@ module {name} (
     wire scan_ready;
     wire [63:0] scan_data;
     wire scan_last;
-{fanout_wire_decls}
+{front_unpack_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
     wire [{addr_width - 1}:0] mx_awaddr;
     wire [7:0] mx_awlen;
@@ -1138,10 +1276,10 @@ module {name} (
     reg pipeline_error_reset;
     wire lane_rst = rst || pipeline_error_reset;
 
-    // the 16-byte row grid is enforced before any unit starts: a rejected
+    // the {grid_bytes}-byte row grid is enforced before any unit starts: a rejected
     // length must not leave the writers waiting on a status
     reg length_fail;
-    wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[3:0] == 4'd0);
+    wire length_ok = (input_length_bytes != 32'd0) && ({length_ok_check});
     wire unit_start = start && length_ok;
 
     assign busy = reader_busy || {any_writer_busy};
@@ -1155,7 +1293,7 @@ module {name} (
             if (reader_error) begin
                 error = 1'b1;
                 error_code = reader_error_code;
-{error_priority}
+{front_unpack_error_branch}{error_priority}
             end else begin
                 error = 1'b0;
                 error_code = 8'd0;
@@ -1166,7 +1304,7 @@ module {name} (
     dau_axi_burst_reader #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats}),
-        .LENGTH_ALIGN_BITS(4)
+        .LENGTH_ALIGN_BITS({length_align_bits})
     ) reader (
         .clk(clk),
         .rst(rst),
@@ -1199,7 +1337,7 @@ module {name} (
         .dbg_final_fifo_count()
     );
 
-{fanout_instance}
+{front_unpack_instance}{fanout_instance}
 
 {lane_instances}
 
@@ -1281,7 +1419,7 @@ module {name} (
             prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
             length_fail <= 1'b0;
-{lane_count_clears}
+{front_unpack_error_reset}{lane_count_clears}
         end else begin
             prev_done <= done;
             pipeline_error_reset <= done && !prev_done && error;
@@ -1289,7 +1427,7 @@ module {name} (
                 length_fail <= !length_ok;
 {lane_count_start_clears}
             end
-{lane_count_latches}
+{front_unpack_error_latch}{lane_count_latches}
         end
     end
 endmodule

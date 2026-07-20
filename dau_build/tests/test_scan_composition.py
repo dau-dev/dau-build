@@ -334,6 +334,138 @@ def test_param_less_goldens_are_untouched_by_the_param_channel() -> None:
     assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
 
 
+_FRONT_UNPACK_CONFIG = {
+    "cfg_field0_offset": "6'd0",
+    "cfg_field0_width": "6'd32",
+    "cfg_field0_signed": "1'b0",
+    "cfg_field1_offset": "6'd32",
+    "cfg_field1_width": "6'd27",
+    "cfg_field1_signed": "1'b0",
+    "cfg_field2_offset": "6'd0",
+    "cfg_field2_width": "6'd1",
+    "cfg_field2_signed": "1'b0",
+    "cfg_field3_offset": "6'd0",
+    "cfg_field3_width": "6'd1",
+    "cfg_field3_signed": "1'b0",
+    "cfg_bypass": "1'b0",
+}
+
+
+def _front_unpacked_composition() -> ScanComposition:
+    """The bar-noc shape with a packed-row front unpacker between the burst
+    reader and the broadcast fan-out."""
+    return _bar_noc_composition().model_copy(update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))})
+
+
+def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
+    text = generate_scan_composition_top_sv(_front_unpacked_composition())
+    # the reader is unchanged: it still drives the scan_* stream
+    assert ".stream_valid(scan_valid)," in text
+    # the unpacker consumes the reader's scan_* stream ...
+    unpack_block = text.split("dau_int32_row_unpack front_unpack (")[1].split(");")[0]
+    assert ".input_valid(scan_valid)," in unpack_block
+    assert ".input_ready(scan_ready)," in unpack_block
+    assert ".input_data(scan_data)," in unpack_block
+    assert ".input_last(scan_last)," in unpack_block
+    # ... and emits the widened feed_* stream
+    assert ".output_valid(feed_valid)," in unpack_block
+    assert ".output_ready(feed_ready)," in unpack_block
+    assert ".output_data(feed_data)," in unpack_block
+    assert ".output_last(feed_last)," in unpack_block
+    # its config carries the four field descriptors + cfg_bypass
+    assert ".cfg_field1_offset(6'd32)," in unpack_block
+    assert ".cfg_bypass(1'b0)," in unpack_block
+    # the broadcast fan-out now consumes the unpacker's output, not the reader's
+    bcast_block = text.split("dau_stream_broadcast #(")[1].split(");")[0]
+    assert ".input_valid(feed_valid)," in bcast_block
+    assert ".input_ready(feed_ready)," in bcast_block
+    assert ".input_data(feed_data)," in bcast_block
+    assert ".input_last(feed_last)," in bcast_block
+    # the unpacker sits between the reader and the fan-out in the emission
+    assert text.index("dau_axi_burst_reader") < text.index("dau_int32_row_unpack front_unpack (") < text.index("dau_stream_broadcast #(")
+    # the feed_* stream wires are declared
+    assert "    wire feed_valid;\n    wire feed_ready;\n    wire [63:0] feed_data;\n    wire feed_last;\n" in text
+
+
+def test_front_unpack_status_is_latched_and_folded_into_job_error() -> None:
+    text = generate_scan_composition_top_sv(_front_unpacked_composition())
+    # the front-stage status close-out is consumed (ready tied high) ...
+    assert "assign front_unpack_status_ready = 1'b1;" in text
+    # ... latched sticky (the close-out is a one-cycle pulse) ...
+    assert "    reg front_unpack_error;\n    reg [7:0] front_unpack_error_code;\n" in text
+    assert (
+        "            if (front_unpack_status_valid && front_unpack_status_error) begin\n"
+        "                front_unpack_error <= 1'b1;\n"
+        "                front_unpack_error_code <= front_unpack_status_error_code;\n"
+        "            end\n"
+    ) in text
+    # cleared ONLY at peripheral reset, never on job start: a torn/bad-config feed
+    # hangs the lane writers (no last arrives) and they recover only on reset, so the
+    # latched error must persist until reset (regression: no job-start clear)
+    assert "                front_unpack_error <= 1'b0;\n" not in text  # no 16-space job-start clear
+    assert "            front_unpack_error <= 1'b0;\n" in text  # the 12-space reset clear remains
+    # ... and surfaced into the job error mux after the reader, before the
+    # lane writers (first-error-wins), reading the sticky reg
+    assert (
+        "            if (reader_error) begin\n"
+        "                job_error = 1'b1;\n"
+        "                job_error_code = reader_error_code;\n"
+        "            end else if (front_unpack_error) begin\n"
+        "                job_error = 1'b1;\n"
+        "                job_error_code = front_unpack_error_code;\n"
+        "            end else if (writer_error_0) begin\n"
+    ) in text
+
+
+def test_front_unpack_relaxes_the_length_grid_to_eight_bytes() -> None:
+    # packed rows are one 8-byte word each, so a front-unpack composition
+    # accepts an 8-byte length grid (an odd packed-row count would round to a
+    # non-16-multiple length and be rejected on the 16-byte quad grid)
+    packed = generate_scan_composition_top_sv(_front_unpacked_composition())
+    assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[2:0] == 3'd0);" in packed
+    assert ".LENGTH_ALIGN_BITS(3)" in packed
+    assert "// the 8-byte row grid is enforced" in packed
+    # the sim harness matches
+    packed_sim = generate_scan_composition_sim_sv(_front_unpacked_composition())
+    assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[2:0] == 3'd0);" in packed_sim
+    assert ".LENGTH_ALIGN_BITS(3)" in packed_sim
+    # a front-unpack-less composition keeps the 16-byte quad grid
+    plain = generate_scan_composition_top_sv(_bar_noc_composition())
+    assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[3:0] == 4'd0);" in plain
+    assert ".LENGTH_ALIGN_BITS(4)" in plain
+    assert "// the 16-byte row grid is enforced" in plain
+
+
+def test_front_unpack_with_a_shared_partitioner_feeds_the_partitioner() -> None:
+    composition = _sorted_scan_composition().model_copy(
+        update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
+    )
+    text = generate_scan_composition_top_sv(composition)
+    part_block = text.split(") partitioner (")[1].split(");")[0]
+    assert ".input_valid(feed_valid)," in part_block
+    assert ".input_last(feed_last)," in part_block
+    assert text.index("dau_int32_row_unpack front_unpack (") < text.index(") partitioner (")
+
+
+def test_front_unpack_sim_harness_carries_the_unpacker() -> None:
+    text = generate_scan_composition_sim_sv(_front_unpacked_composition())
+    unpack_block = text.split("dau_int32_row_unpack front_unpack (")[1].split(");")[0]
+    assert ".input_valid(scan_valid)," in unpack_block
+    assert ".output_valid(feed_valid)," in unpack_block
+    bcast_block = text.split("dau_stream_broadcast #(")[1].split(");")[0]
+    assert ".input_valid(feed_valid)," in bcast_block
+    assert "assign front_unpack_status_ready = 1'b1;" in text
+
+
+def test_front_unpack_absent_stays_byte_identical() -> None:
+    """The front-unpack slot defaults to ``None``; every existing golden must
+    still match byte-for-byte (the additive change never touches the
+    front-unpack-less emission)."""
+    assert generate_scan_composition_top_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4.v").read_text()
+    assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+    assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
+
+
 _CONFORMING_TILE = """
 module lane_tile (
     input  wire logic        clk,
@@ -438,3 +570,23 @@ def test_sources_reject_a_missing_count_port(tmp_path: Path) -> None:
     composition = _lane_tile_composition({}).model_copy(update={"lanes": (LaneTile(module="lane_tile", count_port="bar_count"),)})
     with pytest.raises(ScanCompositionError, match="missing declared count port 'bar_count'"):
         generate_scan_composition_top_sv(composition, sources=(source,))
+
+
+def test_sources_validate_the_front_unpacker(tmp_path: Path) -> None:
+    """The front unpacker arms the same slang interface validation as the
+    other stream tiles (contract conformance, config-binding names) but,
+    like a partition filter, needs no count port."""
+    source = tmp_path / "lane_tile.sv"
+    source.write_text(_CONFORMING_TILE)
+    composition = _lane_tile_composition({}).model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_thing": "32'd1"})})
+    text = generate_scan_composition_top_sv(composition, sources=(source,))
+    assert "lane_tile front_unpack (" in text
+
+    with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_typo' is not an input port"):
+        generate_scan_composition_top_sv(
+            composition.model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_typo": "32'd1"})}), sources=(source,)
+        )
+    with pytest.raises(ScanCompositionError, match="dau_absent_unpacker.*not found"):
+        generate_scan_composition_top_sv(
+            composition.model_copy(update={"front_unpack": TileInstance(module="dau_absent_unpacker")}), sources=(source,)
+        )
