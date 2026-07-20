@@ -305,6 +305,26 @@ def test_param_override_emits_on_partition_and_terminal_tile_slots() -> None:
     assert "    dau_terminal_tile #(\n        .KEY_SPACE(2048)\n    ) tile_0 (" in text
 
 
+def test_param_override_emits_on_the_shared_partitioner() -> None:
+    # a param-less shared partitioner emits only the derived NUM_PARTITIONS (byte-identical)
+    plain = generate_scan_composition_top_sv(_sorted_scan_composition())
+    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4)\n    ) partitioner (" in plain
+    # custom params append after NUM_PARTITIONS
+    with_params = _sorted_scan_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"KEY_SPACE": 4096})}
+    )
+    text = generate_scan_composition_top_sv(with_params)
+    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4),\n        .KEY_SPACE(4096)\n    ) partitioner (" in text
+
+
+def test_shared_partitioner_rejects_a_num_partitions_param_override() -> None:
+    composition = _sorted_scan_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"NUM_PARTITIONS": 8})}
+    )
+    with pytest.raises(ScanCompositionError, match="NUM_PARTITIONS is derived"):
+        generate_scan_composition_top_sv(composition)
+
+
 def test_param_less_goldens_are_untouched_by_the_param_channel() -> None:
     """The param channel adds a field that defaults empty: every existing
     golden must still match byte-for-byte (this repeats the golden asserts to

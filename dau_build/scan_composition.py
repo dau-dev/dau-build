@@ -650,8 +650,11 @@ def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
     wire [{num_lanes - 1}:0] part_status_ready;
     wire [{num_lanes - 1}:0] part_status_error;
     wire [{num_lanes * 8 - 1}:0] part_status_error_code;"""
+        if "NUM_PARTITIONS" in composition.partitioner.params:
+            raise ScanCompositionError("the shared partitioner's NUM_PARTITIONS is derived from the lane count; do not override it via params")
+        partitioner_extra_params = "".join(f",\n        .{name}({value})" for name, value in composition.partitioner.params.items())
         instance = f"""    {composition.partitioner.module} #(
-        .NUM_PARTITIONS({num_lanes})
+        .NUM_PARTITIONS({num_lanes}){partitioner_extra_params}
     ) partitioner (
         .clk({clk}),
         .rst(lane_rst),
