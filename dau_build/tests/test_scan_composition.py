@@ -399,9 +399,11 @@ def test_front_unpack_status_is_latched_and_folded_into_job_error() -> None:
         "                front_unpack_error_code <= front_unpack_status_error_code;\n"
         "            end\n"
     ) in text
-    # cleared on job start and at reset
-    assert "                front_unpack_error <= 1'b0;\n" in text
-    assert "            front_unpack_error <= 1'b0;\n" in text
+    # cleared ONLY at peripheral reset, never on job start: a torn/bad-config feed
+    # hangs the lane writers (no last arrives) and they recover only on reset, so the
+    # latched error must persist until reset (regression: no job-start clear)
+    assert "                front_unpack_error <= 1'b0;\n" not in text  # no 16-space job-start clear
+    assert "            front_unpack_error <= 1'b0;\n" in text  # the 12-space reset clear remains
     # ... and surfaced into the job error mux after the reader, before the
     # lane writers (first-error-wins), reading the sticky reg
     assert (

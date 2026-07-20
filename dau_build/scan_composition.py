@@ -788,18 +788,12 @@ def _front_unpack_error_reset_sv(composition: ScanComposition) -> str:
     return "            front_unpack_error <= 1'b0;\n            front_unpack_error_code <= 8'd0;\n"
 
 
-def _front_unpack_error_start_clear_sv(composition: ScanComposition) -> str:
-    """Job-start clear fragment (16-space indent) for the latched front-unpack
-    error. Empty string when no front unpacker."""
-    if composition.front_unpack is None:
-        return ""
-    return "                front_unpack_error <= 1'b0;\n"
-
-
 def _front_unpack_error_latch_sv(composition: ScanComposition) -> str:
     """Latch fragment (12-space indent): a front-unpack close-out error is
     sampled sticky (``status_ready`` is tied high, so the close-out is one
-    cycle) and held until the next job start. Empty string when no front
+    cycle) and held until a peripheral reset. A torn/bad-config feed hangs the
+    lane writers (no ``last`` arrives) and they recover only on reset, so the
+    error must NOT be cleared on job start. Empty string when no front
     unpacker."""
     if composition.front_unpack is None:
         return ""
@@ -906,7 +900,6 @@ def generate_scan_composition_top_sv(
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="s_axi_aclk")
     front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="job_error", error_code="job_error_code")
     front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
-    front_unpack_error_start_clear = _front_unpack_error_start_clear_sv(composition)
     front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
     # packed rows land one per 8-byte word (unpack mode); pre-widened quad
     # rows are two 8-byte words. Both sit on an 8-byte grid, so a front-unpack
@@ -962,7 +955,7 @@ def generate_scan_composition_top_sv(
             pipeline_error_reset <= job_done && !prev_done && job_error;
             if (job_start) begin
                 length_fail <= !length_ok;
-{front_unpack_error_start_clear}{lane_count_clear_items}
+{lane_count_clear_items}
             end
 {front_unpack_error_latch}{lane_count_latch_items}
 """,
@@ -1195,7 +1188,6 @@ def generate_scan_composition_sim_sv(
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="clk")
     front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="error", error_code="error_code")
     front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
-    front_unpack_error_start_clear = _front_unpack_error_start_clear_sv(composition)
     front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
     length_align_bits = 3 if composition.front_unpack is not None else 4
     grid_bytes = 1 << length_align_bits
@@ -1433,7 +1425,7 @@ module {name} (
             pipeline_error_reset <= done && !prev_done && error;
             if (start) begin
                 length_fail <= !length_ok;
-{front_unpack_error_start_clear}{lane_count_start_clears}
+{lane_count_start_clears}
             end
 {front_unpack_error_latch}{lane_count_latches}
         end
