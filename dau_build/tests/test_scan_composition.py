@@ -260,6 +260,80 @@ def test_sim_harness_carries_the_same_chain() -> None:
     assert ".input_valid(chain1_out_valid_0)," in tile_block
 
 
+def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() -> None:
+    """A tile carrying params emits a ``#(.KEY_SPACE(N))`` override between
+    the module name and instance; a param-less composition emits exactly as
+    before (the byte-identity goldens above pin that)."""
+    # the exact "module tile_0 (" substring proves there is no #(...) wedged
+    # between the module name and the instance name for a param-less tile
+    param_free = generate_scan_composition_top_sv(_bar_noc_composition())
+    assert "    dau_int32_bar_aggregation tile_0 (" in param_free
+
+    membership = ScanComposition(
+        name="membership",
+        module_name="dau_mm_membership_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_field_sum_aggregation",
+                config={"cfg_field_mask": "4'b0010"},
+                count_port="aggregated_count",
+                chain=(TileInstance(module="dau_int32_key_membership_filter", params={"KEY_SPACE": 6_000_000}),),
+            ),
+        ),
+    )
+    text = generate_scan_composition_top_sv(membership)
+    assert "    dau_int32_key_membership_filter #(\n        .KEY_SPACE(6000000)\n    ) chain_0_0 (" in text
+    # the param-less terminal tile carries no override
+    assert "    dau_int32_field_sum_aggregation tile_0 (" in text
+
+
+def test_param_override_emits_on_partition_and_terminal_tile_slots() -> None:
+    composition = ScanComposition(
+        name="param-slots",
+        module_name="dau_mm_param_slots_job",
+        lanes=(
+            LaneTile(
+                module="dau_terminal_tile",
+                count_port="row_count",
+                params={"KEY_SPACE": 2048},
+                partition=TileInstance(module="dau_key_filter", params={"KEY_SPACE": 128}),
+            ),
+        ),
+    )
+    text = generate_scan_composition_top_sv(composition)
+    assert "    dau_key_filter #(\n        .KEY_SPACE(128)\n    ) partition_0 (" in text
+    assert "    dau_terminal_tile #(\n        .KEY_SPACE(2048)\n    ) tile_0 (" in text
+
+
+def test_param_override_emits_on_the_shared_partitioner() -> None:
+    # a param-less shared partitioner emits only the derived NUM_PARTITIONS (byte-identical)
+    plain = generate_scan_composition_top_sv(_sorted_scan_composition())
+    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4)\n    ) partitioner (" in plain
+    # custom params append after NUM_PARTITIONS
+    with_params = _sorted_scan_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"KEY_SPACE": 4096})}
+    )
+    text = generate_scan_composition_top_sv(with_params)
+    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4),\n        .KEY_SPACE(4096)\n    ) partitioner (" in text
+
+
+def test_shared_partitioner_rejects_a_num_partitions_param_override() -> None:
+    composition = _sorted_scan_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"NUM_PARTITIONS": 8})}
+    )
+    with pytest.raises(ScanCompositionError, match="NUM_PARTITIONS is derived"):
+        generate_scan_composition_top_sv(composition)
+
+
+def test_param_less_goldens_are_untouched_by_the_param_channel() -> None:
+    """The param channel adds a field that defaults empty: every existing
+    golden must still match byte-for-byte (this repeats the golden asserts to
+    pin them against the param-channel change explicitly)."""
+    assert generate_scan_composition_top_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4.v").read_text()
+    assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+    assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
+
+
 _CONFORMING_TILE = """
 module lane_tile (
     input  wire logic        clk,

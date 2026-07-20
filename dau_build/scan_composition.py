@@ -37,10 +37,16 @@ class ScanCompositionError(ValueError):
 
 class TileInstance(BaseModel):
     """One HDL module plus its config-port bindings (SystemVerilog literals
-    or expressions in terms of the top's signals)."""
+    or expressions in terms of the top's signals) and any module-parameter
+    overrides (``params``: SystemVerilog PARAMETERs — elaboration-time sizes
+    like the membership core's ``KEY_SPACE`` — emitted as a ``#(...)`` override
+    on the instance). A tile with no ``params`` is emitted exactly as before
+    the channel existed (no ``#(...)``), so every param-less golden stays
+    byte-identical."""
 
     module: str
     config: dict[str, str] = {}
+    params: dict[str, int] = {}
 
 
 class LaneTile(TileInstance):
@@ -331,6 +337,18 @@ def _tile_config_binds_sv(config) -> str:
     return "".join(f"        .{port}({value}),\n" for port, value in config.items())
 
 
+def _tile_param_override_sv(tile: TileInstance) -> str:
+    """A SystemVerilog module-parameter override for a tile instance
+    (``dau_int32_X #(.KEY_SPACE(6000000)) inst (...)``), inserted between the
+    module name and the instance name. Empty string when the tile carries no
+    params — a param-less tile emits byte-identically to before the
+    module-parameter channel, so every existing golden stays green."""
+    if not tile.params:
+        return ""
+    binds = ",\n".join(f"        .{name}({value})" for name, value in tile.params.items())
+    return f" #(\n{binds}\n    )"
+
+
 def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk") -> str:
     """The lane front for lane ``i``: tap the shared partitioner's per-lane
     stream, tap the broadcast directly (filterless lane), or instantiate the
@@ -355,7 +373,7 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
     assign filt_status_error_{i} = 1'b0;
     assign filt_status_error_code_{i} = 8'd0;
 """
-    return f"""    {lane.partition.module} partition_{i} (
+    return f"""    {lane.partition.module}{_tile_param_override_sv(lane.partition)} partition_{i} (
         .clk({clk}),
         .rst(lane_rst),
 {_tile_config_binds_sv(lane.partition.config)}        .input_valid(bcast_valid[{i}]),
@@ -523,7 +541,7 @@ def _lane_chain_sv(composition: ScanComposition, i: int, *, clk: str) -> str:
     for j, stage in enumerate(composition.lanes[i].chain):
         upstream = "filt_out" if j == 0 else f"chain{j - 1}_out"
         parts.append(
-            f"""    {stage.module} chain_{i}_{j} (
+            f"""    {stage.module}{_tile_param_override_sv(stage)} chain_{i}_{j} (
         .clk({clk}),
         .rst(lane_rst),
 {_tile_config_binds_sv(stage.config)}        .input_valid({upstream}_valid_{i}),
@@ -559,7 +577,7 @@ def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -
     burst_beats = composition.burst_beats
     return "\n\n".join(
         f"""{_lane_front_sv(composition, i, clk=clk)}
-{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module} tile_{i} (
+{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module}{_tile_param_override_sv(composition.lanes[i])} tile_{i} (
         .clk({clk}),
         .rst(lane_rst),
 {_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid({_lane_tile_upstream(composition, i)}_valid_{i}),
@@ -632,8 +650,11 @@ def _fanout_sv(composition: ScanComposition, *, clk: str) -> tuple[str, str]:
     wire [{num_lanes - 1}:0] part_status_ready;
     wire [{num_lanes - 1}:0] part_status_error;
     wire [{num_lanes * 8 - 1}:0] part_status_error_code;"""
+        if "NUM_PARTITIONS" in composition.partitioner.params:
+            raise ScanCompositionError("the shared partitioner's NUM_PARTITIONS is derived from the lane count; do not override it via params")
+        partitioner_extra_params = "".join(f",\n        .{name}({value})" for name, value in composition.partitioner.params.items())
         instance = f"""    {composition.partitioner.module} #(
-        .NUM_PARTITIONS({num_lanes})
+        .NUM_PARTITIONS({num_lanes}){partitioner_extra_params}
     ) partitioner (
         .clk({clk}),
         .rst(lane_rst),
