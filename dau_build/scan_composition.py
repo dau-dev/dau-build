@@ -135,38 +135,46 @@ class ScanComposition(BaseModel):
     registers: RegisterLayout = RegisterLayout()
 
     def model_post_init(self, context) -> None:
-        if not self.lanes:
-            raise ScanCompositionError("a scan composition needs at least one lane")
-        if self.partitioner is not None:
-            for lane in self.lanes:
-                if lane.partition is not None:
-                    raise ScanCompositionError(f"lane tile {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
-        # the rows/cycle axis rides the module-parameter channel: the feed
-        # stream's width is the front unpacker's OUT_WIDTH, and the fan-out
-        # must accept exactly that width — a mismatch would emit a top whose
-        # feed wires and fan-out port widths disagree
-        front_width = self.front_unpack.params.get("OUT_WIDTH", 64) if self.front_unpack is not None else 64
-        fanout_width = self.partitioner.params.get("IN_WIDTH", 64) if self.partitioner is not None else 64
-        if front_width not in (64, 128):
-            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
-        if fanout_width not in (64, 128):
-            raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be 64 or 128, got {fanout_width}")
-        if front_width == 128:
-            if self.partitioner is None:
-                raise ScanCompositionError(
-                    "a 128-bit front stream (front_unpack OUT_WIDTH=128) needs a shared partitioner/dispatcher accepting IN_WIDTH=128; "
-                    "the stream broadcast is 64-bit only"
-                )
-            if fanout_width != 128:
-                raise ScanCompositionError(
-                    f"the front unpacker emits a 128-bit stream but the shared partitioner {self.partitioner.module!r} accepts "
-                    f"IN_WIDTH={fanout_width}; the feed and fan-out widths must agree"
-                )
-        elif fanout_width != 64:
+        _validate_composition_shape(self)
+
+
+def _validate_composition_shape(composition: "ScanComposition") -> None:
+    """The composition's shape and width-coherence invariants. Called from
+    ``model_post_init`` AND from both public generators: ``model_copy`` skips
+    pydantic validation, so an emitted top/sim must re-check — an incoherent
+    copy would otherwise emit Verilog whose feed wires and fan-out port
+    widths disagree."""
+    if not composition.lanes:
+        raise ScanCompositionError("a scan composition needs at least one lane")
+    if composition.partitioner is not None:
+        for lane in composition.lanes:
+            if lane.partition is not None:
+                raise ScanCompositionError(f"lane tile {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
+    # the rows/cycle axis rides the module-parameter channel: the feed
+    # stream's width is the front unpacker's OUT_WIDTH, and the fan-out
+    # must accept exactly that width
+    front_width = composition.front_unpack.params.get("OUT_WIDTH", 64) if composition.front_unpack is not None else 64
+    fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
+    if front_width not in (64, 128):
+        raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
+    if fanout_width not in (64, 128):
+        raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be 64 or 128, got {fanout_width}")
+    if front_width == 128:
+        if composition.partitioner is None:
             raise ScanCompositionError(
-                f"the shared partitioner {self.partitioner.module!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
-                "compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
+                "a 128-bit front stream (front_unpack OUT_WIDTH=128) needs a shared partitioner/dispatcher accepting IN_WIDTH=128; "
+                "the stream broadcast is 64-bit only"
             )
+        if fanout_width != 128:
+            raise ScanCompositionError(
+                f"the front unpacker emits a 128-bit stream but the shared partitioner {composition.partitioner.module!r} accepts "
+                f"IN_WIDTH={fanout_width}; the feed and fan-out widths must agree"
+            )
+    elif fanout_width != 64:
+        raise ScanCompositionError(
+            f"the shared partitioner {composition.partitioner.module!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
+            "compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
+        )
 
 
 _DEFAULT_GENERATED_BY = "dau_build.scan_composition.generate_scan_composition_top_sv"
@@ -910,6 +918,7 @@ def generate_scan_composition_top_sv(
     config-binding key checked against the module's real input ports);
     without sources the walker emits from data alone. ``generated_by``
     names the generator in the output banner."""
+    _validate_composition_shape(composition)  # model_copy skips model_post_init
     if sources is not None:
         _validate_against_sources(composition, sources)
     regs = composition.registers
@@ -1204,6 +1213,7 @@ def generate_scan_composition_sim_sv(
     name with a ``_sim`` suffix; ``mem_words``/``read_latency`` parameterize
     the backdoor RAM. ``sources`` arms the same slang-backed interface
     validation as the shell walker."""
+    _validate_composition_shape(composition)  # model_copy skips model_post_init
     if sources is not None:
         _validate_against_sources(composition, sources)
     addr_width = composition.addr_width

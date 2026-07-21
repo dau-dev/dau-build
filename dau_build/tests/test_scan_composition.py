@@ -455,6 +455,28 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
         )
 
 
+def test_generators_revalidate_a_model_copied_composition() -> None:
+    # model_copy(update=...) skips model_post_init, so BOTH generators must
+    # re-check shape/width coherence — an incoherent copy must never emit
+    # width-broken Verilog
+    wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
+    broadcast_mismatch = _bar_noc_composition().model_copy(update={"front_unpack": wide_unpack})
+    with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
+        generate_scan_composition_top_sv(broadcast_mismatch)
+    with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
+        generate_scan_composition_sim_sv(broadcast_mismatch)
+    narrow_fanout = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher")})
+    with pytest.raises(ScanCompositionError, match="widths must agree"):
+        generate_scan_composition_top_sv(narrow_fanout)
+    with pytest.raises(ScanCompositionError, match="widths must agree"):
+        generate_scan_composition_sim_sv(narrow_fanout)
+    bad_width = _wide_front_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 96})}
+    )
+    with pytest.raises(ScanCompositionError, match="IN_WIDTH must be 64 or 128"):
+        generate_scan_composition_top_sv(bad_width)
+
+
 def test_front_unpack_status_is_latched_and_folded_into_job_error() -> None:
     text = generate_scan_composition_top_sv(_front_unpacked_composition())
     # the front-stage status close-out is consumed (ready tied high) ...
