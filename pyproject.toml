@@ -143,6 +143,7 @@ line-length = 150
 
 [tool.ruff.lint]
 extend-select = [
+    "ARG",  # accepted-but-unused parameters are defects (GUIDELINES Review Rules)
     "I",
 ]
 
@@ -165,6 +166,8 @@ section-order = [
     "F401",
     "F403",
 ]
+# test doubles conform to real interfaces and legitimately ignore arguments
+"**/tests/**" = ["ARG"]
 
 
 [tool.yardang]

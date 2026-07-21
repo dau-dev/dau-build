@@ -192,7 +192,7 @@ class _Base(BaseModel):
     instance_name: Optional[str] = Field(default="")
     node: object | None = Field(default=None)
 
-    def to_string(self, indent: str = ""):
+    def to_string(self, indent: str = ""):  # noqa: ARG002 (node to_string interface)
         return f"{self.__class__.__name__}({self.name})"
 
     def __str__(self):
@@ -1213,7 +1213,7 @@ def _is_dau_stream_module(module: Module) -> bool:
     return set(_DAU_STREAM_INPUT_CONNECTIONS).issubset(input_names) and set(_DAU_STREAM_OUTPUT_CONNECTIONS).issubset(output_names)
 
 
-def _dau_input_connection(port_name: str, module_name: str, *, clk: str, reset: str, is_stream_module: bool) -> str | None:
+def _dau_input_connection(port_name: str, _module_name: str, *, clk: str, reset: str, is_stream_module: bool) -> str | None:
     if port_name == clk:
         return clk
     if port_name == reset:
@@ -1223,7 +1223,7 @@ def _dau_input_connection(port_name: str, module_name: str, *, clk: str, reset: 
     return None
 
 
-def _dau_output_connection(port_name: str, module_name: str, *, is_stream_module: bool) -> str | None:
+def _dau_output_connection(port_name: str, _module_name: str, *, is_stream_module: bool) -> str | None:
     if is_stream_module:
         return _DAU_STREAM_OUTPUT_CONNECTIONS.get(port_name)
     return None

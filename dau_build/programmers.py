@@ -41,7 +41,7 @@ class Programmer(BaseModel):
 
     name: str
 
-    def detect_step(self, config: "HardwareToolchainConfig") -> "ToolStep | None":
+    def detect_step(self, config: "HardwareToolchainConfig") -> "ToolStep | None":  # noqa: ARG002 (Programmer interface)
         return None
 
     def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":
@@ -80,12 +80,15 @@ class VivadoHwServerProgrammer(Programmer):
     """Programming through the Vivado hw_server ``flash.tcl`` path (the
     ``flash`` plan). Has no separate JTAG detect step (``detect_step`` returns
     ``None``); ``program_step`` emits the same ``bash -lc`` step the flash plan
-    has always produced."""
+    has always produced. The hw_server path has no volatile programming mode —
+    on a flash-boot board the persistent SPI write is the only safe program
+    path — so both ``mode`` values emit the flash step; ``mode`` is accepted
+    for ``Programmer`` interface compatibility."""
 
     name: str = "vivado-hwserver"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
 
-    def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":
+    def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":  # noqa: ARG002 (see docstring: flash is the only path)
         from dau_build.hardware_plan import ToolStep
 
         script = vivado_flash_script(

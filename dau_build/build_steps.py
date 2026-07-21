@@ -115,13 +115,13 @@ class ModuleSelectionModel(SpecPathModel):
 
 class InspectStep(SpecPathModel):
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
 
 
 class ValidateStep(SpecPathModel):
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         self.load_spec()
         return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_label}")
 
@@ -130,7 +130,7 @@ class GenerateStep(SpecPathModel):
     output_root: Path
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         artifacts = _build_spec_api().generate_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
         return BuildStepResult(
             step="generate",
@@ -142,14 +142,14 @@ class WriteStep(SpecPathModel):
     output_root: Path
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         artifacts = _build_spec_api().write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
         return BuildStepResult(step="write", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
 
 
 class ResolvedConfigStep(SpecPathModel):
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         resolved = self._resolved(self.load_spec())
         return BuildStepResult(step="resolved-config", message=resolved.to_text())
 
@@ -171,7 +171,7 @@ class SimulateStep(SpecPathModel):
         return _split_path_tuple(value)
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         spec = self.load_spec()
         self._resolved(spec)
         _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_base_dir / ".dau-build-sim")
@@ -246,7 +246,7 @@ class SynthesisStep(SpecPathModel):
     output_root: Path
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         spec = self.load_spec()
         resolved = self._resolved(spec)
         artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
@@ -261,7 +261,7 @@ class SynthesisStep(SpecPathModel):
 
 class ExplainStep(SpecPathModel):
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         spec = self.load_spec()
         resolved = self._resolved(spec)
         return BuildStepResult(
@@ -279,7 +279,7 @@ class ExplainStep(SpecPathModel):
 
 class InspectTask(SpecPathModel):
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
 
 
@@ -287,7 +287,7 @@ class BuildArtifactsTask(SpecPathModel):
     output_root: Path
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         artifacts = _build_spec_api().write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
         return BuildStepResult(step="build", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
 
@@ -299,7 +299,7 @@ class ValidateTask(SpecPathModel):
     root: Path | None = None
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         if self.manifest_path is not None:
             top_sv = _build_spec_api().validate_dau_build_artifact_bundle(self.manifest_path, root=self.root)
             return BuildStepResult(step="validate", message=f"dau-build-artifacts-valid\tmanifest={self.manifest_path} top_sv={top_sv}")
@@ -424,7 +424,7 @@ class SimulateTask(ModuleSelectionModel):
     simulator: Any = None
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         return self._simulator().simulate(task=self)
 
     def _simulator(self) -> Simulator:
@@ -507,7 +507,7 @@ class YosysEngine(SynthesisEngine):
     frontend: Literal["verilog", "slang"] = "verilog"
     yosys: str = "yosys"
 
-    def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:
+    def synthesize(self, *, task: "SynthesizeTask", spec, artifacts, resolved) -> BuildStepResult:  # noqa: ARG002 (SynthesisEngine interface)
         # yosys is runnable (unlike the Vivado plan), so this actually
         # elaborates and synthesizes the generated top — a real check
         from dau_build.yosys_backend import YosysBackendError, YosysBackendRequest, run_yosys_synthesis
@@ -539,7 +539,7 @@ class SynthesizeTask(ModuleSelectionModel):
     output_root: Path
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         spec = self.load_spec_and_validate_module()
         engine = self._engine()
         resolved = self._resolved(spec, backend_name=engine.name)
@@ -597,7 +597,7 @@ class FlashTask(BuildCallableModel):
     mode: Literal["volatile", "persistent"] = "volatile"
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         programmer = self._programmer()
         bitstream = self.bitstream
         manifest_segment = ""
@@ -644,7 +644,7 @@ class SmokeTestTask(BuildCallableModel):
     device: str | None = None
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         device_segment = f" device={self.device}" if self.device else ""
         manifest_segment = ""
         if self.manifest_path is not None:
@@ -681,7 +681,7 @@ class BuildShellProjectTask(BuildCallableModel):
     execute: bool = False
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         from dau_build.shell_build import run_shell_project_build, write_shell_build_manifest
 
         if self.execute and self.platform is not None:
@@ -720,7 +720,7 @@ class StageTask(BuildCallableModel):
         raise NotImplementedError("StageTask subclasses must provide stage steps")
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         steps = self.stage_steps()
         if not self.execute:
             return BuildStepResult(step=self.task_name, message=format_plan_steps(steps))
@@ -880,7 +880,7 @@ class VivadoOverlayBuildTask(OverlayBuildTask):
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         step = vivado_overlay_build_step(
             self._toolchain_config(),
             overlay_tcl=self.overlay_tcl,
@@ -929,7 +929,7 @@ class ValidateVivadoArtifactsTask(OverlayArtifactValidationTask):
     project_manifest_path: Path | None = None
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         manifest_path = self.manifest_path or Path(f"{self.artifact_stem}.manifest")
         command_plan_path = self.command_plan_path or Path(f"{self.artifact_stem}.plan")
         if not self.execute:
@@ -1071,7 +1071,7 @@ class HardwarePlanTask(BuildCallableModel):
     execute: bool = False
 
     @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:
+    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         plan = self._plan()
         if self.execute and self.platform is not None:
             from dau_build.platforms import require_measured

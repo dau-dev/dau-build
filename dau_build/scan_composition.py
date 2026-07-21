@@ -135,7 +135,7 @@ class ScanComposition(BaseModel):
     sort_capacity: int = 0
     registers: RegisterLayout = RegisterLayout()
 
-    def model_post_init(self, context) -> None:
+    def model_post_init(self, _context) -> None:
         _validate_composition_shape(self)
 
 
