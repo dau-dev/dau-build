@@ -387,6 +387,96 @@ def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
     assert "    wire feed_valid;\n    wire feed_ready;\n    wire [63:0] feed_data;\n    wire feed_last;\n" in text
 
 
+def _wide_front_composition() -> ScanComposition:
+    """The rows/cycle-axis shape: a 128-bit front unpacker (OUT_WIDTH=128, one
+    whole quad row per beat) feeding a key-mask dispatcher (IN_WIDTH=128) that
+    routes each row to one of four filterless lanes."""
+    return ScanComposition(
+        name="bar-noc-wide",
+        module_name="dau_mm_bar_noc_wide_job",
+        lanes=tuple(
+            LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
+            for _ in range(4)
+        ),
+        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+        front_unpack=TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128}),
+    )
+
+
+def test_wide_front_widens_the_feed_and_threads_the_width_params() -> None:
+    # the feed stream is declared at the front unpacker's OUT_WIDTH and both
+    # width params land on their instances via the module-parameter channel
+    text = generate_scan_composition_top_sv(_wide_front_composition())
+    assert "    wire feed_valid;\n    wire feed_ready;\n    wire [127:0] feed_data;\n    wire feed_last;\n" in text
+    assert "dau_int32_row_unpack #(\n        .OUT_WIDTH(128)\n    )" in text
+    dispatcher_block = text.split("dau_int32_key_mask_dispatcher #(")[1].split(");")[0]
+    assert ".NUM_PARTITIONS(4)" in dispatcher_block
+    assert ".IN_WIDTH(128)" in dispatcher_block
+    assert ".input_data(feed_data)," in dispatcher_block
+    # per-lane taps stay the 64-bit two-beat framing (no operator widens)
+    assert "assign filt_out_data_0 = part_out_data[63:0];" in text
+    # the sim harness mirrors the same width
+    sim = generate_scan_composition_sim_sv(_wide_front_composition())
+    assert "wire [127:0] feed_data;" in sim
+
+
+def test_wide_front_requires_a_matching_wide_fanout() -> None:
+    # broadcast is 64-bit only: a wide front with no shared partitioner is
+    # rejected, as is any feed/fan-out width mismatch (either direction).
+    # Constructed directly — model_copy skips model_post_init validation.
+    wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
+    plain_lanes = tuple(
+        LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count") for _ in range(4)
+    )
+    with pytest.raises(ValidationError, match="needs a shared partitioner"):
+        ScanComposition(name="bad", module_name="dau_bad", lanes=plain_lanes, front_unpack=wide_unpack)
+    with pytest.raises(ValidationError, match="widths must agree"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=plain_lanes,
+            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher"),
+            front_unpack=wide_unpack,
+        )
+    with pytest.raises(ValidationError, match="feed stream is 64-bit"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=plain_lanes,
+            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+        )
+    with pytest.raises(ValidationError, match="OUT_WIDTH must be 64 or 128"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=plain_lanes,
+            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+            front_unpack=TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 96}),
+        )
+
+
+def test_generators_revalidate_a_model_copied_composition() -> None:
+    # model_copy(update=...) skips model_post_init, so BOTH generators must
+    # re-check shape/width coherence — an incoherent copy must never emit
+    # width-broken Verilog
+    wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
+    broadcast_mismatch = _bar_noc_composition().model_copy(update={"front_unpack": wide_unpack})
+    with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
+        generate_scan_composition_top_sv(broadcast_mismatch)
+    with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
+        generate_scan_composition_sim_sv(broadcast_mismatch)
+    narrow_fanout = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher")})
+    with pytest.raises(ScanCompositionError, match="widths must agree"):
+        generate_scan_composition_top_sv(narrow_fanout)
+    with pytest.raises(ScanCompositionError, match="widths must agree"):
+        generate_scan_composition_sim_sv(narrow_fanout)
+    bad_width = _wide_front_composition().model_copy(
+        update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 96})}
+    )
+    with pytest.raises(ScanCompositionError, match="IN_WIDTH must be 64 or 128"):
+        generate_scan_composition_top_sv(bad_width)
+
+
 def test_front_unpack_status_is_latched_and_folded_into_job_error() -> None:
     text = generate_scan_composition_top_sv(_front_unpacked_composition())
     # the front-stage status close-out is consumed (ready tied high) ...
