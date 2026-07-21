@@ -455,6 +455,90 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
         )
 
 
+def _load_phase_composition() -> ScanComposition:
+    """The q3 shape: one lane, a phase-bound membership filter at chain[0]
+    ahead of the terminal tile — the LOAD_PHASE register drives cfg_load."""
+    return ScanComposition(
+        name="membership-scan",
+        module_name="dau_mm_membership_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_bar_aggregation",
+                config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"},
+                count_port="bar_count",
+                chain=(
+                    TileInstance(
+                        module="dau_int32_key_membership_filter",
+                        config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def test_load_phase_binding_emits_the_register_and_drives_cfg_load() -> None:
+    text = generate_scan_composition_top_sv(_load_phase_composition())
+    # the register: declared, decoded at 0x084, reset to probe, readable
+    assert "    reg load_phase;\n" in text
+    assert "    localparam [11:0] ADDR_LOAD_PHASE = 12'h084;" in text
+    assert "                    ADDR_LOAD_PHASE: load_phase <= s_axi_wdata[0];" in text
+    assert "                    ADDR_LOAD_PHASE: s_axi_rdata <= {31'd0, load_phase};" in text
+    assert "            load_phase <= 1'b0;" in text
+    # the binding: the membership tile's cfg_load is driven by the register
+    membership_block = text.split("dau_int32_key_membership_filter")[1].split(");")[0]
+    assert ".cfg_load(load_phase)," in membership_block
+
+
+def test_load_phase_sim_harness_surfaces_the_register_as_a_port() -> None:
+    # the harness has no register aperture: LOAD_PHASE surfaces as a
+    # testbench-driven 1-bit input port bound to the same cfg_load
+    sim = generate_scan_composition_sim_sv(_load_phase_composition())
+    assert "    input wire [0:0] load_phase,\n" in sim
+    assert ".cfg_load(load_phase)," in sim
+
+
+def test_load_phase_free_composition_stays_byte_identical() -> None:
+    # no load binding -> no register, no decl, no decode (the pinned goldens
+    # already prove byte-identity; this pins the register's absence)
+    text = generate_scan_composition_top_sv(_bar_noc_composition())
+    assert "load_phase" not in text
+    assert "ADDR_LOAD_PHASE" not in text
+
+
+def test_load_phase_shape_rules_mirror_the_walker() -> None:
+    membership = TileInstance(module="dau_int32_key_membership_filter", config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"})
+    plain = LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
+    loaded = plain.model_copy(update={"chain": (membership,)})
+    # the reserved symbol anywhere but chain[0].cfg_load is rejected
+    with pytest.raises(ValidationError, match="only a lane's first chain stage"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=(plain.model_copy(update={"partition": TileInstance(module="dau_int32_pair_key_filter", config={"cfg_key_mask": "load_phase"})}),),
+        )
+    # non-uniform lanes rejected
+    with pytest.raises(ValidationError, match="EVERY lane"):
+        ScanComposition(name="bad", module_name="dau_bad", lanes=(loaded, plain))
+    # a partition filter would filter the image
+    with pytest.raises(ValidationError, match="partition filters"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=(
+                loaded.model_copy(
+                    update={"partition": TileInstance(module="dau_int32_pair_key_filter", config={"cfg_key_mask": "32'd3", "cfg_key_match": "32'd0"})}
+                ),
+            ),
+        )
+    # generators re-check a model-copied composition
+    broken = _load_phase_composition().model_copy(
+        update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
+    )
+    with pytest.raises(ScanCompositionError, match="front unpacker"):
+        generate_scan_composition_top_sv(broken)
+
+
 def test_generators_revalidate_a_model_copied_composition() -> None:
     # model_copy(update=...) skips model_post_init, so BOTH generators must
     # re-check shape/width coherence — an incoherent copy must never emit
