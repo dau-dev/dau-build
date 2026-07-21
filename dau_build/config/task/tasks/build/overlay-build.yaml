@@ -3,7 +3,6 @@
 _target_: dau_build.build_steps.VivadoOverlayBuildTask
 backend: vivado
 work_root: ???
-bitstream: null
 vivado: vivado
 vivado_invocation: standard
 vivado_mount_root: null

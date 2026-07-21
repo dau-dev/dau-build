@@ -871,7 +871,6 @@ class OverlayBuildTask(BuildCallableModel):
 class VivadoOverlayBuildTask(OverlayBuildTask):
     backend: Literal["vivado"] = "vivado"
     work_root: Path
-    bitstream: Path | None = None
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
@@ -903,7 +902,6 @@ class VivadoOverlayBuildTask(OverlayBuildTask):
             vivado_executable=self.vivado,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,
-            bitstream_path=self.bitstream,
         )
 
 
@@ -919,10 +917,6 @@ class OverlayArtifactValidationTask(BuildCallableModel):
 class ValidateVivadoArtifactsTask(OverlayArtifactValidationTask):
     backend: Literal["vivado"] = "vivado"
     work_root: Path
-    bitstream: Path | None = None
-    vivado: str = "vivado"
-    vivado_invocation: Literal["standard", "source-only"] = "standard"
-    vivado_mount_root: Path | None = None
     artifact_stem: str = "dau-vivado"
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
@@ -956,13 +950,8 @@ class ValidateVivadoArtifactsTask(OverlayArtifactValidationTask):
         return BuildStepResult(step="validate-vivado-artifacts", message=_vivado_artifact_validation_message(validation) + packaged_segment)
 
     def _toolchain_config(self) -> HardwareToolchainConfig:
-        return HardwareToolchainConfig(
-            work_root=self.work_root,
-            vivado_executable=self.vivado,
-            vivado_invocation=self.vivado_invocation,
-            vivado_mount_root=self.vivado_mount_root,
-            bitstream_path=self.bitstream,
-        )
+        # artifact validation reads only the work root
+        return HardwareToolchainConfig(work_root=self.work_root)
 
 
 class BuildOverlayArtifactsTask(BuildCallableModel):
@@ -992,7 +981,6 @@ class BuildOverlayArtifactsTask(BuildCallableModel):
 class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
     backend: Literal["vivado"] = "vivado"
     work_root: Path
-    bitstream: Path | None = None
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
@@ -1008,7 +996,6 @@ class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
     def overlay_build_model(self) -> VivadoOverlayBuildTask:
         return VivadoOverlayBuildTask(
             work_root=self.work_root,
-            bitstream=self.bitstream,
             vivado=self.vivado,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,
@@ -1021,10 +1008,6 @@ class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
     def artifact_validation_model(self) -> ValidateVivadoArtifactsTask:
         return ValidateVivadoArtifactsTask(
             work_root=self.work_root,
-            bitstream=self.bitstream,
-            vivado=self.vivado,
-            vivado_invocation=self.vivado_invocation,
-            vivado_mount_root=self.vivado_mount_root,
             artifact_stem=self.artifact_stem,
             manifest_path=self.manifest_path,
             command_plan_path=self.command_plan_path,

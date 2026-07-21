@@ -687,3 +687,17 @@ def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
     # (dau-build carries no board defaults to fall back on)
     with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
+
+
+def test_overlay_build_and_validate_tasks_refuse_inert_fields() -> None:
+    # bitstream (and the vivado invocation fields on validation) had no effect
+    # on these tasks — they are rejected loudly instead of silently dropped
+    from pydantic import ValidationError
+
+    from dau_build.build_steps import BuildVivadoArtifactsTask, ValidateVivadoArtifactsTask, VivadoOverlayBuildTask
+
+    for cls in (VivadoOverlayBuildTask, ValidateVivadoArtifactsTask, BuildVivadoArtifactsTask):
+        with pytest.raises(ValidationError):
+            cls(work_root=Path("/tmp/x"), bitstream=Path("top.bit"))
+    with pytest.raises(ValidationError):
+        ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), vivado_mount_root=Path("/mnt"))
