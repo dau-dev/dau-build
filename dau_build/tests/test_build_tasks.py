@@ -699,5 +699,6 @@ def test_overlay_build_and_validate_tasks_refuse_inert_fields() -> None:
     for cls in (VivadoOverlayBuildTask, ValidateVivadoArtifactsTask, BuildVivadoArtifactsTask):
         with pytest.raises(ValidationError):
             cls(work_root=Path("/tmp/x"), bitstream=Path("top.bit"))
-    with pytest.raises(ValidationError):
-        ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), vivado_mount_root=Path("/mnt"))
+    for field, value in (("vivado", "vivado"), ("vivado_invocation", "standard"), ("vivado_mount_root", Path("/mnt"))):
+        with pytest.raises(ValidationError):
+            ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), **{field: value})

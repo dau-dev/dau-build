@@ -1576,9 +1576,13 @@ def test_program_method_flash_selects_the_vivado_programmer() -> None:
     config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
     programmer = config.resolve_programmer()
     assert isinstance(programmer, VivadoHwServerProgrammer)
-    step = programmer.program_step(config)
+    step = programmer.program_step(config, mode="persistent")
     assert step.name == "flash"
     assert "vivado -mode batch -source scripts/flash.tcl" in step.argv[2]
+    # the hw_server path has no volatile mode: the Programmer default is
+    # refused loudly instead of silently writing SPI
+    with pytest.raises(ValueError, match="no volatile programming path"):
+        programmer.program_step(config)
 
 
 def test_explicit_programmer_override_beats_program_method() -> None:
@@ -1591,14 +1595,13 @@ def test_explicit_programmer_override_beats_program_method() -> None:
 
 
 def test_detect_less_programmer_yields_a_plan_without_a_detect_step() -> None:
-    # detection is optional: a flash board (Vivado has no JTAG detect) composes
-    # a valid build-and-program plan that simply omits the detect step
+    # detection is optional (Vivado has no JTAG detect step) — but a flash
+    # board refuses the volatile build-and-program plan outright: persistent
+    # SPI writes only happen through an explicit flash request
     config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", program_method="flash")
     assert config.resolve_programmer().detect_step(config) is None
-    step_names = [step.name for step in build_and_program_plan(config)]
-    assert "jtag-detect" not in step_names
-    # the program step is the Vivado flash step, and the plan is otherwise intact
-    assert step_names == ["thunderbolt-hold", "vivado-build", "flash", "pci-rescan", "lspci-endpoint"]
+    with pytest.raises(ValueError, match="no volatile programming path"):
+        build_and_program_plan(config)
 
 
 def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:
