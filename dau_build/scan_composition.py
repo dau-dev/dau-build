@@ -84,6 +84,7 @@ class RegisterLayout(BaseModel):
 
     last_error: int = 0x02C
     job_control: int = 0x050
+    load_phase: int = 0x084
     job_status: int = 0x054
     input_address_low: int = 0x058
     input_length_low: int = 0x060
@@ -175,6 +176,47 @@ def _validate_composition_shape(composition: "ScanComposition") -> None:
             f"the shared partitioner {composition.partitioner.module!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
             "compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
         )
+
+    # two-phase load shape (the walker mirror of the registry-aware dau-core
+    # rules — structural only, the walker carries no registry): the reserved
+    # load_phase binding is legal ONLY on cfg_load at a lane's first chain
+    # stage, uniformly across lanes, with nothing between the reader and the
+    # load tiles that would transform the LOAD image
+    def _binds_load(tile: TileInstance | None) -> bool:
+        return tile is not None and tile.config.get("cfg_load") == "load_phase"
+
+    def _stray(tile: TileInstance | None, allowed: bool) -> None:
+        if tile is None:
+            return
+        for key, value in tile.config.items():
+            if value == "load_phase" and (key != "cfg_load" or not allowed):
+                raise ScanCompositionError(
+                    f"tile {tile.module!r} binds {key!r} to the reserved 'load_phase' symbol; only a lane's first chain stage may bind cfg_load"
+                )
+
+    _stray(composition.partitioner, allowed=False)
+    _stray(composition.front_unpack, allowed=False)
+    for lane in composition.lanes:
+        _stray(lane, allowed=False)
+        _stray(lane.partition, allowed=False)
+        for index, stage in enumerate(lane.chain):
+            _stray(stage, allowed=index == 0)
+    load_lanes = sum(1 for lane in composition.lanes if lane.chain and _binds_load(lane.chain[0]))
+    if load_lanes:
+        if load_lanes != len(composition.lanes):
+            raise ScanCompositionError(
+                f"a two-phase composition must bind cfg_load to 'load_phase' at chain[0] of EVERY lane "
+                f"({load_lanes} of {len(composition.lanes)} lanes do); a loadless lane would misread the LOAD image as rows"
+            )
+        if composition.partitioner is not None:
+            raise ScanCompositionError("a two-phase composition cannot use a shared partitioner: the LOAD image must broadcast to every lane")
+        if composition.front_unpack is not None:
+            raise ScanCompositionError("a two-phase composition cannot use a front unpacker: it would re-slice the LOAD image words")
+        for lane in composition.lanes:
+            if lane.partition is not None:
+                raise ScanCompositionError(
+                    f"a two-phase composition cannot use per-lane partition filters: {lane.partition.module!r} would filter the LOAD image"
+                )
 
 
 _DEFAULT_GENERATED_BY = "dau_build.scan_composition.generate_scan_composition_top_sv"
@@ -748,6 +790,23 @@ def _front_stream_width(composition: ScanComposition) -> int:
     return composition.front_unpack.params.get("OUT_WIDTH", 64)
 
 
+def _uses_load_phase(composition: ScanComposition) -> bool:
+    """Whether any tile binds a config port to the reserved ``load_phase``
+    symbol — the two-phase load: the top then declares the LOAD_PHASE
+    register that drives those bindings."""
+    tiles: list[TileInstance] = []
+    if composition.partitioner is not None:
+        tiles.append(composition.partitioner)
+    if composition.front_unpack is not None:
+        tiles.append(composition.front_unpack)
+    for lane in composition.lanes:
+        tiles.append(lane)
+        if lane.partition is not None:
+            tiles.append(lane.partition)
+        tiles.extend(lane.chain)
+    return any(value == "load_phase" for tile in tiles for value in tile.config.values())
+
+
 def _front_unpack_wire_decls_sv(composition: ScanComposition) -> str:
     """The front unpacker's widened row stream (``feed_*``, driving the
     fan-out input at the composed ``OUT_WIDTH``), its status bundle, and the
@@ -935,7 +994,9 @@ def generate_scan_composition_top_sv(
         f"    localparam [11:0] ADDR_LANE{i}_ERROR = 12'h{regs.lane_register(i, regs.lane_error):03X};"
         for i in lanes
     )
+    uses_load_phase = _uses_load_phase(composition)
     lane_reg_decls = "\n".join(f"    reg [{addr_width - 1}:0] lane_output_address_{i};" for i in lanes)
+    load_phase_decl = "    reg load_phase;\n" if uses_load_phase else ""
     lane_wire_decls = _lane_wire_decls_sv(composition)
     lane_flat_assigns = _lane_flat_assigns_sv(composition)
     lane_instances = _lane_units_sv(composition, clk="s_axi_aclk", writer_rst="!s_axi_aresetn")
@@ -976,22 +1037,27 @@ def generate_scan_composition_top_sv(
             end"""
         for i in lanes
     )
-    localparams = _register_localparams_sv(
-        (
-            ("LAST_ERROR", regs.last_error),
-            ("JOB_CONTROL", regs.job_control),
-            ("JOB_STATUS", regs.job_status),
-            ("INPUT_ADDRESS_LOW", regs.input_address_low),
-            ("INPUT_LENGTH_LOW", regs.input_length_low),
-        )
+    register_names: tuple[tuple[str, int], ...] = (
+        ("LAST_ERROR", regs.last_error),
+        ("JOB_CONTROL", regs.job_control),
+        ("JOB_STATUS", regs.job_status),
+        ("INPUT_ADDRESS_LOW", regs.input_address_low),
+        ("INPUT_LENGTH_LOW", regs.input_length_low),
     )
+    if uses_load_phase:
+        register_names = register_names + (("LOAD_PHASE", regs.load_phase),)
+    localparams = _register_localparams_sv(register_names)
+    load_phase_reset = "            load_phase <= 1'b0;\n" if uses_load_phase else ""
+    load_phase_write = "                    ADDR_LOAD_PHASE: load_phase <= s_axi_wdata[0];\n" if uses_load_phase else ""
+    # leading newline so an unused register leaves the read block byte-identical
+    load_phase_read = "\n                    ADDR_LOAD_PHASE: s_axi_rdata <= {31'd0, load_phase};" if uses_load_phase else ""
     register_process = _axi_lite_register_process_sv(
         write_default_comment="other job fields accepted and ignored",
         reset_extra=f"""            input_address <= {addr_width}'d0;
             input_length_bytes <= 32'd0;
             job_start <= 1'b0;
             length_fail <= 1'b0;
-{front_unpack_error_reset}            prev_done <= 1'b1;
+{load_phase_reset}{front_unpack_error_reset}            prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
 {lane_reset_items}
 {lane_count_clear_items.replace("                ", "            ")}
@@ -1006,10 +1072,10 @@ def generate_scan_composition_top_sv(
 """,
         write_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[{addr_width - 1}:0];
                     ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
-{write_case_items}
+{load_phase_write}{write_case_items}
 """,
         read_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: s_axi_rdata <= input_address[31:0];
-                    ADDR_INPUT_LENGTH_LOW: s_axi_rdata <= input_length_bytes;
+                    ADDR_INPUT_LENGTH_LOW: s_axi_rdata <= input_length_bytes;{load_phase_read}
                     12'hFC0: s_axi_rdata <= dbg_first_stream_word[31:0];
                     12'hFC4: s_axi_rdata <= dbg_first_stream_word[63:32];
                     12'hFC8: s_axi_rdata <= dbg_first_araddr;
@@ -1051,7 +1117,7 @@ module {module_name} #(
     reg [{addr_width - 1}:0] input_address;
     reg [31:0] input_length_bytes;
     reg job_start;
-{lane_reg_decls}
+{load_phase_decl}{lane_reg_decls}
 
     wire reader_busy;
     wire reader_done;
@@ -1221,7 +1287,12 @@ def generate_scan_composition_sim_sv(
     num_lanes = len(composition.lanes)
     lanes = range(num_lanes)
     name = module_name if module_name is not None else f"{composition.module_name}_sim"
-    config_input_ports = "".join(f"    input wire [{width - 1}:0] {port},\n" for port, width in (config_inputs or {}).items())
+    merged_config_inputs = dict(config_inputs or {})
+    if _uses_load_phase(composition):
+        # the harness has no register aperture, so the LOAD_PHASE register
+        # surfaces as a testbench-driven input port
+        merged_config_inputs.setdefault("load_phase", 1)
+    config_input_ports = "".join(f"    input wire [{width - 1}:0] {port},\n" for port, width in merged_config_inputs.items())
     lane_port_taps = "\n".join(
         f"""    wire [{addr_width - 1}:0] lane_output_address_{i} = lane_output_address[{addr_width * (i + 1) - 1}:{addr_width * i}];
     assign lane_result_length_bytes[{32 * (i + 1) - 1}:{32 * i}] = lane_result_length_{i};
