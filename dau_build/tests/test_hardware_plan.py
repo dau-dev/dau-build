@@ -1825,3 +1825,16 @@ def test_cfgmem_route_refuses_an_external_bitstream() -> None:
     config = _bench_config(work_root=Path("/w"), spi_boot_buswidth=4, bitstream_path=Path("/elsewhere/design.bit"))
     with pytest.raises(ValueError, match="cannot take an external"):
         flash_plan(config)
+
+
+def test_explicit_cfgmem_programmer_also_refuses_external_bitstreams() -> None:
+    from dau_build.programmers import VivadoHwServerProgrammer
+
+    config = _bench_config(
+        work_root=Path("/w"),
+        spi_boot_buswidth=4,
+        bitstream_path=Path("/elsewhere/design.bit"),
+        programmer=VivadoHwServerProgrammer(),
+    )
+    with pytest.raises(ValueError, match="cannot take an external"):
+        flash_plan(config)

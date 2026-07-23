@@ -98,6 +98,15 @@ class VivadoHwServerProgrammer(Programmer):
             raise ValueError(
                 'vivado-hwserver has no volatile programming path; request the persistent flash write explicitly (mode="persistent", e.g. the flash plan) or compose a JTAG programmer'
             )
+        if config.bitstream_path is not None:
+            # flash.tcl programs the work tree's own generated cfgmem image;
+            # silently ignoring an explicit bitstream would flash a stale or
+            # unrelated artifact — guard EVERY route through this programmer
+            raise ValueError(
+                "the cfgmem flash path programs the work tree's generated image and cannot take an external "
+                f"bitstream ({config.bitstream_path}); flash from the shell-build work tree, or use the volatile "
+                "SRAM plan for an explicit bitstream"
+            )
         from dau_build.hardware_plan import ToolStep
 
         script = vivado_flash_script(
