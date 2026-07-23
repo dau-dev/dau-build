@@ -213,6 +213,11 @@ class PlatformDefinition(BaseModel):
     constraints_xdc: str = ""
     lane_placements: tuple[tuple[int, str], ...] = ()
     program_method: str = "jtag"
+    # the flash device's boot bus width when the board self-configures from
+    # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a
+    # flash leaves the board memory-dead — persistent programming must go
+    # through the vivado cfgmem path. None = no SPI-boot constraint.
+    spi_boot_buswidth: int | None = None
     job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
 

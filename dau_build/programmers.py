@@ -72,6 +72,12 @@ class OpenFpgaLoaderProgrammer(Programmer):
         from dau_build.hardware_plan import ToolStep
 
         if mode == "persistent":
+            if config.spi_boot_buswidth not in (None, 1):
+                raise ValueError(
+                    f"raw-bit persistent flash (-f) on an SPIx{config.spi_boot_buswidth}-boot board leaves the "
+                    "configuration memory-dead (the boot sequence needs the cfgmem-written image); use the "
+                    "vivado cfgmem path (the flash plan's flash.tcl) or a volatile SRAM program"
+                )
             return ToolStep("program-persistent", (self.executable, "-c", self._cable(config), "-f", str(config.bitstream)))
         return ToolStep("program-volatile", (self.executable, "-c", self._cable(config), str(config.bitstream)))
 

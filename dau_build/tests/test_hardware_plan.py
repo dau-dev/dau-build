@@ -1526,7 +1526,10 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     from dau_build.platforms import dpv1_platform
 
     # dpv1's host_access config reproduces the proven bench facts exactly
-    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(work_root=Path("/w"))
+    # (spi_boot_buswidth rides the platform, not host_access — supplied here)
+    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(
+        work_root=Path("/w"), spi_boot_buswidth=4
+    )
 
     # a board with different access data changes the plans through config alone
     other = dpv1_platform().model_copy(deep=True)
@@ -1775,3 +1778,42 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
         },
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
+
+
+def test_spi_boot_board_flash_plan_takes_the_cfgmem_path() -> None:
+    """A raw-bit -f write to an SPIx4-boot flash leaves the board
+    memory-dead: the flash plan must route persistent writes through the
+    vivado cfgmem path and end with the cold-power-cycle notice."""
+    config = _bench_config(work_root=Path("/w"), spi_boot_buswidth=4)
+    steps = flash_plan(config)
+    names = [step.name for step in steps]
+    assert names == ["thunderbolt-hold", "flash", "thunderbolt-release", "cold-power-cycle-required"]
+    flash = next(step for step in steps if step.name == "flash")
+    assert "flash.tcl" in flash.command_line
+    assert " -f " not in f" {flash.command_line} "
+    notice = next(step for step in steps if step.name == "cold-power-cycle-required")
+    assert "cold power cycle" in notice.command_line
+
+
+def test_openfpgaloader_refuses_persistent_on_spi_boot() -> None:
+    from dau_build.programmers import OpenFpgaLoaderProgrammer
+
+    config = _bench_config(work_root=Path("/w"), spi_boot_buswidth=4)
+    with pytest.raises(ValueError, match="memory-dead"):
+        OpenFpgaLoaderProgrammer().program_step(config, mode="persistent")
+    # volatile stays available (the SRAM ladder), and a non-SPI-boot board
+    # keeps the raw persistent path
+    volatile = OpenFpgaLoaderProgrammer().program_step(config, mode="volatile")
+    assert "-f" not in volatile.argv
+    plain = _bench_config(work_root=Path("/w"))
+    persistent = OpenFpgaLoaderProgrammer().program_step(plain, mode="persistent")
+    assert "-f" in persistent.argv
+
+
+def test_dpv1_platform_carries_the_spi_boot_fact() -> None:
+    from dau_build.platforms import dpv1_platform
+
+    platform = dpv1_platform()
+    assert platform.spi_boot_buswidth == 4
+    config = HardwareToolchainConfig.for_platform(platform, work_root=Path("/w"))
+    assert config.spi_boot_buswidth == 4

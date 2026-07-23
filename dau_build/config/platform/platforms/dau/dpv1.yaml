@@ -10,6 +10,8 @@ _target_: dau_build.platforms.PlatformDefinition
 name: dpv1
 part: xc7a200tfbg484-2
 program_method: jtag
+# S25FL256S boots SPIx4: persistent writes must use the vivado cfgmem path
+spi_boot_buswidth: 4
 # lane index -> GTPE2 channel site: the reversed lane-to-GT-channel mapping
 # the dpv1 board requires, applied as a pre-opt_design implementation hook
 # (XDC-time LOCs conflict with the XDMA IP's internal BEL/LOC constraints)
