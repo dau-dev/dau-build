@@ -306,6 +306,25 @@ failing the task if synthesis fails. The engine is fully configurable:
 <p>Mode: <strong>run</strong>. See the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the engine
 models.</p>
 </section>
+<section id="tasks-build-synthesize-cores-synthesizecorestask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code><a class="headerlink" href="#tasks-build-synthesize-cores-synthesizecorestask" title="Link to this heading">¶</a></h3>
+<p>Per-core out-of-context characterization through the registry: resolves
+<code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code> entries (the dau-core lernaplugin’s config tree), stages one
+OOC synthesis per core — dependency-closed sources, <code class="docutils literal notranslate"><span class="pre">-generic</span></code> values from the
+core’s declared parameters merged with validated <code class="docutils literal notranslate"><span class="pre">model.parameters</span></code> overrides,
+the part from <code class="docutils literal notranslate"><span class="pre">model.part</span></code> or the composed <code class="docutils literal notranslate"><span class="pre">platform</span></code> group, and the clock as
+an XDC read before <code class="docutils literal notranslate"><span class="pre">synth_design</span></code> — and writes the Tcl plus a command-plan
+runner. Required: <code class="docutils literal notranslate"><span class="pre">model.cores</span></code>, <code class="docutils literal notranslate"><span class="pre">model.output_root</span></code>.</p>
+<ul class="simple">
+<li><p>Default (handoff): stages files only; run the plan where Vivado lives.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model.execute=true</span></code>: runs Vivado per core, parses utilization/timing into
+envelope reports, and flags drift against the envelope registered in the
+core registry. <code class="docutils literal notranslate"><span class="pre">model.clock_ports</span></code> maps non-<code class="docutils literal notranslate"><span class="pre">clk</span></code> clocks (empty string =
+combinational: no constraint, no timing report). Package cores are rejected
+as synthesis tops.</p></li>
+</ul>
+<p>Mode: <strong>run</strong>.</p>
+</section>
 <section id="tasks-build-build-shell-project-buildshellprojecttask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code><a class="headerlink" href="#tasks-build-build-shell-project-buildshellprojecttask" title="Link to this heading">¶</a></h3>
 <p>Builds a standalone shell project from a generated Tcl script. Required:
@@ -499,6 +518,7 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
 <li><a class="reference internal" href="#tasks-spec-validate-validatetask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-sim-simulate-simulatetask"><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-synthesize-synthesizetask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-synthesize-cores-synthesizecorestask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-build-shell-project-buildshellprojecttask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-overlay-build-vivadooverlaybuildtask"><code class="docutils literal notranslate"><span class="pre">tasks/build/overlay-build</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoOverlayBuildTask</span></code></a></li>
