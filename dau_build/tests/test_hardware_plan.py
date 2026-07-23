@@ -1817,3 +1817,11 @@ def test_dpv1_platform_carries_the_spi_boot_fact() -> None:
     assert platform.spi_boot_buswidth == 4
     config = HardwareToolchainConfig.for_platform(platform, work_root=Path("/w"))
     assert config.spi_boot_buswidth == 4
+
+
+def test_cfgmem_route_refuses_an_external_bitstream() -> None:
+    """flash.tcl programs the work tree's own generated image: an explicit
+    bitstream override must fail loudly, never flash a stale artifact."""
+    config = _bench_config(work_root=Path("/w"), spi_boot_buswidth=4, bitstream_path=Path("/elsewhere/design.bit"))
+    with pytest.raises(ValueError, match="cannot take an external"):
+        flash_plan(config)

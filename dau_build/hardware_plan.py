@@ -544,6 +544,16 @@ def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path) -> Too
     if config.spi_boot_buswidth not in (None, 1) and config.programmer is None:
         from dau_build.programmers import VivadoHwServerProgrammer
 
+        if config.bitstream_path is not None:
+            # flash.tcl programs the work tree's own generated cfgmem image;
+            # silently ignoring an explicit bitstream would flash a stale or
+            # unrelated artifact. Refuse until an external-bit cfgmem stage
+            # exists — the volatile SRAM plan takes explicit bitstreams today.
+            raise ValueError(
+                "the cfgmem flash path programs the work tree's generated image and cannot take an external "
+                f"bitstream ({config.bitstream_path}); flash from the shell-build work tree, or use the volatile "
+                "SRAM plan for an explicit bitstream"
+            )
         return VivadoHwServerProgrammer(vivado_settings=vivado_settings).program_step(config, mode="persistent")
     return config.resolve_programmer(vivado_settings=vivado_settings).program_step(config, mode="persistent")
 
