@@ -19,7 +19,7 @@ public/private wall.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ccflow import BaseModel
 from pydantic import Field, field_validator
@@ -216,8 +216,10 @@ class PlatformDefinition(BaseModel):
     # the flash device's boot bus width when the board self-configures from
     # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a
     # flash leaves the board memory-dead — persistent programming must go
-    # through the vivado cfgmem path. None = no SPI-boot constraint.
-    spi_boot_buswidth: int | None = None
+    # through the vivado cfgmem path. None = no SPI-boot constraint. Only 4
+    # is supported: the cfgmem generator (flash.tcl / vivado_build_tcl)
+    # writes SPIx4; another width would need its own cfgmem-generation path.
+    spi_boot_buswidth: Literal[4] | None = None
     job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
 
