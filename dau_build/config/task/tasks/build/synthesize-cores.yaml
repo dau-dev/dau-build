@@ -14,5 +14,6 @@ output_root: ???
 part: null
 clock_period_ns: 8.0
 parameters: {}
+clock_ports: {}
 execute: false
 vivado: vivado

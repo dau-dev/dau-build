@@ -197,7 +197,14 @@ class SynthesizeCoresTask(BuildCallableModel):
             raise BuildStepError(
                 f"vivado failed for {definition.name} (exit {completed.returncode}); see {root / script.stem.removesuffix('.ooc')}.log"
             )
-        return self.parse_reports(definition, output_root=root)
+        return self.parse_reports(
+            definition,
+            output_root=root,
+            clocked=bool(self.clock_ports.get(definition.name, "clk")),
+            # an envelope is registered for the DEFAULT parameters; an
+            # overridden build is a different shape, not drift
+            compare=definition.name not in self.parameters,
+        )
 
     @staticmethod
     def parse_reports(definition, *, output_root: Path, clocked: bool = True, compare: bool = True) -> CoreEnvelopeReport:
