@@ -16,6 +16,7 @@ from this task — never from hand-run synthesis.
 # NOTE: no `from __future__ import annotations` — ccflow's Flow.call
 # inspects the real annotation objects on __call__ (the build_steps pattern)
 import re
+import shlex
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
@@ -65,18 +66,21 @@ class SynthesizeCoresTask(BuildCallableModel):
         if not definitions:
             raise BuildStepError("no cores selected; pass model.cores=[/dau-core/<name>,...]")
         part = self._part()
-        self.output_root.mkdir(parents=True, exist_ok=True)
-        scripts = [self._stage_core(definition, part=part) for definition in definitions]
-        plan_path = self._write_plan(scripts)
+        # resolve once: relative output_root (./ooc) plus a subprocess cwd
+        # would otherwise double the prefix inside vivado
+        root = self.output_root.resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        scripts = [self._stage_core(definition, part=part, root=root) for definition in definitions]
+        plan_path = self._write_plan(scripts, root=root)
         if not self.execute:
             return BuildStepResult(
                 step="synthesize-cores",
                 message=(
                     f"dau-build-synthesize-cores\tcores={','.join(d.name for d in definitions)} part={part} "
-                    f"clock_ns={self.clock_period_ns} output_root={self.output_root} plan={plan_path} status=handoff-written"
+                    f"clock_ns={self.clock_period_ns} output_root={root} plan={plan_path} status=handoff-written"
                 ),
             )
-        reports = [self._run_and_parse(definition, script) for definition, script in zip(definitions, scripts)]
+        reports = [self._run_and_parse(definition, script, root=root) for definition, script in zip(definitions, scripts)]
         drift = [report.name for report in reports if report.registered_matches is False]
         summary = " ".join(
             f"{r.name}:lut={r.lut},ff={r.ff},bram36={r.bram36},dsp={r.dsp},wns={r.wns_ns:+.3f},{'met' if r.met else 'VIOLATED'}" for r in reports
@@ -85,7 +89,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             step="synthesize-cores",
             message=(
                 f"dau-build-synthesize-cores\tcores={','.join(d.name for d in definitions)} part={part} "
-                f"clock_ns={self.clock_period_ns} output_root={self.output_root} {summary} "
+                f"clock_ns={self.clock_period_ns} output_root={root} {summary} "
                 f"envelope_drift={','.join(drift) if drift else 'none'} status=synthesized"
             ),
         )
@@ -120,60 +124,71 @@ class SynthesizeCoresTask(BuildCallableModel):
         unknown = set(overrides) - set(values)
         if unknown:
             raise BuildStepError(f"core {definition.name!r} declares no parameter {sorted(unknown)}; declared: {sorted(values) or 'none'}")
+        for name, value in overrides.items():
+            _validate_override(definition.name, name, value, definition.parameters[name])
         values.update(overrides)
         return values
 
-    def _stage_core(self, definition, *, part: str) -> Path:
+    def _stage_core(self, definition, *, part: str, root: Path) -> Path:
         from dau_core.cores import sources_for
 
         sources = sources_for(definition.name)
         generics = self._generics(definition)
         generic_args = "".join(f" -generic {name}={value}" for name, value in generics.items())
-        reads = "\n".join(f"read_verilog -sv {path}" for path in sources)
-        util_rpt = self.output_root / f"{definition.module}.util.rpt"
-        timing_rpt = self.output_root / f"{definition.module}.timing.rpt"
+        reads = "\n".join(f"read_verilog -sv {_tcl_path(path)}" for path in sources)
+        # the clock rides an XDC read BEFORE synth_design so synthesis itself
+        # is clock-constrained (a create_clock after synth_design would leave
+        # synthesis unconstrained and only time the report)
+        xdc = root / f"{definition.module}.ooc.xdc"
+        xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports clk]\n")
+        util_rpt = root / f"{definition.module}.util.rpt"
+        timing_rpt = root / f"{definition.module}.timing.rpt"
         tcl = (
             f"{reads}\n"
+            f"read_xdc -mode out_of_context {_tcl_path(xdc)}\n"
             f"synth_design -top {definition.module} -part {part} -mode out_of_context{generic_args}\n"
-            f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports clk]\n"
-            f"report_utilization -file {util_rpt}\n"
-            f"report_timing_summary -max_paths 1 -delay_type max -file {timing_rpt}\n"
+            f"report_utilization -file {_tcl_path(util_rpt)}\n"
+            f"report_timing_summary -max_paths 1 -delay_type max -file {_tcl_path(timing_rpt)}\n"
         )
-        script = self.output_root / f"{definition.module}.ooc.tcl"
+        script = root / f"{definition.module}.ooc.tcl"
         script.write_text(tcl)
         return script
 
-    def _write_plan(self, scripts: list[Path]) -> Path:
+    def _write_plan(self, scripts: list[Path], *, root: Path) -> Path:
         lines = ["#!/bin/sh", "set -e"]
         for script in scripts:
-            stem = script.stem.removesuffix(".ooc")
-            lines.append(f"{self.vivado} -mode batch -source {script} -log {self.output_root / stem}.log -journal {self.output_root / stem}.jou")
-        plan = self.output_root / "synthesize-cores.sh"
+            lines.append(shlex.join(self._vivado_argv(script, root=root)))
+        plan = root / "synthesize-cores.sh"
         plan.write_text("\n".join(lines) + "\n")
         plan.chmod(0o755)
         return plan
 
-    def _run_and_parse(self, definition, script: Path) -> CoreEnvelopeReport:
+    def _vivado_argv(self, script: Path, *, root: Path) -> list[str]:
         stem = script.stem.removesuffix(".ooc")
+        return [
+            self.vivado,
+            "-mode",
+            "batch",
+            "-source",
+            str(script),
+            "-log",
+            f"{root / stem}.log",
+            "-journal",
+            f"{root / stem}.jou",
+        ]
+
+    def _run_and_parse(self, definition, script: Path, *, root: Path) -> CoreEnvelopeReport:
         completed = subprocess.run(
-            [
-                self.vivado,
-                "-mode",
-                "batch",
-                "-source",
-                str(script),
-                "-log",
-                f"{self.output_root / stem}.log",
-                "-journal",
-                f"{self.output_root / stem}.jou",
-            ],
-            cwd=self.output_root,
+            self._vivado_argv(script, root=root),
+            cwd=root,
             capture_output=True,
             text=True,
         )
         if completed.returncode != 0:
-            raise BuildStepError(f"vivado failed for {definition.name} (exit {completed.returncode}); see {self.output_root / stem}.log")
-        return self.parse_reports(definition, output_root=self.output_root)
+            raise BuildStepError(
+                f"vivado failed for {definition.name} (exit {completed.returncode}); see {root / script.stem.removesuffix('.ooc')}.log"
+            )
+        return self.parse_reports(definition, output_root=root)
 
     @staticmethod
     def parse_reports(definition, *, output_root: Path) -> CoreEnvelopeReport:
@@ -204,6 +219,35 @@ class SynthesizeCoresTask(BuildCallableModel):
             met=slack.group(1) == "MET",
             registered_matches=matches,
         )
+
+
+def _tcl_path(path: Path) -> str:
+    """Brace-quote a filesystem path for generated tcl (spaces survive)."""
+    return "{" + str(path) + "}"
+
+
+def _validate_override(core_name: str, name: str, value: int, spec) -> None:
+    """Enforce the registry's declared parameter constraints on an override —
+    the same rules dau-core's composition validates (ParameterSpec: choices,
+    positive, minimum/maximum, multiple_of, power_of_two) so an invalid value
+    is rejected here, never as an HDL elaboration failure."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive int, got {value!r}")
+    if spec.choices is not None:
+        if value not in spec.choices:
+            allowed = ", ".join(str(choice) for choice in spec.choices)
+            raise BuildStepError(f"core {core_name!r} parameter {name!r} must be one of {allowed}, got {value!r}")
+        return  # an enumerated choice set is the whole constraint
+    if value <= 0:
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive int, got {value!r}")
+    if value < spec.minimum:
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be >= {spec.minimum}, got {value!r}")
+    if spec.maximum is not None and value > spec.maximum:
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be <= {spec.maximum}, got {value!r}")
+    if value % spec.multiple_of != 0:
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive multiple of {spec.multiple_of}, got {value!r}")
+    if spec.power_of_two and value & (value - 1):
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a power of two, got {value!r}")
 
 
 def _util_value(report: str, label: str) -> int:

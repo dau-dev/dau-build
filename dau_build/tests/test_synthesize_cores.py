@@ -25,7 +25,10 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
     assert "read_verilog -sv" in tcl and tcl.index("read_verilog") < tcl.index("synth_design")
     assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context -generic K=8" in tcl
-    assert "create_clock -period 8.000 -name clk [get_ports clk]" in tcl
+    # the clock constrains SYNTHESIS: the xdc reads before synth_design
+    assert "read_xdc -mode out_of_context" in tcl and tcl.index("read_xdc") < tcl.index("synth_design")
+    xdc = (tmp_path / "dau_int32_streaming_top_k.ooc.xdc").read_text()
+    assert "create_clock -period 8.000 -name clk [get_ports clk]" in xdc
     assert "report_utilization" in tcl and "report_timing_summary" in tcl
     plan = (tmp_path / "synthesize-cores.sh").read_text()
     assert "vivado -mode batch -source" in plan and "dau_int32_streaming_top_k.ooc.tcl" in plan
@@ -125,3 +128,26 @@ def test_task_composes_from_the_config_group(tmp_path: Path) -> None:
     outcome = cfg_run(result.cfg)
     assert "status=handoff-written" in outcome.message
     assert (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").is_file()
+
+
+def test_parameter_override_constraints_are_enforced(tmp_path: Path) -> None:
+    # the registry's declared ParameterSpec bounds reject bad overrides here,
+    # never as an HDL elaboration failure
+    with pytest.raises(BuildStepError, match="positive int"):
+        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 0}})(NullContext())
+    with pytest.raises(BuildStepError, match="<= 128"):
+        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 200}})(NullContext())
+
+
+def test_relative_output_root_stages_absolute_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a relative output_root (the documented ./ooc) resolves once; every
+    # staged path is absolute so a vivado cwd cannot double the prefix
+    monkeypatch.chdir(tmp_path)
+    result = _task(Path("ooc"))(NullContext())
+    assert "status=handoff-written" in result.message
+    tcl = (tmp_path / "ooc" / "dau_int32_streaming_top_k.ooc.tcl").read_text()
+    for line in tcl.splitlines():
+        if line.startswith("read_xdc") or "-file" in line:
+            assert str(tmp_path) in line, line
+    plan = (tmp_path / "ooc" / "synthesize-cores.sh").read_text()
+    assert str(tmp_path / "ooc" / "dau_int32_streaming_top_k.ooc.tcl") in plan
