@@ -1838,3 +1838,10 @@ def test_explicit_cfgmem_programmer_also_refuses_external_bitstreams() -> None:
     )
     with pytest.raises(ValueError, match="cannot take an external"):
         flash_plan(config)
+
+
+def test_toolchain_config_rejects_an_unsupported_spi_width() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        HardwareToolchainConfig(work_root=Path("/w"), spi_boot_buswidth=2)

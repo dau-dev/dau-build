@@ -75,7 +75,9 @@ class HardwareToolchainConfig(BaseModel):
     # jtag->openFPGALoader, flash->vivado-hwserver); an explicit `programmer`
     # (a Programmer model composed from the `programmer` group) wins.
     program_method: str = "jtag"
-    spi_boot_buswidth: int | None = None
+    # only 4 is supported: the cfgmem generator writes SPIx4 (see
+    # PlatformDefinition.spi_boot_buswidth)
+    spi_boot_buswidth: Literal[4] | None = None
     programmer: Any = None
 
     @classmethod
