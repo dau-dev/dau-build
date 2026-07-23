@@ -66,6 +66,25 @@ delegates to the synthesis engine composed from the `backend` group (default
 Mode: **run**. See the [config group reference](config-groups.md) for the engine
 models.
 
+### `tasks/build/synthesize-cores` — `SynthesizeCoresTask`
+
+Per-core out-of-context characterization through the registry: resolves
+`/dau-core/<name>` entries (the dau-core lernaplugin's config tree), stages one
+OOC synthesis per core — dependency-closed sources, `-generic` values from the
+core's declared parameters merged with validated `model.parameters` overrides,
+the part from `model.part` or the composed `platform` group, and the clock as
+an XDC read before `synth_design` — and writes the Tcl plus a command-plan
+runner. Required: `model.cores`, `model.output_root`.
+
+- Default (handoff): stages files only; run the plan where Vivado lives.
+- `model.execute=true`: runs Vivado per core, parses utilization/timing into
+  envelope reports, and flags drift against the envelope registered in the
+  core registry. `model.clock_ports` maps non-`clk` clocks (empty string =
+  combinational: no constraint, no timing report). Package cores are rejected
+  as synthesis tops.
+
+Mode: **run**.
+
 ### `tasks/build/build-shell-project` — `BuildShellProjectTask`
 
 Builds a standalone shell project from a generated Tcl script. Required:

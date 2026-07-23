@@ -13,6 +13,12 @@ Build tools for dau
 
 Two synthesis engines are supported: Vivado (the FPGA bitstream flow) and yosys (open-source synthesis that runs in CI). The config plumbing is backend-agnostic, so more can be added.
 
+Composition is the extension mechanism: any package can register its own config tree on the shared Hydra search path via a `hydra.lernaplugins` entry point, and its task/design/board groups compose through this CLI without dau-build importing that package. The core registry itself arrives this way — `dau-core` publishes every hardware building block as a `CoreDefinition` at `/dau-core/<name>`, and the `synthesize-cores` task resolves cores from that registry to run per-core out-of-context characterization (staged Tcl + command plan anywhere; `model.execute=true` on a synthesis host runs Vivado and flags envelope drift against the registered numbers):
+
+```bash
+dau-build task=tasks/build/synthesize-cores   'model.cores=[/dau-core/int32-predicate-filter]'   model.output_root=outputs/ooc model.part=xc7a200tfbg484-2
+```
+
 ## Quickstart
 
 Build the checked-in identity example — no board or vendor tools required:
