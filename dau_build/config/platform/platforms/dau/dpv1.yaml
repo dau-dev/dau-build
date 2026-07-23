@@ -85,6 +85,10 @@ host_access:
   _target_: dau_build.platforms.HostAccess
   pci_id: "10ee:7011"
   endpoint_bdf: "0000:04:00.0"
+  # the endpoint's direct upstream bridge (JHL6240 TB3 switch): the
+  # secondary-bus reset target that re-inits the PCIe core after a
+  # volatile reprogram
+  reset_bridge_bdf: "0000:03:01.0"
   rescan_bdfs:
     - "0000:03:01.0"
     - "0000:02:00.0"
