@@ -603,8 +603,10 @@ def secondary_bus_reset_step(config: HardwareToolchainConfig) -> ToolStep:
     upstream bridge: after a volatile reprogram the endpoint enumerates but
     its register block stays dead until the bus reset re-inits the PCIe
     core. The bridge BDF is a measured bench fact (host_access)."""
-    bridge = config.required_host_access("reset_bridge_bdf")
-    script = f"setpci -s {bridge} BRIDGE_CONTROL=40:40; sleep 0.6; setpci -s {bridge} BRIDGE_CONTROL=00:40; sleep 1.5"
+    bridge = shlex.quote(str(config.required_host_access("reset_bridge_bdf")))
+    # && chaining: a setpci failure must fail the STEP (a trailing sleep's
+    # exit status would otherwise mask it and let the plan reach the disarm)
+    script = f"setpci -s {bridge} BRIDGE_CONTROL=40:40 && sleep 0.6 && setpci -s {bridge} BRIDGE_CONTROL=00:40 && sleep 1.5"
     return ToolStep("secondary-bus-reset", ("sh", "-c", script))
 
 
@@ -757,7 +759,9 @@ def sram_program_plan(
         remove_endpoint_step(config),
         program_volatile_step(config),
         secondary_bus_reset_step(config),
-        ToolStep("pci-global-rescan-settle", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan; sleep 4")),
+        # && chaining: a failed rescan write must fail the step, not be
+        # masked by the settle sleep's exit status
+        ToolStep("pci-global-rescan-settle", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan && sleep 4")),
         lspci_endpoint_step(config),
     ]
     if verify_command:

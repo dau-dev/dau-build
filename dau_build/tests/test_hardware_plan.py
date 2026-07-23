@@ -1713,9 +1713,9 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
     assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
     assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent
-    assert "setpci -s 0000:03:01.0 BRIDGE_CONTROL=40:40" in by_name["secondary-bus-reset"]
-    assert "BRIDGE_CONTROL=00:40" in by_name["secondary-bus-reset"]
-    assert "echo 1 > /sys/bus/pci/rescan; sleep 4" in by_name["pci-global-rescan-settle"]
+    assert "setpci -s 0000:03:01.0 BRIDGE_CONTROL=40:40 && sleep 0.6" in by_name["secondary-bus-reset"]
+    assert "BRIDGE_CONTROL=00:40 && sleep 1.5" in by_name["secondary-bus-reset"]  # && so a setpci failure fails the step
+    assert "echo 1 > /sys/bus/pci/rescan && sleep 4" in by_name["pci-global-rescan-settle"]
     assert by_name["verify-device"].endswith("'sudo probe-magic'")
     assert by_name["deadman-disarm"] == "dau-utils-deadman disarm"
 
