@@ -167,6 +167,11 @@ class HostAccess(BaseModel):
     runtime_pm_patterns: tuple[str, ...]
     runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
     jtag_cable: str = "digilent_hs2"
+    # the endpoint's direct upstream bridge, for the secondary-bus reset
+    # (PERST#-equivalent) that re-inits the PCIe core after a volatile
+    # reprogram; a measured bench fact, explicit rather than inferred from
+    # rescan_bdfs order
+    reset_bridge_bdf: str | None = None
 
     @field_validator("pci_id", "endpoint_bdf")
     @classmethod

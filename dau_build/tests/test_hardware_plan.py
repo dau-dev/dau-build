@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import dau_build.hardware_plan as hardware_plan
-import dau_build.vivado_backend as vivado_backend
+from dau_build import hardware_plan, vivado_backend
 from dau_build.build_steps import BuildStepError
 from dau_build.config import run_request_config
 from dau_build.hardware_plan import (
@@ -1684,3 +1683,90 @@ def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
             dau_driver_root=Path("/repo/dau-driver"),
             stage_task_name="",
         )
+
+
+def test_sram_program_plan_is_the_proven_ladder() -> None:
+    """The volatile reprogram ladder, pinned step by step: every entry
+    exists for a bench-discovered reason and the order is the safety."""
+    from dau_build.hardware_plan import SramProgramPlan
+
+    config = _bench_config(
+        work_root=Path("/tmp/w"),
+        bitstream_path=Path("/tmp/design.bit"),
+        reset_bridge_bdf="0000:03:01.0",
+    )
+    steps = SramProgramPlan(verify_command="sudo probe-magic").compose(config)
+    assert [step.name for step in steps] == [
+        "pm-hold-device",
+        "deadman-arm",
+        "remove-endpoint",
+        "program-volatile",
+        "secondary-bus-reset",
+        "pci-global-rescan-settle",
+        "lspci-endpoint",
+        "verify-device",
+        "deadman-disarm",
+    ]
+    by_name = {step.name: step.command_line for step in steps}
+    assert "dau-utils-pci-runtime-pm hold --device 0000:04:00.0" in by_name["pm-hold-device"]
+    assert "pm hold skipped" in by_name["pm-hold-device"]  # tolerant prep
+    assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
+    assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
+    assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent
+    assert "setpci -s 0000:03:01.0 BRIDGE_CONTROL=40:40 && sleep 0.6" in by_name["secondary-bus-reset"]
+    assert "BRIDGE_CONTROL=00:40 && sleep 1.5" in by_name["secondary-bus-reset"]  # && so a setpci failure fails the step
+    assert "echo 1 > /sys/bus/pci/rescan && sleep 4" in by_name["pci-global-rescan-settle"]
+    assert by_name["verify-device"].endswith("'sudo probe-magic'")
+    assert by_name["deadman-disarm"] == "dau-utils-deadman disarm"
+
+    # without the injected verify the step is absent, ladder otherwise identical
+    bare = SramProgramPlan().compose(config)
+    assert [step.name for step in bare] == [step.name for step in steps if step.name != "verify-device"]
+
+
+def test_sram_program_plan_requires_the_bridge_fact() -> None:
+    from dau_build.hardware_plan import SramProgramPlan
+
+    config = _bench_config(work_root=Path("/tmp/w"), bitstream_path=Path("/tmp/design.bit"))
+    with pytest.raises(ValueError, match="reset_bridge_bdf"):
+        SramProgramPlan().compose(config)
+
+
+def test_deadman_stays_armed_when_a_step_fails(tmp_path: Path) -> None:
+    """The executor's failure semantics ARE the deadman contract: it stops
+    at the first failing step and runs only *release cleanup steps after,
+    so deadman-disarm (deliberately not named *release) never runs and the
+    box self-recovers by forced reboot."""
+    from dau_build.hardware_plan import ToolStep, execute_plan_steps
+
+    disarm_marker = tmp_path / "disarmed"
+    release_marker = tmp_path / "released"
+    steps = (
+        ToolStep("deadman-arm", ("true",)),
+        ToolStep("program-volatile", ("false",)),  # the wedge
+        ToolStep("thunderbolt-release", ("sh", "-c", f"touch {release_marker}")),
+        ToolStep("deadman-disarm", ("sh", "-c", f"touch {disarm_marker}")),
+    )
+    code = execute_plan_steps(steps)
+    assert code != 0
+    assert release_marker.exists()  # *release cleanup DOES run
+    assert not disarm_marker.exists()  # the deadman stays armed
+
+
+def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> None:
+    result = run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=["plan=plans/sram-program"],
+        model_values={
+            "work_root": str(tmp_path),
+            "bitstream": "/tmp/design.bit",
+            "endpoint_bdf": "0000:04:00.0",
+            "reset_bridge_bdf": "0000:03:01.0",
+            "expected_endpoint_id": "10ee:7011",
+            "jtag_cable": "digilent_hs2",
+            "runtime_pm_patterns": (),
+            "rescan_bdfs": ("0000:03:01.0",),
+        },
+    )
+    assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]

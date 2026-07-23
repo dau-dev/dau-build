@@ -10,15 +10,15 @@ from pydantic import ConfigDict, model_validator
 __all__ = (
     "ARTIFACT_MANIFEST_SCHEMA",
     "SUPPORTED_ARTIFACT_KINDS",
-    "ArtifactManifestError",
     "Artifact",
     "ArtifactManifest",
-    "load_artifact_manifest",
+    "ArtifactManifestError",
     "artifact_manifest_from_mapping",
-    "validate_artifact_files",
-    "artifact_path",
     "artifact_modules",
+    "artifact_path",
     "artifact_with_modules",
+    "load_artifact_manifest",
+    "validate_artifact_files",
 )
 
 ARTIFACT_MANIFEST_SCHEMA = ARTLINK_MANIFEST_SCHEMA
@@ -40,7 +40,7 @@ class ArtifactManifest(Manifest):
             raise ArtifactManifestError(str(exc)) from exc
 
     @model_validator(mode="after")
-    def _validate_supported_kinds(self) -> "ArtifactManifest":
+    def _validate_supported_kinds(self) -> ArtifactManifest:
         unsupported_kinds = tuple(dict.fromkeys(artifact.kind for artifact in self.artifacts if artifact.kind not in SUPPORTED_ARTIFACT_KINDS))
         if unsupported_kinds:
             raise ValueError(f"unsupported artifact kind(s): {', '.join(unsupported_kinds)}")

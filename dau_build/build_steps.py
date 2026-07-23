@@ -1047,6 +1047,7 @@ class HardwarePlanTask(BuildCallableModel):
     openfpgaloader: str = "openFPGALoader"
     jtag_cable: str | None = None
     endpoint_bdf: str | None = None
+    reset_bridge_bdf: str | None = None
     expected_endpoint_id: str | None = None
     runtime_pm_executable: str | None = None
     runtime_pm_patterns: tuple[str, ...] | None = None
@@ -1076,6 +1077,7 @@ class HardwarePlanTask(BuildCallableModel):
             openfpgaloader_executable=self.openfpgaloader,
             jtag_cable=self.jtag_cable,
             endpoint_bdf=self.endpoint_bdf,
+            reset_bridge_bdf=self.reset_bridge_bdf,
             expected_endpoint_id=self.expected_endpoint_id,
             runtime_pm_executable=self.runtime_pm_executable,
             runtime_pm_patterns=self.runtime_pm_patterns,
@@ -1160,7 +1162,7 @@ def available_task_names() -> tuple[str, ...]:
 def parse_override_dict(arguments: Iterable[str]) -> dict[str, str]:
     overrides: dict[str, str] = {}
     for argument in arguments:
-        normalized_argument = argument[1:] if argument.startswith("+") else argument
+        normalized_argument = argument.removeprefix("+")
         if "=" not in normalized_argument:
             raise BuildStepError(f"expected key=value override, got {argument!r}")
         key, value = normalized_argument.split("=", 1)

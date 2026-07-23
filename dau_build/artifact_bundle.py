@@ -14,11 +14,11 @@ HDL_SOURCE_LANGUAGES = frozenset(("systemverilog", "verilog"))
 __all__ = (
     "HDL_SOURCE_LANGUAGES",
     "SUPPORTED_SOURCE_LANGUAGES",
-    "ArtifactBundleError",
-    "ArtifactBundleEntry",
     "ArtifactBundle",
-    "load_artifact_bundle",
+    "ArtifactBundleEntry",
+    "ArtifactBundleError",
     "is_hdl_source_artifact",
+    "load_artifact_bundle",
     "source_language_from_path",
 )
 
@@ -51,7 +51,7 @@ class ArtifactBundle(BaseModel):
     def hdl_source_entries(self) -> tuple[ArtifactBundleEntry, ...]:
         return tuple(entry for entry in self.entries_for_kind("source") if is_hdl_source_artifact(entry.artifact))
 
-    def validate(self, *, required_roles: tuple[str, ...] = (), require_hdl_sources: bool = False) -> "ArtifactBundle":
+    def validate(self, *, required_roles: tuple[str, ...] = (), require_hdl_sources: bool = False) -> ArtifactBundle:
         errors: list[str] = []
         roles = {entry.artifact.role for entry in self.entries}
         missing_roles = tuple(role for role in required_roles if role not in roles)

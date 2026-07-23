@@ -21,6 +21,7 @@ vivado_mount_root: null
 openfpgaloader: openFPGALoader
 jtag_cable: null
 endpoint_bdf: null
+reset_bridge_bdf: null
 expected_endpoint_id: null
 runtime_pm_executable: null
 runtime_pm_patterns: null

@@ -13,8 +13,8 @@ ternary expressions — do not block validation)."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 try:
     from pyslang import SyntaxKind, SyntaxTree

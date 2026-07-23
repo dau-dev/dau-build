@@ -57,8 +57,9 @@ class HardwareToolchainConfig(BaseModel):
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader_executable: str = "openFPGALoader"
-    # the console script dau-utils actually installs (dau_utils.pci_runtime_pm)
+    # the console scripts dau-utils actually installs
     runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
+    deadman_executable: str = "dau-utils-deadman"
     # host access is board/host configuration, never code defaults: compose
     # it from a platform's host_access (for_platform) or set the fields
     # explicitly. Steps that need an unset (None) fact fail with guidance;
@@ -67,6 +68,7 @@ class HardwareToolchainConfig(BaseModel):
     runtime_pm_patterns: tuple[str, ...] | None = None
     jtag_cable: str | None = None
     endpoint_bdf: str | None = None
+    reset_bridge_bdf: str | None = None
     expected_endpoint_id: str | None = None
     rescan_bdfs: tuple[str, ...] | None = None
     # the board's default programming method (PlatformDefinition.program_method:
@@ -76,7 +78,7 @@ class HardwareToolchainConfig(BaseModel):
     programmer: Any = None
 
     @classmethod
-    def for_platform(cls, platform, *, work_root: Path, programmer=None, **overrides) -> "HardwareToolchainConfig":
+    def for_platform(cls, platform, *, work_root: Path, programmer=None, **overrides) -> HardwareToolchainConfig:
         """Compose the toolchain config from a registered platform's
         ``host_access`` (board/host config, not code defaults) and its
         ``program_method``. Explicit keyword overrides win; with neither, the
@@ -95,6 +97,7 @@ class HardwareToolchainConfig(BaseModel):
                 # runtime-PM holds) — never silently the dpv1 defaults
                 "rescan_bdfs": access.rescan_bdfs,
                 "runtime_pm_patterns": access.runtime_pm_patterns,
+                "reset_bridge_bdf": access.reset_bridge_bdf,
             }
         method = getattr(platform, "program_method", None)
         if method is not None:
@@ -573,6 +576,40 @@ def pci_rescan_step(bridge_bdfs: Sequence[str] = ()) -> ToolStep:
     return ToolStep("pci-rescan", ("sh", "-c", _pci_rescan_script(bridge_bdfs)))
 
 
+def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
+    """Device-scoped runtime-PM hold as safe prep — tolerant when the
+    endpoint is absent (recovering a wedged device must not abort here)."""
+    bdf = config.required_host_access("endpoint_bdf")
+    hold = shlex.join((config.runtime_pm_executable, "hold", "--device", bdf))
+    return ToolStep("pm-hold-device", ("sh", "-c", f"{hold} || echo 'pm hold skipped (device absent)'"))
+
+
+def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -> ToolStep:
+    """Arm the forced-reboot deadman over the risky PCIe window. The
+    matching disarm step runs ONLY on plan success: the executor stops on
+    the first failure and never reaches it, so a wedge self-recovers by
+    reboot to the SPI-resident design (timeout is SECONDS)."""
+    return ToolStep("deadman-arm", (config.deadman_executable, "arm", "--timeout", str(timeout_s)))
+
+
+def deadman_disarm_step(config: HardwareToolchainConfig) -> ToolStep:
+    # deliberately NOT named *release: the failure path's cleanup pass runs
+    # only *release steps, and the deadman must stay armed on failure
+    return ToolStep("deadman-disarm", (config.deadman_executable, "disarm"))
+
+
+def secondary_bus_reset_step(config: HardwareToolchainConfig) -> ToolStep:
+    """Secondary-bus reset (PERST# equivalent) on the endpoint's direct
+    upstream bridge: after a volatile reprogram the endpoint enumerates but
+    its register block stays dead until the bus reset re-inits the PCIe
+    core. The bridge BDF is a measured bench fact (host_access)."""
+    bridge = shlex.quote(str(config.required_host_access("reset_bridge_bdf")))
+    # && chaining: a setpci failure must fail the STEP (a trailing sleep's
+    # exit status would otherwise mask it and let the plan reach the disarm)
+    script = f"setpci -s {bridge} BRIDGE_CONTROL=40:40 && sleep 0.6 && setpci -s {bridge} BRIDGE_CONTROL=00:40 && sleep 1.5"
+    return ToolStep("secondary-bus-reset", ("sh", "-c", script))
+
+
 def lspci_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
     return ToolStep("lspci-endpoint", ("sh", "-c", _lspci_endpoint_script(config)))
 
@@ -676,7 +713,7 @@ class HardwarePlan(BaseModel):
 
     name: str
 
-    def compose(self, config: "HardwareToolchainConfig") -> tuple[ToolStep, ...]:
+    def compose(self, config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
         raise NotImplementedError
 
 
@@ -706,6 +743,43 @@ class ThunderboltReleasePlan(HardwarePlan):
 
     def compose(self, config):
         return thunderbolt_release_plan(config)
+
+
+def sram_program_plan(
+    config: HardwareToolchainConfig, *, deadman_timeout_s: int = 180, verify_command: str | None = None
+) -> tuple[ToolStep, ...]:
+    """The proven volatile (SRAM) reprogram ladder, safe order: PM hold ->
+    deadman arm -> sysfs remove -> volatile program -> secondary-bus reset ->
+    global rescan + settle -> endpoint verify [-> injected device verify] ->
+    deadman disarm. Every step exists for a bench-discovered reason; the
+    disarm runs only when everything before it succeeded."""
+    steps = [
+        pm_hold_device_step(config),
+        deadman_arm_step(config, timeout_s=deadman_timeout_s),
+        remove_endpoint_step(config),
+        program_volatile_step(config),
+        secondary_bus_reset_step(config),
+        # && chaining: a failed rescan write must fail the step, not be
+        # masked by the settle sleep's exit status
+        ToolStep("pci-global-rescan-settle", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan && sleep 4")),
+        lspci_endpoint_step(config),
+    ]
+    if verify_command:
+        # an injected device-level verify (e.g. a register-magic probe from a
+        # package that owns the device API) — the enumeration check above is
+        # necessary but not sufficient
+        steps.append(ToolStep("verify-device", ("sh", "-c", verify_command)))
+    steps.append(deadman_disarm_step(config))
+    return tuple(steps)
+
+
+class SramProgramPlan(HardwarePlan):
+    name: str = "sram-program"
+    deadman_timeout_s: int = 180
+    verify_command: str | None = None
+
+    def compose(self, config):
+        return sram_program_plan(config, deadman_timeout_s=self.deadman_timeout_s, verify_command=self.verify_command)
 
 
 class FlashPlan(HardwarePlan):
