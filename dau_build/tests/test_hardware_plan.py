@@ -71,6 +71,7 @@ EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI
 DPV1_HOST_ACCESS = {
     "expected_endpoint_id": "10ee:7011",
     "endpoint_bdf": "0000:04:00.0",
+    "reset_bridge_bdf": "0000:03:01.0",
     "jtag_cable": "digilent_hs2",
     "runtime_pm_patterns": ("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
     "rescan_bdfs": EXPECTED_PCI_RESCAN_BDFS,
@@ -1730,7 +1731,8 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
 def test_sram_program_plan_requires_the_bridge_fact() -> None:
     from dau_build.hardware_plan import SramProgramPlan
 
-    config = _bench_config(work_root=Path("/tmp/w"), bitstream_path=Path("/tmp/design.bit"))
+    # a host without the measured bridge fact must fail with guidance
+    config = _bench_config(work_root=Path("/tmp/w"), bitstream_path=Path("/tmp/design.bit"), reset_bridge_bdf=None)
     with pytest.raises(ValueError, match="reset_bridge_bdf"):
         SramProgramPlan().compose(config)
 
