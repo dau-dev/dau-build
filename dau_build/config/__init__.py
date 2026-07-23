@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config

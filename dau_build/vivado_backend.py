@@ -650,9 +650,7 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
     )
     optional_empty_keys = {"vivado_mount_root"}
     for key in required_keys:
-        if key not in manifest:
-            errors.append(f"manifest missing required key: {key}")
-        elif key not in optional_empty_keys and not manifest[key]:
+        if key not in manifest or key not in optional_empty_keys and not manifest[key]:
             errors.append(f"manifest missing required key: {key}")
     if manifest.get("backend") and manifest["backend"] != "dau_build.vivado_backend.vivado_overlay":
         errors.append(f"unexpected backend: {manifest['backend']}")

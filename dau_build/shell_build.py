@@ -26,8 +26,8 @@ __all__ = (
     "SHELL_BUILD_MANIFEST_NAME",
     "ShellBuildError",
     "ShellBuildStatus",
-    "run_shell_project_build",
     "parse_shell_build_console",
+    "run_shell_project_build",
     "shell_build_manifest",
     "write_shell_build_manifest",
 )

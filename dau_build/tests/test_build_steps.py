@@ -142,7 +142,7 @@ def test_simulate_step_validates_sources_and_reports_local_simulation_inputs(tmp
 
     assert result == BuildStepResult(
         step="simulate",
-        message="dau-build-simulate\tspec={} top=dau_identity_top modules=ff sources=1 engine=svparser status=validated".format(spec_path),
+        message=f"dau-build-simulate\tspec={spec_path} top=dau_identity_top modules=ff sources=1 engine=svparser status=validated",
     )
 
 
@@ -416,7 +416,7 @@ def test_task_dispatch_import_stays_light() -> None:
 def test_vivado_engine_threads_the_overlay_definition_into_the_handoff(tmp_path: Path, monkeypatch) -> None:
     from types import SimpleNamespace
 
-    import dau_build.build_steps as build_steps
+    from dau_build import build_steps
     from dau_build.vivado_backend import VivadoOverlayDefinition
 
     captured = {}

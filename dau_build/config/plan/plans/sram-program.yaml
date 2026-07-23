@@ -1,0 +1,12 @@
+# @package plan
+
+# The proven volatile (SRAM) reprogram ladder: PM hold -> deadman arm ->
+# sysfs remove -> volatile program -> secondary-bus reset -> rescan+settle
+# -> endpoint verify [-> injected device verify] -> deadman disarm (success
+# only — a failure leaves the deadman armed and the box self-recovers to
+# the SPI-resident design). Needs the platform's host_access facts,
+# including reset_bridge_bdf.
+_target_: dau_build.hardware_plan.SramProgramPlan
+name: sram-program
+deadman_timeout_s: 180
+verify_command: null

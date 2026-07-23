@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
@@ -55,21 +55,21 @@ except ImportError:
 from typing_extensions import Self
 
 __all__ = (
-    "Keyword",
-    "Size",
-    "Dimensions",
-    "Port",
-    "Input",
-    "Output",
-    "Inout",
-    "Parameter",
-    "Wire",
     "ContinuousAssignment",
-    "ProceduralBlock",
-    "GenerateBlock",
-    "Module",
-    "Interface",
     "Design",
+    "Dimensions",
+    "GenerateBlock",
+    "Inout",
+    "Input",
+    "Interface",
+    "Keyword",
+    "Module",
+    "Output",
+    "Parameter",
+    "Port",
+    "ProceduralBlock",
+    "Size",
+    "Wire",
 )
 
 
@@ -189,7 +189,7 @@ class Dimensions(BaseModel):
 
 class _Base(BaseModel):
     name: str
-    instance_name: Optional[str] = Field(default="")
+    instance_name: str | None = Field(default="")
     node: object | None = Field(default=None)
 
     def to_string(self, indent: str = ""):  # noqa: ARG002 (node to_string interface)
@@ -208,7 +208,7 @@ class _Base(BaseModel):
 class Modport(_Base):
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
-    modports: list["Modport"] = Field(default_factory=list)
+    modports: list[Modport] = Field(default_factory=list)
 
     def to_string(self, indent: str = ""):
         ret = f"{indent}{self.__class__.__name__}({self.name})"
@@ -247,7 +247,6 @@ class Output(Port):
 class Inout(Port):
     """Bidirectional port."""
 
-    pass
 
 
 class Wire(BaseModel):
@@ -292,7 +291,7 @@ class GenerateBlock(BaseModel):
 
     kind: str = "region"
     body: str = ""
-    modules: list["Module"] = Field(default_factory=list)
+    modules: list[Module] = Field(default_factory=list)
 
     def __str__(self):
         return f"Generate({self.kind}, {len(self.modules)} submodules)"
@@ -327,7 +326,7 @@ class Module(_Base):
     inouts: list[Inout] = Field(default_factory=list)
 
     modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
-    modules: list["Module"] = Field(default_factory=list, description="Sub module instantiations")
+    modules: list[Module] = Field(default_factory=list, description="Sub module instantiations")
 
     links: list[Link] = Field(default_factory=list)
 
@@ -342,7 +341,7 @@ class Module(_Base):
     final_blocks: list[ProceduralBlock] = Field(default_factory=list)
     generate_blocks: list[GenerateBlock] = Field(default_factory=list, description="Generate constructs")
 
-    source_path: Optional[Path] = Field(default=None, description="Path to source SV file")
+    source_path: Path | None = Field(default=None, description="Path to source SV file")
 
     def instance(self) -> Instance:
         """Return an Amaranth `Instance` type correctly specified for the underlying systemverilog code
@@ -489,7 +488,7 @@ class Module(_Base):
                 if hasattr(child, "declarators"):
                     yield child
 
-    def _eval_dim_expr(self, expr) -> Optional[int]:
+    def _eval_dim_expr(self, expr) -> int | None:
         """Evaluate a dimension expression using known parameters and localparams, None if unresolvable."""
         namespace = {"clog2": _sv_clog2}
         namespace.update({p.name: p.value for p in self.parameters})
@@ -591,9 +590,7 @@ class Module(_Base):
                         else:
                             # TODO: ref ports, etc.
                             assert False
-                elif port.kind == TokenKind.Comma:
-                    continue
-                elif port.kind in (TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
+                elif port.kind == TokenKind.Comma or port.kind in (TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
                     continue
                 else:
                     assert False
@@ -837,7 +834,7 @@ class Design(BaseModel):
     modules: dict[str, Module] = Field(default_factory=dict)
 
     @classmethod
-    def from_directory(cls, path: Path, extension: str = "sv") -> "Design":
+    def from_directory(cls, path: Path, extension: str = "sv") -> Design:
         """Parse all SV files in a directory."""
         design = cls()
         for f in sorted(path.glob(f"*.{extension}")):
@@ -849,7 +846,7 @@ class Design(BaseModel):
         return design
 
     @classmethod
-    def from_files(cls, paths: list[Path]) -> "Design":
+    def from_files(cls, paths: list[Path]) -> Design:
         """Parse specific SV files."""
         design = cls()
         for f in paths:
@@ -857,7 +854,7 @@ class Design(BaseModel):
             design.modules[mod.name] = mod
         return design
 
-    def resolve(self) -> "Design":
+    def resolve(self) -> Design:
         """Resolve all submodule references within the design."""
         for name, mod in self.modules.items():
             for i, sub in enumerate(mod.modules):

@@ -15,8 +15,8 @@ validation (``dau_build.sv_contract``) before emission.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from ccflow import BaseModel
 
@@ -139,7 +139,7 @@ class ScanComposition(BaseModel):
         _validate_composition_shape(self)
 
 
-def _validate_composition_shape(composition: "ScanComposition") -> None:
+def _validate_composition_shape(composition: ScanComposition) -> None:
     """The composition's shape and width-coherence invariants. Called from
     ``model_post_init`` AND from both public generators: ``model_copy`` skips
     pydantic validation, so an emitted top/sim must re-check — an incoherent

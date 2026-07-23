@@ -41,10 +41,10 @@ class Programmer(BaseModel):
 
     name: str
 
-    def detect_step(self, config: "HardwareToolchainConfig") -> "ToolStep | None":  # noqa: ARG002 (Programmer interface)
+    def detect_step(self, config: HardwareToolchainConfig) -> ToolStep | None:  # noqa: ARG002 (Programmer interface)
         return None
 
-    def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":
+    def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
         raise NotImplementedError
 
 
@@ -58,17 +58,17 @@ class OpenFpgaLoaderProgrammer(Programmer):
     executable: str = "openFPGALoader"
     jtag_cable: str | None = None
 
-    def _cable(self, config: "HardwareToolchainConfig") -> str:
+    def _cable(self, config: HardwareToolchainConfig) -> str:
         if self.jtag_cable is not None:
             return self.jtag_cable
         return config.required_host_access("jtag_cable")
 
-    def detect_step(self, config: "HardwareToolchainConfig") -> "ToolStep":
+    def detect_step(self, config: HardwareToolchainConfig) -> ToolStep:
         from dau_build.hardware_plan import ToolStep
 
         return ToolStep("jtag-detect", (self.executable, "-c", self._cable(config), "--detect"))
 
-    def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":
+    def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
         from dau_build.hardware_plan import ToolStep
 
         if mode == "persistent":
@@ -87,7 +87,7 @@ class VivadoHwServerProgrammer(Programmer):
     name: str = "vivado-hwserver"
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
 
-    def program_step(self, config: "HardwareToolchainConfig", *, mode: Literal["volatile", "persistent"] = "volatile") -> "ToolStep":
+    def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
         if mode != "persistent":
             raise ValueError(
                 'vivado-hwserver has no volatile programming path; request the persistent flash write explicitly (mode="persistent", e.g. the flash plan) or compose a JTAG programmer'
