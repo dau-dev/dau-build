@@ -1709,7 +1709,10 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     ]
     by_name = {step.name: step.command_line for step in steps}
     assert "dau-utils-pci-runtime-pm hold --device 0000:04:00.0" in by_name["pm-hold-device"]
-    assert "pm hold skipped" in by_name["pm-hold-device"]  # tolerant prep
+    # tolerant ONLY when the endpoint is absent; a hold failure with the
+    # device present must fail the step
+    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in by_name["pm-hold-device"]
+    assert "pm hold skipped (device absent)" in by_name["pm-hold-device"]
     assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
     assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
     assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent

@@ -581,7 +581,12 @@ def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
     endpoint is absent (recovering a wedged device must not abort here)."""
     bdf = config.required_host_access("endpoint_bdf")
     hold = shlex.join((config.runtime_pm_executable, "hold", "--device", bdf))
-    return ToolStep("pm-hold-device", ("sh", "-c", f"{hold} || echo 'pm hold skipped (device absent)'"))
+    quoted_bdf = shlex.quote(str(bdf))
+    # tolerate ONLY an absent endpoint (recovering a wedged device); a hold
+    # failure with the device present propagates — proceeding into a
+    # reprogram without the PM hold is exactly the wedge class this guards
+    script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold}; else echo 'pm hold skipped (device absent)'; fi"
+    return ToolStep("pm-hold-device", ("sh", "-c", script))
 
 
 def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -> ToolStep:
