@@ -1099,9 +1099,15 @@ class HardwarePlanTask(BuildCallableModel):
 
 
 def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallableModel]]:
-    """The hydra config tree is the single registry of steps/tasks: each
+    """A derived index of DAU-BUILD'S OWN packaged config tree: each local
     ``config/<kind>/<name>.yaml`` names its model via ``_target_``, and the
-    name→class maps are derived from it, never hand-maintained."""
+    name→class maps are derived from it, never hand-maintained. SCOPE: this
+    deliberately covers only the tasks/steps this package ships (its own
+    drift-guards and by-name test helpers). It is NOT the global task
+    registry — tasks contributed by other packages on the hydra search path
+    (``hydra.lernaplugins``: dau-core, dau-polars, ...) compose and execute
+    through the CLI's ``compose_config`` -> ``cfg_run`` path, which is the
+    composition-backed surface."""
     import importlib
 
     import yaml
