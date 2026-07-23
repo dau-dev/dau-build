@@ -112,9 +112,14 @@ class SynthesizeCoresTask(BuildCallableModel):
             definitions = loaded_cores()
             if name not in definitions:
                 raise UnknownCoreError(name)
-            return definitions[name]
+            definition = definitions[name]
         except UnknownCoreError as exc:
             raise BuildStepError(f"unknown core {entry!r}") from exc
+        if definition.kind.value == "package":
+            # a SystemVerilog package is not a synthesizable top; it rides
+            # along as a dependency of the tiles that import it
+            raise BuildStepError(f"core {entry!r} is a package, not a synthesizable top; select the tiles that depend on it")
+        return definition
 
     def _part(self) -> str:
         if self.part is not None:

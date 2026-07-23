@@ -172,3 +172,8 @@ def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
     # a K=32 build is a different shape than the registered K=8 envelope, not drift
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, compare=False)
     assert report.registered_matches is None
+
+
+def test_package_entries_are_rejected(tmp_path: Path) -> None:
+    with pytest.raises(BuildStepError, match="not a synthesizable top"):
+        _task(tmp_path, cores=("/dau-core/aggregation-pkg",))(NullContext())
