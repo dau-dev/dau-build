@@ -40,9 +40,9 @@ class CoreEnvelopeReport(BaseModel):
     ff: int
     bram36: float
     dsp: int
-    wns_ns: float
-    met: bool
-    registered_matches: bool | None = None  # None: no envelope registered
+    wns_ns: float | None = None  # None: characterized unclocked
+    met: bool | None = None
+    registered_matches: bool | None = None  # None: no envelope registered, or overrides changed the shape
 
 
 class SynthesizeCoresTask(BuildCallableModel):
@@ -56,6 +56,10 @@ class SynthesizeCoresTask(BuildCallableModel):
     # per-core `-generic` overrides, keyed by core name then parameter name;
     # an override of a parameter the core does not declare is rejected
     parameters: Mapping[str, Mapping[str, int]] = {}
+    # per-core clock port when it is not the tile contract's `clk`
+    # (identity-axil's s_axi_aclk); empty string = combinational, no clock
+    # constraint and no timing report
+    clock_ports: Mapping[str, str] = {}
     # run the plan (the synthesis host has vivado); false = handoff only
     execute: bool = False
     vivado: str = "vivado"
@@ -83,7 +87,9 @@ class SynthesizeCoresTask(BuildCallableModel):
         reports = [self._run_and_parse(definition, script, root=root) for definition, script in zip(definitions, scripts)]
         drift = [report.name for report in reports if report.registered_matches is False]
         summary = " ".join(
-            f"{r.name}:lut={r.lut},ff={r.ff},bram36={r.bram36},dsp={r.dsp},wns={r.wns_ns:+.3f},{'met' if r.met else 'VIOLATED'}" for r in reports
+            f"{r.name}:lut={r.lut},ff={r.ff},bram36={r.bram36},dsp={r.dsp},"
+            + (f"wns={r.wns_ns:+.3f},{'met' if r.met else 'VIOLATED'}" if r.wns_ns is not None else "unclocked")
+            for r in reports
         )
         return BuildStepResult(
             step="synthesize-cores",
@@ -138,18 +144,21 @@ class SynthesizeCoresTask(BuildCallableModel):
         reads = "\n".join(f"read_verilog -sv {_tcl_path(path)}" for path in sources)
         # the clock rides an XDC read BEFORE synth_design so synthesis itself
         # is clock-constrained (a create_clock after synth_design would leave
-        # synthesis unconstrained and only time the report)
-        xdc = root / f"{definition.module}.ooc.xdc"
-        xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports clk]\n")
+        # synthesis unconstrained and only time the report); a core whose
+        # clock_ports entry is "" is combinational — no constraint, no timing
+        clock_port = self.clock_ports.get(definition.name, "clk")
         util_rpt = root / f"{definition.module}.util.rpt"
-        timing_rpt = root / f"{definition.module}.timing.rpt"
-        tcl = (
-            f"{reads}\n"
-            f"read_xdc -mode out_of_context {_tcl_path(xdc)}\n"
-            f"synth_design -top {definition.module} -part {part} -mode out_of_context{generic_args}\n"
-            f"report_utilization -file {_tcl_path(util_rpt)}\n"
-            f"report_timing_summary -max_paths 1 -delay_type max -file {_tcl_path(timing_rpt)}\n"
-        )
+        lines = [reads]
+        if clock_port:
+            xdc = root / f"{definition.module}.ooc.xdc"
+            xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports {clock_port}]\n")
+            lines.append(f"read_xdc -mode out_of_context {_tcl_path(xdc)}")
+        lines.append(f"synth_design -top {definition.module} -part {part} -mode out_of_context{generic_args}")
+        lines.append(f"report_utilization -file {_tcl_path(util_rpt)}")
+        if clock_port:
+            timing_rpt = root / f"{definition.module}.timing.rpt"
+            lines.append(f"report_timing_summary -max_paths 1 -delay_type max -file {_tcl_path(timing_rpt)}")
+        tcl = "\n".join(lines) + "\n"
         script = root / f"{definition.module}.ooc.tcl"
         script.write_text(tcl)
         return script
@@ -191,22 +200,27 @@ class SynthesizeCoresTask(BuildCallableModel):
         return self.parse_reports(definition, output_root=root)
 
     @staticmethod
-    def parse_reports(definition, *, output_root: Path) -> CoreEnvelopeReport:
-        """Parse a core's utilization/timing reports into an envelope report,
-        comparing against the envelope registered in the core registry."""
+    def parse_reports(definition, *, output_root: Path, clocked: bool = True, compare: bool = True) -> CoreEnvelopeReport:
+        """Parse a core's utilization (and, when clocked, timing) reports into
+        an envelope report, comparing against the registered envelope only
+        when the build used the registered (default) parameters."""
         util = (output_root / f"{definition.module}.util.rpt").read_text()
-        timing = (output_root / f"{definition.module}.timing.rpt").read_text()
         lut = _util_value(util, r"Slice LUTs\*?")
         ff = _util_value(util, r"Slice Registers")
         bram = _util_float(util, r"Block RAM Tile")
         dsp = _util_value(util, r"DSPs")
-        slack = re.search(r"Slack \((MET|VIOLATED)\)\s*:\s*(-?[\d.]+)ns", timing)
-        if slack is None:
-            raise BuildStepError(f"no slack line in {definition.module}.timing.rpt")
-        wns = float(slack.group(2)) if slack.group(1) == "MET" else -abs(float(slack.group(2)))
+        wns = None
+        met = None
+        if clocked:
+            timing = (output_root / f"{definition.module}.timing.rpt").read_text()
+            slack = re.search(r"Slack \((MET|VIOLATED)\)\s*:\s*(-?[\d.]+)ns", timing)
+            if slack is None:
+                raise BuildStepError(f"no slack line in {definition.module}.timing.rpt")
+            wns = float(slack.group(2)) if slack.group(1) == "MET" else -abs(float(slack.group(2)))
+            met = slack.group(1) == "MET"
         registered = definition.resources
         matches = None
-        if registered is not None:
+        if compare and registered is not None:
             matches = (registered.lut, registered.ff, registered.bram36, registered.dsp) == (lut, ff, bram, dsp)
         return CoreEnvelopeReport(
             name=definition.name,
@@ -216,7 +230,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             bram36=bram,
             dsp=dsp,
             wns_ns=wns,
-            met=slack.group(1) == "MET",
+            met=met,
             registered_matches=matches,
         )
 

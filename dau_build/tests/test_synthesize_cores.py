@@ -151,3 +151,24 @@ def test_relative_output_root_stages_absolute_paths(tmp_path: Path, monkeypatch:
             assert str(tmp_path) in line, line
     plan = (tmp_path / "ooc" / "synthesize-cores.sh").read_text()
     assert str(tmp_path / "ooc" / "dau_int32_streaming_top_k.ooc.tcl") in plan
+
+
+def test_clock_port_mapping_and_unclocked_core(tmp_path: Path) -> None:
+    # identity-axil clocks on s_axi_aclk; identity-registers is combinational
+    _task(tmp_path, cores=("/dau-core/identity-axil",), clock_ports={"identity-axil": "s_axi_aclk"})(NullContext())
+    xdc = (tmp_path / "dau_identity_axil.ooc.xdc").read_text()
+    assert "[get_ports s_axi_aclk]" in xdc
+    _task(tmp_path, cores=("/dau-core/identity-registers",), clock_ports={"identity-registers": ""})(NullContext())
+    tcl = (tmp_path / "dau_identity_registers.ooc.tcl").read_text()
+    assert "read_xdc" not in tcl and "report_timing_summary" not in tcl
+
+
+def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
+    from dau_core.cores import core
+
+    definition = core("int32-streaming-top-k")
+    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "5000"))
+    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+    # a K=32 build is a different shape than the registered K=8 envelope, not drift
+    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, compare=False)
+    assert report.registered_matches is None
