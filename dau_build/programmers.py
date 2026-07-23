@@ -72,6 +72,12 @@ class OpenFpgaLoaderProgrammer(Programmer):
         from dau_build.hardware_plan import ToolStep
 
         if mode == "persistent":
+            if config.spi_boot_buswidth not in (None, 1):
+                raise ValueError(
+                    f"raw-bit persistent flash (-f) on an SPIx{config.spi_boot_buswidth}-boot board leaves the "
+                    "configuration memory-dead (the boot sequence needs the cfgmem-written image); use the "
+                    "vivado cfgmem path (the flash plan's flash.tcl) or a volatile SRAM program"
+                )
             return ToolStep("program-persistent", (self.executable, "-c", self._cable(config), "-f", str(config.bitstream)))
         return ToolStep("program-volatile", (self.executable, "-c", self._cable(config), str(config.bitstream)))
 
@@ -91,6 +97,15 @@ class VivadoHwServerProgrammer(Programmer):
         if mode != "persistent":
             raise ValueError(
                 'vivado-hwserver has no volatile programming path; request the persistent flash write explicitly (mode="persistent", e.g. the flash plan) or compose a JTAG programmer'
+            )
+        if config.bitstream_path is not None:
+            # flash.tcl programs the work tree's own generated cfgmem image;
+            # silently ignoring an explicit bitstream would flash a stale or
+            # unrelated artifact — guard EVERY route through this programmer
+            raise ValueError(
+                "the cfgmem flash path programs the work tree's generated image and cannot take an external "
+                f"bitstream ({config.bitstream_path}); flash from the shell-build work tree, or use the volatile "
+                "SRAM plan for an explicit bitstream"
             )
         from dau_build.hardware_plan import ToolStep
 

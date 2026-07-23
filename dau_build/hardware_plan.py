@@ -75,6 +75,9 @@ class HardwareToolchainConfig(BaseModel):
     # jtag->openFPGALoader, flash->vivado-hwserver); an explicit `programmer`
     # (a Programmer model composed from the `programmer` group) wins.
     program_method: str = "jtag"
+    # only 4 is supported: the cfgmem generator writes SPIx4 (see
+    # PlatformDefinition.spi_boot_buswidth)
+    spi_boot_buswidth: Literal[4] | None = None
     programmer: Any = None
 
     @classmethod
@@ -102,6 +105,7 @@ class HardwareToolchainConfig(BaseModel):
         method = getattr(platform, "program_method", None)
         if method is not None:
             values["program_method"] = method
+        values["spi_boot_buswidth"] = getattr(platform, "spi_boot_buswidth", None)
         if programmer is not None:
             values["programmer"] = programmer
         values.update({key: value for key, value in overrides.items() if value is not None})
@@ -391,11 +395,22 @@ def flash_plan(
     python: str = "python3",
     vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
 ) -> tuple[ToolStep, ...]:
-    return (
+    steps = [
         thunderbolt_hold_step(config, dau_utils_root=dau_utils_root, python=python),
         flash_step(config, vivado_settings=vivado_settings),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
-    )
+    ]
+    if config.spi_boot_buswidth not in (None, 1):
+        # a JTAG/hot reset never runs the SPI configuration sequence: only a
+        # physical power-on brings the freshly-flashed image up alive. A
+        # printing step, deliberately not executable.
+        steps.append(
+            ToolStep(
+                "cold-power-cycle-required",
+                ("sh", "-c", "echo 'NOTE: physical cold power cycle required — the SPI boot sequence only runs from power-on'"),
+            )
+        )
+    return tuple(steps)
 
 
 def thunderbolt_hold_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
@@ -525,7 +540,16 @@ def _smoke_steps(smoke_command: str | None) -> tuple[ToolStep, ...]:
 def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path) -> ToolStep:
     # a persistent write through the composed programmer (Vivado hw_server for
     # a flash board, openFPGALoader -f for a JTAG board) — the selector, not a
-    # hardcoded backend
+    # hardcoded backend. An SPI-boot board (spi_boot_buswidth set) always
+    # takes the vivado cfgmem path: a raw-bit -f write leaves its
+    # configuration memory-dead, and the JTAG programmer refuses it anyway.
+    if config.spi_boot_buswidth not in (None, 1) and config.programmer is None:
+        from dau_build.programmers import VivadoHwServerProgrammer
+
+        # the programmer itself refuses an external bitstream (flash.tcl
+        # programs the work tree's generated image) — the guard covers every
+        # route, including an explicitly composed vivado-hwserver programmer
+        return VivadoHwServerProgrammer(vivado_settings=vivado_settings).program_step(config, mode="persistent")
     return config.resolve_programmer(vivado_settings=vivado_settings).program_step(config, mode="persistent")
 
 
