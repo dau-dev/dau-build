@@ -1120,17 +1120,35 @@ def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallable
     return MappingProxyType(model_types)
 
 
-STEP_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = _model_types_from_config_group("step")
+# STEP_MODEL_TYPES / TASK_MODEL_TYPES resolve lazily (module __getattr__):
+# deriving them imports every _target_ module, and a task module defined
+# outside build_steps imports BuildCallableModel from here — eager derivation
+# at import time would make that a circular import. Lazy keeps the config
+# tree the single registry while letting tasks live in their own modules
+# (the extension mechanism).
+_MODEL_TYPE_CACHE: dict[str, Mapping[str, type[BuildCallableModel]]] = {}
 
-TASK_MODEL_TYPES: Mapping[str, type[BuildCallableModel]] = _model_types_from_config_group("task")
+
+def _model_types(kind: str) -> Mapping[str, type[BuildCallableModel]]:
+    if kind not in _MODEL_TYPE_CACHE:
+        _MODEL_TYPE_CACHE[kind] = _model_types_from_config_group(kind)
+    return _MODEL_TYPE_CACHE[kind]
+
+
+def __getattr__(name: str):
+    if name == "STEP_MODEL_TYPES":
+        return _model_types("step")
+    if name == "TASK_MODEL_TYPES":
+        return _model_types("task")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def available_step_names() -> tuple[str, ...]:
-    return tuple(sorted(STEP_MODEL_TYPES))
+    return tuple(sorted(_model_types("step")))
 
 
 def available_task_names() -> tuple[str, ...]:
-    return tuple(sorted(TASK_MODEL_TYPES))
+    return tuple(sorted(_model_types("task")))
 
 
 def parse_override_dict(arguments: Iterable[str]) -> dict[str, str]:
@@ -1153,7 +1171,7 @@ def execute_override_step(arguments: Iterable[str]) -> BuildStepResult:
     step_name = overrides.pop("step", None)
     if not step_name:
         raise BuildStepError("missing required override: step")
-    return _execute_named_callable(STEP_MODEL_TYPES, step_name, overrides, request_kind="step")
+    return _execute_named_callable(_model_types("step"), step_name, overrides, request_kind="step")
 
 
 def execute_override_task(arguments: Iterable[str]) -> BuildStepResult:
@@ -1163,7 +1181,7 @@ def execute_override_task(arguments: Iterable[str]) -> BuildStepResult:
         raise BuildStepError("missing required override: task")
     if "step" in overrides:
         raise BuildStepError("task requests cannot also provide step")
-    return _execute_named_callable(TASK_MODEL_TYPES, task_name, overrides, request_kind="task")
+    return _execute_named_callable(_model_types("task"), task_name, overrides, request_kind="task")
 
 
 def execute_override_request(arguments: Iterable[str]) -> BuildStepResult:
@@ -1173,9 +1191,9 @@ def execute_override_request(arguments: Iterable[str]) -> BuildStepResult:
     if task_name and step_name:
         raise BuildStepError("provide either task or step, not both")
     if task_name:
-        return _execute_named_callable(TASK_MODEL_TYPES, task_name, overrides, request_kind="task")
+        return _execute_named_callable(_model_types("task"), task_name, overrides, request_kind="task")
     if step_name:
-        return _execute_named_callable(STEP_MODEL_TYPES, step_name, overrides, request_kind="step")
+        return _execute_named_callable(_model_types("step"), step_name, overrides, request_kind="step")
     raise BuildStepError("missing required override: task")
 
 

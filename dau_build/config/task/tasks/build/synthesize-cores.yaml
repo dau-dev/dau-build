@@ -1,0 +1,19 @@
+# @package model
+
+# Per-core out-of-context characterization through the registry: resolves
+# /dau-core/<name> entries from the dau-core lernaplugin, plans one OOC
+# vivado synthesis per core, and (execute=true, on the synthesis host)
+# parses envelope reports and flags drift against the registered envelope.
+#   dau-build task=tasks/build/synthesize-cores \
+#     'model.cores=[/dau-core/int32-streaming-top-k]' \
+#     model.output_root=./ooc platform=platforms/dau/dpv1 model.execute=true
+_target_: dau_build.synthesize_cores.SynthesizeCoresTask
+platform: ${oc.select:platform,null}
+cores: ???
+output_root: ???
+part: null
+clock_period_ns: 8.0
+parameters: {}
+clock_ports: {}
+execute: false
+vivado: vivado
