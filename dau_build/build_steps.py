@@ -1085,7 +1085,9 @@ class HardwarePlanTask(BuildCallableModel):
         )
         plan_result = plan.compose(config)
         if self.execute:
-            return_code = execute_plan_steps(plan_result)
+            # serialize the device: the executor holds a host lock on the
+            # endpoint BDF (a board is one exclusive resource)
+            return_code = execute_plan_steps(plan_result, endpoint_bdf=getattr(config, "endpoint_bdf", None))
             if return_code != 0:
                 raise BuildStepError(f"hardware plan {plan.name!r} failed with exit code {return_code}")
             return BuildStepResult(
