@@ -1527,9 +1527,7 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
 
     # dpv1's host_access config reproduces the proven bench facts exactly
     # (spi_boot_buswidth rides the platform, not host_access — supplied here)
-    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(
-        work_root=Path("/w"), spi_boot_buswidth=4
-    )
+    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(work_root=Path("/w"), spi_boot_buswidth=4)
 
     # a board with different access data changes the plans through config alone
     other = dpv1_platform().model_copy(deep=True)
@@ -1845,3 +1843,61 @@ def test_toolchain_config_rejects_an_unsupported_spi_width() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         HardwareToolchainConfig(work_root=Path("/w"), spi_boot_buswidth=2)
+
+
+def test_device_lock_path_is_user_private_and_tmpdir_independent(monkeypatch) -> None:
+    from dau_build.hardware_plan import device_lock_path
+
+    # the per-user runtime dir, never world-writable /tmp; TMPDIR must not move it
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+    monkeypatch.setenv("TMPDIR", "/some/other/tmp")
+    a = device_lock_path("0000:04:00.0")
+    monkeypatch.setenv("TMPDIR", "/yet/another")
+    b = device_lock_path("0000:04:00.0")
+    assert a == b == Path("/run/user/1000/dau/dau-hw-0000-04-00-0.lock")
+    assert "/tmp/" not in str(a)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    assert device_lock_path("0000:04:00.0") == Path.home() / ".dau" / "locks" / "dau-hw-0000-04-00-0.lock"
+
+
+def test_device_lock_path_canonicalizes_bdf_case() -> None:
+    from dau_build.hardware_plan import device_lock_path
+
+    # equivalent spellings must key ONE lock, else serialization is defeated
+    assert device_lock_path("0000:0A:00.0") == device_lock_path("0000:0a:00.0")
+
+
+def test_execute_serializes_on_the_device_lock(tmp_path, monkeypatch) -> None:
+    """Two overlapping executions of a device plan must not interleave: the
+    second blocks on the endpoint lock until the first releases."""
+    import threading
+    import time
+
+    from dau_build.hardware_plan import ToolStep, execute_plan_steps
+
+    # pin the lock path to this test's tmp dir (the monkeypatch targets the
+    # module attribute the executor reads, so no direct import is needed)
+    monkeypatch.setattr("dau_build.hardware_plan.device_lock_path", lambda bdf: tmp_path / "dev.lock")
+    log = tmp_path / "order.log"
+    # each "run" appends enter/exit around a sleep; if they interleave the
+    # log shows enter,enter — serialized it shows enter,exit,enter,exit
+    step = ToolStep("work", ("sh", "-c", f"echo enter >> {log}; sleep 0.4; echo exit >> {log}"))
+
+    def run():
+        execute_plan_steps((step,), endpoint_bdf="0000:04:00.0")
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    threads[0].start()
+    time.sleep(0.05)
+    threads[1].start()
+    for thread in threads:
+        thread.join()
+    assert log.read_text().split() == ["enter", "exit", "enter", "exit"]
+
+
+def test_execute_without_a_device_runs_unserialized(tmp_path) -> None:
+    from dau_build.hardware_plan import ToolStep, execute_plan_steps
+
+    marker = tmp_path / "ran"
+    code = execute_plan_steps((ToolStep("t", ("sh", "-c", f"touch {marker}")),))
+    assert code == 0 and marker.exists()

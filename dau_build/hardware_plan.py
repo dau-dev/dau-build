@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import os
+import re
 import shlex
 import subprocess
 from collections.abc import Sequence
@@ -721,7 +723,28 @@ def format_plan_steps(steps: Sequence[ToolStep]) -> str:
     return "\n".join(f"{step.name}\t{step.command_line}" for step in steps)
 
 
-def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
+def device_lock_dir() -> Path:
+    """The USER-PRIVATE runtime directory the device locks live in:
+    ``$XDG_RUNTIME_DIR/dau`` (the standard per-user, 0700, tmpfs runtime
+    location) when set, else ``~/.dau/locks``. User-private by design — a
+    bench is single-operator, so serializing the operator's own processes is
+    the requirement; a user-private dir (not world-writable ``/tmp``) has no
+    predictable-path symlink or ``fs.protected_regular`` attack surface, and
+    unlike ``tempfile.gettempdir()`` it is stable for that user."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return Path(runtime) / "dau" if runtime else Path.home() / ".dau" / "locks"
+
+
+def device_lock_path(endpoint_bdf: str) -> Path:
+    """The advisory lock path for a device, keyed on its endpoint BDF, in
+    the user-private runtime dir. The BDF is lower-cased before keying so
+    equivalent spellings (``0000:0A:00.0`` / ``0000:0a:00.0``) map to ONE
+    lock — differing keys would silently defeat serialization."""
+    slug = re.sub(r"[^0-9a-zA-Z]+", "-", endpoint_bdf.lower()).strip("-")
+    return device_lock_dir() / f"dau-hw-{slug}.lock"
+
+
+def _run_plan_steps(steps: Sequence[ToolStep]) -> int:
     for index, step in enumerate(steps):
         print(f"+ {step.command_line}", flush=True)
         result = subprocess.run(step.argv)
@@ -732,6 +755,39 @@ def execute_plan_steps(steps: Sequence[ToolStep]) -> int:
                     subprocess.run(cleanup_step.argv)
             return result.returncode
     return 0
+
+
+def execute_plan_steps(steps: Sequence[ToolStep], *, endpoint_bdf: str | None = None) -> int:
+    """Run a hardware plan's steps in order. When ``endpoint_bdf`` is given,
+    the whole run is serialized under an advisory lock keyed on that device
+    (a board is one exclusive resource: no two plan runs from the operator's
+    processes may remove/reset/program the same endpoint at once). Without it
+    (a device-less plan) the steps run unserialized."""
+    if endpoint_bdf is None:
+        return _run_plan_steps(steps)
+    import fcntl
+
+    lock = device_lock_path(endpoint_bdf)
+    lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # mkdir(mode=) is umask-masked and only applied to newly-created leaves;
+    # force 0700 on the lock dir so a permissive umask can't leave it group/
+    # world-writable (another account could then swap the lock out from under
+    # O_NOFOLLOW, which only guards the final component)
+    try:
+        lock.parent.chmod(0o700)
+    except OSError:
+        pass  # not the owner / racing peer — flock still coordinates
+    # O_NOFOLLOW: refuse to follow a symlink at the lock path (the dir is
+    # user-private, so this is belt-and-braces)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            return _run_plan_steps(steps)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 class HardwarePlan(BaseModel):
@@ -774,9 +830,7 @@ class ThunderboltReleasePlan(HardwarePlan):
         return thunderbolt_release_plan(config)
 
 
-def sram_program_plan(
-    config: HardwareToolchainConfig, *, deadman_timeout_s: int = 180, verify_command: str | None = None
-) -> tuple[ToolStep, ...]:
+def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int = 180, verify_command: str | None = None) -> tuple[ToolStep, ...]:
     """The proven volatile (SRAM) reprogram ladder, safe order: PM hold ->
     deadman arm -> sysfs remove -> volatile program -> secondary-bus reset ->
     global rescan + settle -> endpoint verify [-> injected device verify] ->
