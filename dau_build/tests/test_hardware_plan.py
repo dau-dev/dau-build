@@ -833,9 +833,10 @@ def test_task_prints_recovery_plan_without_running_privileged_commands() -> None
     lines = result.message.splitlines()
     assert lines[0] == "thunderbolt-hold\tdau-utils-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
     assert lines[1:4] == [
-        "remove-endpoint\tsh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
+        # dpv1 fronts the privileged sysfs steps with sudo; the JTAG program runs as the user
+        "remove-endpoint\tsudo sh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
         "program-volatile\topenFPGALoader -c digilent_hs2 /repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
-        f"pci-rescan\tsh -c '{EXPECTED_PCI_RESCAN_SCRIPT}'",
+        f"pci-rescan\tsudo sh -c '{EXPECTED_PCI_RESCAN_SCRIPT}'",
     ]
     assert lines[4].startswith("lspci-endpoint\tsh -c ")
     assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in lines[4]
@@ -1526,8 +1527,11 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     from dau_build.platforms import dpv1_platform
 
     # dpv1's host_access config reproduces the proven bench facts exactly
-    # (spi_boot_buswidth rides the platform, not host_access — supplied here)
-    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(work_root=Path("/w"), spi_boot_buswidth=4)
+    # (spi_boot_buswidth rides the platform, not host_access — supplied here;
+    # dpv1 also fronts its privileged PCIe steps with sudo)
+    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(
+        work_root=Path("/w"), spi_boot_buswidth=4, privilege_prefix=("sudo",)
+    )
 
     # a board with different access data changes the plans through config alone
     other = dpv1_platform().model_copy(deep=True)
@@ -1540,10 +1544,11 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     steps = recovery_plan(config)
     by_name = {step.name: step for step in steps}
     assert by_name["thunderbolt-hold"].argv == ("dau-utils-pci-runtime-pm", "hold", "--pattern", "Acme")
-    assert "0000:65:00.0/remove" in by_name["remove-endpoint"].argv[2]
+    # privileged steps are sudo-fronted (prefix-agnostic: check the rendered line)
+    assert "0000:65:00.0/remove" in by_name["remove-endpoint"].command_line
     assert by_name["program-volatile"].argv[1:3] == ("-c", "ft4232")
-    assert "0000:64:00.0" in by_name["pci-rescan"].argv[2]
-    assert "0000:03:01.0" not in by_name["pci-rescan"].argv[2]
+    assert "0000:64:00.0" in by_name["pci-rescan"].command_line
+    assert "0000:03:01.0" not in by_name["pci-rescan"].command_line
     assert "lspci -Dnn -d 10ee:9038" in by_name["lspci-endpoint"].argv[2]
     assert "0000:64:00.0" in by_name["lspci-endpoint"].argv[2]
 
@@ -1671,7 +1676,8 @@ def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
     steps = recovery_plan(config)
     by_name = {step.name: step for step in steps}
     assert by_name["thunderbolt-hold"].argv == ("dau-utils-pci-runtime-pm", "hold")
-    assert by_name["pci-rescan"].argv[2] == "echo 1 > /sys/bus/pci/rescan"
+    # with no bridge bdfs the rescan is the bare global write (sudo-fronted on dpv1)
+    assert by_name["pci-rescan"].argv[-1] == "echo 1 > /sys/bus/pci/rescan"
 
 
 def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
@@ -1729,6 +1735,25 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     assert [step.name for step in bare] == [step.name for step in steps if step.name != "verify-device"]
 
 
+def test_sram_program_plan_prefixes_only_the_privileged_steps() -> None:
+    """The privilege prefix (sudo) fronts the sysfs/setpci/PM-hold steps so
+    their writes run as root, but NOT the deadman (it self-escalates via
+    `sudo systemctl`) or the JTAG program (it runs as the user) — escalating
+    those would change the deadman's unit ownership and need root JTAG."""
+    from dau_build.hardware_plan import SramProgramPlan
+
+    config = _bench_config(work_root=Path("/tmp/w"), bitstream_path=Path("/tmp/design.bit"), privilege_prefix=("sudo",))
+    by_name = {step.name: step for step in SramProgramPlan().compose(config)}
+
+    for privileged in ("pm-hold-device", "remove-endpoint", "secondary-bus-reset", "pci-global-rescan-settle"):
+        assert by_name[privileged].argv[:3] == ("sudo", "sh", "-c"), privileged
+    # the redirect runs under sudo (sudo fronts the whole sh -c)
+    assert "echo 1 > /sys/bus/pci/rescan" in by_name["pci-global-rescan-settle"].command_line
+
+    for unprivileged in ("deadman-arm", "program-volatile", "lspci-endpoint", "deadman-disarm"):
+        assert by_name[unprivileged].argv[0] != "sudo", unprivileged
+
+
 def test_sram_program_plan_requires_the_bridge_fact() -> None:
     from dau_build.hardware_plan import SramProgramPlan
 
@@ -1776,6 +1801,19 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
         },
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
+
+
+def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) -> None:
+    """`model.privilege_prefix` must be declared in the packaged task config so
+    Hydra's struct mode accepts the override (e.g. clear it to run as root)."""
+    result = run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=["plan=plans/sram-program", "platform=platforms/dau/dpv1", "model.privilege_prefix=[]"],
+        model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
+    )
+    # dpv1 defaults to sudo; the override clears it (already-root invocation)
+    assert "remove-endpoint\tsh -c" in result.message and "remove-endpoint\tsudo" not in result.message
 
 
 def test_spi_boot_board_flash_plan_takes_the_cfgmem_path() -> None:

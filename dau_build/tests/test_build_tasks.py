@@ -601,6 +601,7 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
         expected_endpoint_id="10ee:7011",
         runtime_pm_patterns=("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
         rescan_bdfs=("0000:03:01.0", "0000:02:00.0", "0000:00:0d.3", "0000:00:0d.2", "0000:00:0d.0", "0000:00:07.2", "0000:00:07.0"),
+        privilege_prefix=("sudo",),
     )(None)
     composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=dpv1_platform())(None)
     # dpv1's host_access reproduces the explicit bench-fact plan text

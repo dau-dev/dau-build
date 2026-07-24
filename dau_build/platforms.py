@@ -172,6 +172,12 @@ class HostAccess(BaseModel):
     # reprogram; a measured bench fact, explicit rather than inferred from
     # rescan_bdfs order
     reset_bridge_bdf: str | None = None
+    # command prefix for the host-side PRIVILEGED PCIe steps (sysfs writes,
+    # setpci, the runtime-PM hold), e.g. ("sudo",). The deadman self-escalates
+    # (it invokes `sudo systemctl` itself) and the JTAG programmer runs
+    # unprivileged, so this wraps ONLY the steps that write sysfs/config space.
+    # Empty (the default) = already privileged, or an unprivileged host.
+    privilege_prefix: tuple[str, ...] = ()
 
     @field_validator("pci_id", "endpoint_bdf")
     @classmethod
