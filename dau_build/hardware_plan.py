@@ -80,6 +80,10 @@ class HardwareToolchainConfig(BaseModel):
     # only 4 is supported: the cfgmem generator writes SPIx4 (see
     # PlatformDefinition.spi_boot_buswidth)
     spi_boot_buswidth: Literal[4] | None = None
+    # command prefix for the privileged PCIe steps (sysfs/setpci/PM hold);
+    # the deadman self-escalates and the JTAG programmer runs as the user, so
+    # only the sysfs-writing steps carry it. Empty = already privileged.
+    privilege_prefix: tuple[str, ...] = ()
     programmer: Any = None
 
     @classmethod
@@ -103,6 +107,7 @@ class HardwareToolchainConfig(BaseModel):
                 "rescan_bdfs": access.rescan_bdfs,
                 "runtime_pm_patterns": access.runtime_pm_patterns,
                 "reset_bridge_bdf": access.reset_bridge_bdf,
+                "privilege_prefix": access.privilege_prefix,
             }
         method = getattr(platform, "program_method", None)
         if method is not None:
@@ -167,7 +172,7 @@ def build_and_program_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, .
         vivado_build_step(config),
         *detect_steps(config),
         program_volatile_step(config),
-        pci_rescan_step(config.required_host_access("rescan_bdfs")),
+        pci_rescan_step(config),
         lspci_endpoint_step(config),
     )
 
@@ -177,7 +182,7 @@ def recovery_plan(config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
         thunderbolt_hold_step(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.required_host_access("rescan_bdfs")),
+        pci_rescan_step(config),
         lspci_endpoint_step(config),
     )
 
@@ -211,7 +216,7 @@ def local_build_and_program_plan(
         *detect_steps(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.required_host_access("rescan_bdfs")),
+        pci_rescan_step(config),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -362,7 +367,7 @@ def validate_bitstream_plan(
         *detect_steps(config),
         remove_endpoint_step(config),
         program_volatile_step(config),
-        pci_rescan_step(config.required_host_access("rescan_bdfs")),
+        pci_rescan_step(config),
         lspci_endpoint_step(config),
         *_smoke_steps(smoke_command),
         thunderbolt_release_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -589,17 +594,28 @@ def program_volatile_step(config: HardwareToolchainConfig) -> ToolStep:
     return config.resolve_programmer().program_step(config)
 
 
+def _privileged_sh(config: HardwareToolchainConfig, name: str, script: str) -> ToolStep:
+    """A privileged ``sh -c`` step, prefixed with the host's escalation
+    (e.g. ``sudo``) so the sysfs/config-space write runs as root. ``sudo``
+    fronts the whole ``sh -c`` so the shell REDIRECT executes as root too
+    (``sudo sh -c 'echo 1 > …'``, never ``sudo echo … >`` which redirects as
+    the caller)."""
+    return ToolStep(name, (*config.privilege_prefix, "sh", "-c", script))
+
+
 def remove_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
     remove_path = f"/sys/bus/pci/devices/{config.required_host_access('endpoint_bdf')}/remove"
-    return ToolStep("remove-endpoint", ("sh", "-c", f"test ! -e {remove_path} || echo 1 > {remove_path}"))
+    return _privileged_sh(config, "remove-endpoint", f"test ! -e {remove_path} || echo 1 > {remove_path}")
 
 
 def pci_global_rescan_step() -> ToolStep:
     return ToolStep("pci-global-rescan", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan"))
 
 
-def pci_rescan_step(bridge_bdfs: Sequence[str] = ()) -> ToolStep:
-    return ToolStep("pci-rescan", ("sh", "-c", _pci_rescan_script(bridge_bdfs)))
+def pci_rescan_step(config: HardwareToolchainConfig) -> ToolStep:
+    # a privileged sysfs write, escalated with the host's prefix like the
+    # other rescan/remove steps
+    return _privileged_sh(config, "pci-rescan", _pci_rescan_script(config.required_host_access("rescan_bdfs")))
 
 
 def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
@@ -612,7 +628,7 @@ def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
     script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold}; else echo 'pm hold skipped (device absent)'; fi"
-    return ToolStep("pm-hold-device", ("sh", "-c", script))
+    return _privileged_sh(config, "pm-hold-device", script)
 
 
 def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -> ToolStep:
@@ -638,7 +654,7 @@ def secondary_bus_reset_step(config: HardwareToolchainConfig) -> ToolStep:
     # && chaining: a setpci failure must fail the STEP (a trailing sleep's
     # exit status would otherwise mask it and let the plan reach the disarm)
     script = f"setpci -s {bridge} BRIDGE_CONTROL=40:40 && sleep 0.6 && setpci -s {bridge} BRIDGE_CONTROL=00:40 && sleep 1.5"
-    return ToolStep("secondary-bus-reset", ("sh", "-c", script))
+    return _privileged_sh(config, "secondary-bus-reset", script)
 
 
 def lspci_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
@@ -844,7 +860,7 @@ def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int
         secondary_bus_reset_step(config),
         # && chaining: a failed rescan write must fail the step, not be
         # masked by the settle sleep's exit status
-        ToolStep("pci-global-rescan-settle", ("sh", "-c", "echo 1 > /sys/bus/pci/rescan && sleep 4")),
+        _privileged_sh(config, "pci-global-rescan-settle", "echo 1 > /sys/bus/pci/rescan && sleep 4"),
         lspci_endpoint_step(config),
     ]
     if verify_command:

@@ -1052,6 +1052,7 @@ class HardwarePlanTask(BuildCallableModel):
     runtime_pm_executable: str | None = None
     runtime_pm_patterns: tuple[str, ...] | None = None
     rescan_bdfs: tuple[str, ...] | None = None
+    privilege_prefix: tuple[str, ...] | None = None
     execute: bool = False
 
     @Flow.call
@@ -1082,6 +1083,7 @@ class HardwarePlanTask(BuildCallableModel):
             runtime_pm_executable=self.runtime_pm_executable,
             runtime_pm_patterns=self.runtime_pm_patterns,
             rescan_bdfs=self.rescan_bdfs,
+            privilege_prefix=self.privilege_prefix,
         )
         plan_result = plan.compose(config)
         if self.execute:

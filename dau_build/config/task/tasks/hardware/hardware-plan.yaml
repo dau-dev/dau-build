@@ -26,4 +26,5 @@ expected_endpoint_id: null
 runtime_pm_executable: null
 runtime_pm_patterns: null
 rescan_bdfs: null
+privilege_prefix: null
 execute: false

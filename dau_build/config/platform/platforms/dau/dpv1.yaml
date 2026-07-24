@@ -91,6 +91,11 @@ host_access:
   # secondary-bus reset target that re-inits the PCIe core after a
   # volatile reprogram
   reset_bridge_bdf: "0000:03:01.0"
+  # the bench host needs root for the sysfs/setpci/PM-hold steps; the
+  # deadman self-escalates and openFPGALoader runs as the user, so sudo
+  # fronts only the privileged steps
+  privilege_prefix:
+    - sudo
   rescan_bdfs:
     - "0000:03:01.0"
     - "0000:02:00.0"
