@@ -36,20 +36,7 @@ def _write_self_contained_counter_manifest(tmp_path) -> Path:
     counter_source = Path(__file__).parent / "sv" / "counter.sv"
     profile_path = tmp_path / "counter-only-profiles.yaml"
     profile_path.write_text(
-        "\n".join(
-            (
-                "schema: dau.simulation-profile/v0",
-                "profiles:",
-                "  - name: counter-profile",
-                "    simulator: verilator",
-                "    top_module: counter_tb",
-                "    expect_stdout: DAU_BUILD_COUNTER_TB_OK",
-                "    sources:",
-                "      - artifact: counter-source",
-                "      - artifact: counter-tb",
-                "",
-            )
-        ),
+        "schema: dau.simulation-profile/v0\nprofiles:\n  - name: counter-profile\n    simulator: verilator\n    top_module: counter_tb\n    expect_stdout: DAU_BUILD_COUNTER_TB_OK\n    sources:\n      - artifact: counter-source\n      - artifact: counter-tb\n",
         encoding="utf-8",
     )
     manifest_path = tmp_path / "counter-only-profiles.artifacts.yaml"

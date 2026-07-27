@@ -350,28 +350,7 @@ def test_structured_vivado_backend_request_supports_source_only_mount_root(tmp_p
     (bundle_root / "rtl" / "operator.sv").write_text("module operator; endmodule\n", encoding="utf-8")
     bundle_path = bundle_root / "dau-identity.artifacts.yaml"
     bundle_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: dau-identity",
-                "artifacts:",
-                "  - path: generated/dau_identity_top.sv",
-                "    kind: source",
-                "    role: generated-top",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: dau_identity_top",
-                "  - path: rtl/operator.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: operator",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: dau-identity\nartifacts:\n  - path: generated/dau_identity_top.sv\n    kind: source\n    role: generated-top\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: dau_identity_top\n  - path: rtl/operator.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: operator\n",
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
@@ -420,28 +399,7 @@ def test_structured_vivado_backend_request_consumes_dau_artifact_bundle(tmp_path
     (bundle_root / "rtl" / "operator.sv").write_text("module operator; endmodule\n", encoding="utf-8")
     bundle_path = bundle_root / "dau-identity.artifacts.yaml"
     bundle_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: dau-identity",
-                "artifacts:",
-                "  - path: generated/dau_identity_top.sv",
-                "    kind: source",
-                "    role: generated-top",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: dau_identity_top",
-                "  - path: rtl/operator.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: operator",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: dau-identity\nartifacts:\n  - path: generated/dau_identity_top.sv\n    kind: source\n    role: generated-top\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: dau_identity_top\n  - path: rtl/operator.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: operator\n",
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
@@ -1202,7 +1160,7 @@ def test_task_execute_runs_plan_steps_in_order(monkeypatch) -> None:
     class Completed:
         returncode = 0
 
-    def fake_run(argv):
+    def fake_run(argv, check=False):
         calls.append(tuple(argv))
         return Completed()
 
@@ -1234,7 +1192,7 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
         def __init__(self, returncode: int) -> None:
             self.returncode = returncode
 
-    def fake_run(argv):
+    def fake_run(argv, check=False):
         calls.append(tuple(argv))
         return Completed(return_codes[len(calls) - 1])
 
@@ -1473,12 +1431,12 @@ def test_local_build_and_program_plan_honors_the_injected_definition(tmp_path: P
 
 def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
-    request_kwargs = dict(
-        source_shell_root=Path("/repo/projects/nite"),
-        work_root=tmp_path,
-        dau_core_root=Path("/repo/acme"),
-        dau_driver_root=Path("/repo/dau-driver"),
-    )
+    request_kwargs = {
+        "source_shell_root": Path("/repo/projects/nite"),
+        "work_root": tmp_path,
+        "dau_core_root": Path("/repo/acme"),
+        "dau_driver_root": Path("/repo/dau-driver"),
+    }
 
     injected = dict(
         vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs, overlay_definition=definition))

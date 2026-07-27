@@ -159,18 +159,18 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
 def _probe_platform(**overrides):
     from dau_build.platforms import HostLink, PlatformDefinition, PlatformMemory, ResourceBudget, XdmaPersonality
 
-    base = dict(
-        name="probe-k7",
-        part="xc7k325tffg900-2",
-        budget=ResourceBudget(lut=178800, ff=382600, bram36=415, dsp=810),
-        host_link=HostLink(
+    base = {
+        "name": "probe-k7",
+        "part": "xc7k325tffg900-2",
+        "budget": ResourceBudget(lut=178800, ff=382600, bram36=415, dsp=810),
+        "host_link": HostLink(
             interface="pcie-xdma",
             pcie_lanes=8,
             xdma_personality=XdmaPersonality(params={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
         ),
-        memory=PlatformMemory(kind="ddr3", size_bytes=8 << 30),
-        constraints_xdc="set_property CFGBVS GND [current_design]\n",
-    )
+        "memory": PlatformMemory(kind="ddr3", size_bytes=8 << 30),
+        "constraints_xdc": "set_property CFGBVS GND [current_design]\n",
+    }
     base.update(overrides)
     return PlatformDefinition(**base)
 
@@ -215,12 +215,12 @@ def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
 def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
-    common = dict(
-        output_root=tmp_path / "shell",
-        hdl_sources=(tile,),
-        generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
-        top_module="my_mm_top",
-    )
+    common = {
+        "output_root": tmp_path / "shell",
+        "hdl_sources": (tile,),
+        "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
+        "top_module": "my_mm_top",
+    }
     assert MmJobShellRequest(**common).resolved_part == "xc7a200tfbg484-2"  # dpv1 default
     assert MmJobShellRequest(platform=_probe_platform(), **common).resolved_part == "xc7k325tffg900-2"
     # an explicit part override wins over the platform
@@ -233,12 +233,12 @@ def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
 def test_default_platform_instances_are_not_shared(tmp_path: Path) -> None:
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
-    common = dict(
-        output_root=tmp_path / "shell",
-        hdl_sources=(tile,),
-        generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
-        top_module="my_mm_top",
-    )
+    common = {
+        "output_root": tmp_path / "shell",
+        "hdl_sources": (tile,),
+        "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
+        "top_module": "my_mm_top",
+    }
     first = MmJobShellRequest(**common)
     first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"
     second = MmJobShellRequest(**common)

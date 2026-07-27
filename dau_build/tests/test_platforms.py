@@ -163,28 +163,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     overlay = tmp_path / "user-configs"
     (overlay / "platform").mkdir(parents=True)
     (overlay / "platform" / "myboard.yaml").write_text(
-        "\n".join(
-            (
-                "# @package platform",
-                "_target_: dau_build.platforms.PlatformDefinition",
-                "name: myboard",
-                "part: xc7k70tfbg484-2",
-                "budget:",
-                "  _target_: dau_build.platforms.ResourceBudget",
-                "  lut: 41000",
-                "  ff: 82000",
-                "  bram36: 135",
-                "  dsp: 240",
-                "host_link:",
-                "  _target_: dau_build.platforms.HostLink",
-                "  interface: pcie-xdma",
-                "  pcie_lanes: 1",
-                "memory:",
-                "  _target_: dau_build.platforms.PlatformMemory",
-                "  kind: ddr3",
-                "  size_bytes: 1073741824",
-            )
-        )
+        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nmemory:\n  _target_: dau_build.platforms.PlatformMemory\n  kind: ddr3\n  size_bytes: 1073741824"
     )
     board = resolve_platform("myboard", config_dir=str(overlay))
     assert board.name == "myboard"
@@ -196,13 +175,13 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
 
 
 def _dpv1_with(**overrides: object) -> PlatformDefinition:
-    base = dict(
-        name="dpv1",
-        part="xc7a200tfbg484-2",
-        budget=ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
-        host_link=HostLink(interface="pcie-xdma", pcie_lanes=4),
-        memory=PlatformMemory(kind="ddr3", size_bytes=1 << 30),
-    )
+    base = {
+        "name": "dpv1",
+        "part": "xc7a200tfbg484-2",
+        "budget": ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
+        "host_link": HostLink(interface="pcie-xdma", pcie_lanes=4),
+        "memory": PlatformMemory(kind="ddr3", size_bytes=1 << 30),
+    }
     base.update(overrides)
     return PlatformDefinition(**base)  # type: ignore[arg-type]
 
