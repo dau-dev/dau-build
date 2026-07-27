@@ -17,7 +17,7 @@ def _slang_available() -> bool:
     if which("yosys") is None:
         return False
     try:
-        proc = subprocess.run(["yosys", "-m", "slang", "-p", "help read_slang"], capture_output=True, text=True)
+        proc = subprocess.run(["yosys", "-m", "slang", "-p", "help read_slang"], capture_output=True, text=True, check=False)
     except FileNotFoundError:
         return False
     return proc.returncode == 0

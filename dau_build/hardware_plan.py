@@ -763,12 +763,12 @@ def device_lock_path(endpoint_bdf: str) -> Path:
 def _run_plan_steps(steps: Sequence[ToolStep]) -> int:
     for index, step in enumerate(steps):
         print(f"+ {step.command_line}", flush=True)
-        result = subprocess.run(step.argv)
+        result = subprocess.run(step.argv, check=False)
         if result.returncode != 0:
             for cleanup_step in steps[index + 1 :]:
                 if cleanup_step.name.endswith("release"):
                     print(f"+ {cleanup_step.command_line}", flush=True)
-                    subprocess.run(cleanup_step.argv)
+                    subprocess.run(cleanup_step.argv, check=False)
             return result.returncode
     return 0
 

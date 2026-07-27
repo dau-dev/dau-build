@@ -122,16 +122,7 @@ def test_resolved_config_step_reports_typed_board_driver_operator_and_memory_mod
 
     assert result == BuildStepResult(
         step="resolved-config",
-        message="\n".join(
-            (
-                "dau-build-resolved-config",
-                "board\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr",
-                "backend\tname=none invocation=dry-run",
-                "driver\tos=host transport=xdma",
-                "operators\tset=spec names=identity",
-                "memory\thost_staging_bytes=0 device_staging_bytes=0",
-            )
-        ),
+        message="dau-build-resolved-config\nboard\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr\nbackend\tname=none invocation=dry-run\ndriver\tos=host transport=xdma\noperators\tset=spec names=identity\nmemory\thost_staging_bytes=0 device_staging_bytes=0",
     )
 
 
@@ -326,25 +317,7 @@ def _write_counter_spec(tmp_path: Path) -> Path:
 def _write_counter_testbench(tmp_path: Path) -> Path:
     testbench_path = tmp_path / "counter_tb.sv"
     testbench_path.write_text(
-        "\n".join(
-            (
-                "`timescale 1ns/1ps",
-                "module counter_tb;",
-                "  logic clk = 1'b0;",
-                "  logic [31:0] out;",
-                "  counter dut(.clk(clk), .out(out));",
-                "  always #5 clk = ~clk;",
-                "  initial begin",
-                "    repeat (3) @(posedge clk);",
-                "    #1;",
-                '    if (out != 32\'d3) $fatal(1, "counter mismatch: %0d", out);',
-                '    $display("DAU_BUILD_COUNTER_TB_OK");',
-                "    $finish;",
-                "  end",
-                "endmodule",
-                "",
-            )
-        ),
+        '`timescale 1ns/1ps\nmodule counter_tb;\n  logic clk = 1\'b0;\n  logic [31:0] out;\n  counter dut(.clk(clk), .out(out));\n  always #5 clk = ~clk;\n  initial begin\n    repeat (3) @(posedge clk);\n    #1;\n    if (out != 32\'d3) $fatal(1, "counter mismatch: %0d", out);\n    $display("DAU_BUILD_COUNTER_TB_OK");\n    $finish;\n  end\nendmodule\n',
         encoding="utf-8",
     )
     return testbench_path
@@ -353,19 +326,7 @@ def _write_counter_testbench(tmp_path: Path) -> Path:
 def _write_counter_profile_manifest(tmp_path: Path, testbench_path: Path) -> Path:
     profile_path = tmp_path / "counter-profiles.yaml"
     profile_path.write_text(
-        "\n".join(
-            (
-                "schema: dau.simulation-profile/v0",
-                "profiles:",
-                "  - name: counter-profile",
-                "    simulator: verilator",
-                "    top_module: counter_tb",
-                "    expect_stdout: DAU_BUILD_COUNTER_TB_OK",
-                "    sources:",
-                "      - artifact: counter-tb",
-                "",
-            )
-        ),
+        "schema: dau.simulation-profile/v0\nprofiles:\n  - name: counter-profile\n    simulator: verilator\n    top_module: counter_tb\n    expect_stdout: DAU_BUILD_COUNTER_TB_OK\n    sources:\n      - artifact: counter-tb\n",
         encoding="utf-8",
     )
     manifest_path = tmp_path / "counter-profiles.artifacts.yaml"
@@ -409,6 +370,7 @@ def test_task_dispatch_import_stays_light() -> None:
             "import sys; import dau_build.build_steps; heavy = [m for m in ('amaranth', 'pyslang', 'dau_sim') if m in sys.modules]; raise SystemExit(1 if heavy else 0)",
         ],
         capture_output=True,
+        check=False,
     )
     assert completed.returncode == 0, completed.stderr.decode()
 

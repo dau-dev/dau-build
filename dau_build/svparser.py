@@ -248,7 +248,6 @@ class Inout(Port):
     """Bidirectional port."""
 
 
-
 class Wire(BaseModel):
     """Internal wire/reg/logic/bit declaration within a module body."""
 
@@ -495,7 +494,7 @@ class Module(_Base):
         namespace.update(getattr(self, "__localparams__", {}))
         try:
             return int(eval(_translate_sv_expr(str(expr)), {"__builtins__": {}}, namespace))
-        except Exception:
+        except Exception:  # noqa: BLE001  # any eval failure means the dimension is unresolvable
             return None
 
     def _parse_localparams(self):
@@ -655,7 +654,7 @@ class Module(_Base):
                 keyword = "wire"
                 try:
                     dimensions = self._parse_dimensions(member.type)
-                except Exception:
+                except Exception:  # noqa: BLE001  # unparseable net type falls back to scalar
                     dimensions = Dimensions(dimensions=[1])
                 for decl in member.declarators:
                     name = decl.name.value
@@ -701,9 +700,8 @@ class Module(_Base):
             if isinstance(member, ProceduralBlockSyntax):
                 kind = kind_map.get(member.kind, str(member.kind))
                 sensitivity = ""
-                if member.kind == SyntaxKind.AlwaysFFBlock:
-                    if hasattr(member.statement, "timingControl") and member.statement.timingControl:
-                        sensitivity = str(member.statement.timingControl).strip()
+                if member.kind == SyntaxKind.AlwaysFFBlock and (hasattr(member.statement, "timingControl") and member.statement.timingControl):
+                    sensitivity = str(member.statement.timingControl).strip()
                 body = str(member).strip()
                 block = ProceduralBlock(kind=kind, sensitivity=sensitivity, body=body)
                 if kind == "always_comb":
@@ -748,7 +746,7 @@ class Module(_Base):
                             val = str(connection.expr[0][0]).strip()
                         link = Link(name=val, connection=val, position=i)
                         mod.links.append(link)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110  # skip connections whose expr shape we can't read
                         pass
             gen_block.modules.append(mod)
             return
@@ -841,7 +839,7 @@ class Design(BaseModel):
             try:
                 mod = Module.from_file(f)
                 design.modules[mod.name] = mod
-            except Exception:
+            except Exception:  # noqa: BLE001, S110  # skip files that fail to parse, keep the rest
                 pass
         return design
 
@@ -856,7 +854,7 @@ class Design(BaseModel):
 
     def resolve(self) -> Design:
         """Resolve all submodule references within the design."""
-        for name, mod in self.modules.items():
+        for mod in self.modules.values():
             for i, sub in enumerate(mod.modules):
                 if sub.name in self.modules:
                     resolved = self.modules[sub.name]
@@ -1180,7 +1178,7 @@ class Design(BaseModel):
 
     def __str__(self):
         parts = [f"Design({len(self.modules)} modules):"]
-        for name, mod in self.modules.items():
+        for mod in self.modules.values():
             parts.append(f"  {mod.to_string('  ')}")
         return "\n".join(parts)
 

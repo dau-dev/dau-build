@@ -106,18 +106,7 @@ def test_artifact_manifest_rejects_duplicate_artifact_paths() -> None:
 def test_load_artifact_manifest_rejects_missing_artifact_files(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: missing-file-bundle",
-                "artifacts:",
-                "  - path: rtl/missing.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: missing-file-bundle\nartifacts:\n  - path: rtl/missing.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n",
         encoding="utf-8",
     )
 
@@ -139,18 +128,7 @@ def test_load_artifact_manifest_rejects_removed_artifact_schema(tmp_path: Path) 
     (tmp_path / "rtl" / "filter.sv").write_text("module filter; endmodule\n", encoding="utf-8")
     manifest_path = tmp_path / "old-schema.artifacts.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.artifact-manifest/v0",
-                "name: removed-schema-bundle",
-                "artifacts:",
-                "  - path: rtl/filter.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "",
-            )
-        ),
+        "schema: artlink.artifact-manifest/v0\nname: removed-schema-bundle\nartifacts:\n  - path: rtl/filter.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n",
         encoding="utf-8",
     )
 

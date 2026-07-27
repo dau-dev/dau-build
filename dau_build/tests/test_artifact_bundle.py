@@ -10,18 +10,7 @@ def test_artifact_bundle_rejects_manifest_missing_required_roles(tmp_path: Path)
     (tmp_path / "python" / "model.py").write_text("class ReferenceModel: pass\n", encoding="utf-8")
     manifest_path = tmp_path / "package.artifacts.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: python-only-package",
-                "artifacts:",
-                "  - path: python/model.py",
-                "    kind: source",
-                "    role: python-source",
-                "    language: python",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: python-only-package\nartifacts:\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n",
         encoding="utf-8",
     )
 
@@ -38,28 +27,7 @@ def test_artifact_bundle_rejects_duplicate_module_providers(tmp_path: Path) -> N
     (tmp_path / "rtl" / "filter_b.sv").write_text("module filter_b; endmodule\n", encoding="utf-8")
     manifest_path = tmp_path / "package.artifacts.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: duplicate-module-package",
-                "artifacts:",
-                "  - path: rtl/filter_a.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: filter",
-                "  - path: rtl/filter_b.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "    provides:",
-                "      - kind: hdl-module",
-                "        name: filter",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: duplicate-module-package\nartifacts:\n  - path: rtl/filter_a.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: filter\n  - path: rtl/filter_b.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n    provides:\n      - kind: hdl-module\n        name: filter\n",
         encoding="utf-8",
     )
 
@@ -76,18 +44,7 @@ def test_artifact_bundle_rejects_unsupported_source_languages(tmp_path: Path) ->
     (tmp_path / "src" / "kernel.cpp").write_text("void kernel() {}\n", encoding="utf-8")
     manifest_path = tmp_path / "package.artifacts.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: unsupported-source-package",
-                "artifacts:",
-                "  - path: src/kernel.cpp",
-                "    kind: source",
-                "    role: native-source",
-                "    language: cpp",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: unsupported-source-package\nartifacts:\n  - path: src/kernel.cpp\n    kind: source\n    role: native-source\n    language: cpp\n",
         encoding="utf-8",
     )
 
@@ -104,21 +61,7 @@ def test_artifact_bundle_rejects_missing_hdl_sources_when_required(tmp_path: Pat
     (tmp_path / "python" / "model.py").write_text("class Model: pass\n", encoding="utf-8")
     manifest_path = tmp_path / "model.artifacts.yaml"
     manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: model-only",
-                "artifacts:",
-                "  - path: python/model.py",
-                "    kind: source",
-                "    role: python-reference",
-                "    language: python",
-                "    provides:",
-                "      - kind: python-symbol",
-                "        name: Model",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: model-only\nartifacts:\n  - path: python/model.py\n    kind: source\n    role: python-reference\n    language: python\n    provides:\n      - kind: python-symbol\n        name: Model\n",
         encoding="utf-8",
     )
 
