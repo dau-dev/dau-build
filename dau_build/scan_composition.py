@@ -45,8 +45,8 @@ class TileInstance(BaseModel):
     byte-identical."""
 
     module: str
-    config: dict[str, str] = {}
-    params: dict[str, int] = {}
+    config: dict[str, str] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
+    params: dict[str, int] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
 
 
 class LaneTile(TileInstance):

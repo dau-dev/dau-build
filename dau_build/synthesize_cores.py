@@ -197,6 +197,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             cwd=root,
             capture_output=True,
             text=True,
+            check=False,
         )
         if completed.returncode != 0:
             raise BuildStepError(

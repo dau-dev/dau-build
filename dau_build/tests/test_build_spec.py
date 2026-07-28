@@ -325,58 +325,12 @@ def test_build_spec_consumes_yaml_artifact_manifest_inputs(tmp_path: Path) -> No
     (package_dir / "bitstreams" / "package.bit").write_bytes(b"DAU")
     package_manifest_path = package_dir / "package.artifacts.yaml"
     package_manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: packaged-filter",
-                "artifacts:",
-                "  - path: rtl/packaged_filter.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "  - path: python/model.py",
-                "    kind: source",
-                "    role: python-source",
-                "    language: python",
-                "    provides:",
-                "      - kind: python-symbol",
-                "        name: PackagedFilter",
-                "  - path: constraints/package.xdc",
-                "    kind: metadata",
-                "    role: constraints",
-                "    format: xdc",
-                "  - path: bitstreams/package.bit",
-                "    kind: binary",
-                "    role: bitstream",
-                "    format: xilinx-bitstream",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: packaged-filter\nartifacts:\n  - path: rtl/packaged_filter.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n    provides:\n      - kind: python-symbol\n        name: PackagedFilter\n  - path: constraints/package.xdc\n    kind: metadata\n    role: constraints\n    format: xdc\n  - path: bitstreams/package.bit\n    kind: binary\n    role: bitstream\n    format: xilinx-bitstream\n",
         encoding="utf-8",
     )
     spec_path = tmp_path / "dau-build.yaml"
     spec_path.write_text(
-        "\n".join(
-            (
-                "name: packaged-filter-pipeline",
-                "top_name: dau_packaged_top",
-                "platform: sim",
-                "shell: unit-test",
-                "artifact_stem: dau-packaged",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - packaged-filter",
-                "artifact_manifests:",
-                "  - package/package.artifacts.yaml",
-                "modules:",
-                "  - packaged_filter",
-                "backend: none",
-                "",
-            )
-        ),
+        'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\nbackend: none\n',
         encoding="utf-8",
     )
 
@@ -405,43 +359,12 @@ def test_build_spec_reports_manifest_inputs_without_hdl(tmp_path: Path) -> None:
     (package_dir / "python" / "model.py").write_text("class ReferenceModel: pass\n", encoding="utf-8")
     package_manifest_path = package_dir / "package.artifacts.yaml"
     package_manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: python-only-package",
-                "artifacts:",
-                "  - path: python/model.py",
-                "    kind: source",
-                "    role: python-source",
-                "    language: python",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: python-only-package\nartifacts:\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n",
         encoding="utf-8",
     )
     spec_path = tmp_path / "dau-build.yaml"
     spec_path.write_text(
-        "\n".join(
-            (
-                "name: python-only-pipeline",
-                "top_name: dau_python_top",
-                "platform: sim",
-                "shell: unit-test",
-                "artifact_stem: dau-python",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - python-only",
-                "artifact_manifests:",
-                "  - package/package.artifacts.yaml",
-                "modules:",
-                "  - missing_hdl",
-                "backend: none",
-                "",
-            )
-        ),
+        'name: python-only-pipeline\ntop_name: dau_python_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-python\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - python-only\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - missing_hdl\nbackend: none\n',
         encoding="utf-8",
     )
 
@@ -465,55 +388,12 @@ def test_cli_inspect_reports_manifest_input_origins(tmp_path: Path, capsys) -> N
     (package_dir / "bitstreams" / "package.bit").write_bytes(b"DAU")
     package_manifest_path = package_dir / "package.artifacts.yaml"
     package_manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: packaged-filter",
-                "artifacts:",
-                "  - path: rtl/packaged_filter.sv",
-                "    kind: source",
-                "    role: hdl-source",
-                "    language: systemverilog",
-                "  - path: python/model.py",
-                "    kind: source",
-                "    role: python-source",
-                "    language: python",
-                "  - path: constraints/package.xdc",
-                "    kind: metadata",
-                "    role: constraints",
-                "    format: xdc",
-                "  - path: bitstreams/package.bit",
-                "    kind: binary",
-                "    role: bitstream",
-                "    format: xilinx-bitstream",
-                "",
-            )
-        ),
+        "schema: artlink.manifest/v0\nname: packaged-filter\nartifacts:\n  - path: rtl/packaged_filter.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n  - path: constraints/package.xdc\n    kind: metadata\n    role: constraints\n    format: xdc\n  - path: bitstreams/package.bit\n    kind: binary\n    role: bitstream\n    format: xilinx-bitstream\n",
         encoding="utf-8",
     )
     spec_path = tmp_path / "dau-build.yaml"
     spec_path.write_text(
-        "\n".join(
-            (
-                "name: packaged-filter-pipeline",
-                "top_name: dau_packaged_top",
-                "platform: sim",
-                "shell: unit-test",
-                "artifact_stem: dau-packaged",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - packaged-filter",
-                "artifact_manifests:",
-                "  - package/package.artifacts.yaml",
-                "modules:",
-                "  - packaged_filter",
-                "backend: none",
-                "",
-            )
-        ),
+        'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\nbackend: none\n',
         encoding="utf-8",
     )
 

@@ -88,7 +88,7 @@ def run_yosys_synthesis(request: YosysBackendRequest) -> YosysSynthesisResult:
         argv += ["-m", "slang"]
     argv += ["-s", str(script_path)]
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True)
+        proc = subprocess.run(argv, capture_output=True, text=True, check=False)
     except FileNotFoundError as exc:
         raise YosysBackendError(f"yosys executable {request.yosys!r} not found") from exc
     log_path = request.output_root / request.log_name
