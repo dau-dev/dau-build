@@ -218,6 +218,11 @@ class PlatformDefinition(BaseModel):
     constraints: tuple[str, ...] = ()
     constraints_xdc: str = ""
     lane_placements: tuple[tuple[int, str], ...] = ()
+    # the platform's on-wire identity word (1–4 ASCII bytes) advertised in the
+    # PLATFORM_ID register: the shell generators encode it into the identity
+    # block so first-power reads back the right platform. dpv1 = "DPV1"
+    # (the default), dpv2 overrides with its own.
+    platform_id: str = "DPV1"
     program_method: str = "jtag"
     # the flash device's boot bus width when the board self-configures from
     # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a
@@ -241,6 +246,20 @@ class PlatformDefinition(BaseModel):
     def _valid_program_method(cls, value: str) -> str:
         if value not in ("jtag", "flash"):
             raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
+        return value
+
+    @field_validator("platform_id")
+    @classmethod
+    def _valid_platform_id(cls, value: str) -> str:
+        # 1–4 ASCII bytes: it must fit a single 32-bit PLATFORM_ID word (the
+        # same rule dau-core's encoder enforces; checked here without importing
+        # the private core, per this module's public/private wall)
+        try:
+            encoded = value.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ValueError(f"platform_id must be ASCII, got {value!r}") from exc
+        if not 1 <= len(encoded) <= 4:
+            raise ValueError(f"platform_id must be 1 to 4 ASCII bytes, got {value!r}")
         return value
 
     @field_validator("job_clock_mhz")

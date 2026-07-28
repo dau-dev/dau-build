@@ -64,6 +64,20 @@ def test_sorted_scan_top_matches_golden() -> None:
     assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
 
 
+def test_platform_id_threads_into_the_identity_parameter() -> None:
+    """The platform's wire id encodes little-endian into the top's PLATFORM_ID
+    parameter and overrides the identity block; the default is DPV1."""
+    default = generate_scan_composition_top_sv(_bar_noc_composition())
+    assert "parameter [31:0] PLATFORM_ID = 32'h31565044," in default  # "DPV1"
+    assert ".PLATFORM_ID(PLATFORM_ID)," in default
+
+    dpv2 = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV2")
+    assert "parameter [31:0] PLATFORM_ID = 32'h32565044," in dpv2  # "DPV2"
+
+    with pytest.raises(ValueError, match="1 to 4 ASCII bytes"):
+        generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="TOOLONG")
+
+
 def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
     """The identity block advertises exactly what the composer computed:
     the bitmaps default to zero (never a static advertisement), the lane

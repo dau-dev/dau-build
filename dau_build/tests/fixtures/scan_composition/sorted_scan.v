@@ -5,6 +5,7 @@
 // lane(s) behind the DAU stream-job register contract with the NoC lane
 // register block. Plain-Verilog top (BD module references require it).
 module dau_mm_sorted_scan_job #(
+    parameter [31:0] PLATFORM_ID = 32'h31565044,
     parameter [31:0] OPERATOR_BITMAP = 32'h00000000,
     parameter [31:0] LANE_COUNT = 32'd4,
     parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000000,
@@ -374,6 +375,7 @@ module dau_mm_sorted_scan_job #(
     end
 
     dau_identity_registers #(
+        .PLATFORM_ID(PLATFORM_ID),
         .OPERATOR_BITMAP(OPERATOR_BITMAP),
         .LANE_COUNT(LANE_COUNT),
         .HOST_OPCODE_BITMAP(HOST_OPCODE_BITMAP),
