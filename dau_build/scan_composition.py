@@ -353,6 +353,7 @@ def _identity_registers_instance_sv() -> str:
     block that only knows OPERATOR_BITMAP rejects the parameter override
     at elaboration."""
     return """    dau_identity_registers #(
+        .PLATFORM_ID(PLATFORM_ID),
         .OPERATOR_BITMAP(OPERATOR_BITMAP),
         .LANE_COUNT(LANE_COUNT),
         .HOST_OPCODE_BITMAP(HOST_OPCODE_BITMAP),
@@ -963,6 +964,7 @@ def generate_scan_composition_top_sv(
     *,
     sources: Sequence[Path | str] | None = None,
     generated_by: str = _DEFAULT_GENERATED_BY,
+    platform_id: str = "DPV1",
 ) -> str:
     """Walk a ``ScanComposition``: one AXI burst reader scans the input
     window once and fans the row stream to the composition's lanes — each
@@ -980,6 +982,13 @@ def generate_scan_composition_top_sv(
     _validate_composition_shape(composition)  # model_copy skips model_post_init
     if sources is not None:
         _validate_against_sources(composition, sources)
+    # the on-wire platform identity word, encoded little-endian into a single
+    # 32-bit PLATFORM_ID parameter (inline so this public generator stays free
+    # of the private core's encoder)
+    platform_id_bytes = platform_id.encode("ascii")
+    if not 1 <= len(platform_id_bytes) <= 4:
+        raise ValueError(f"platform_id must be 1 to 4 ASCII bytes, got {platform_id!r}")
+    platform_id_u32 = int.from_bytes(platform_id_bytes.ljust(4, b"\x00"), "little")
     regs = composition.registers
     addr_width = composition.addr_width
     burst_beats = composition.burst_beats
@@ -1092,6 +1101,7 @@ def generate_scan_composition_top_sv(
 // lane(s) behind the DAU stream-job register contract with the NoC lane
 // register block. Plain-Verilog top (BD module references require it).
 module {module_name} #(
+    parameter [31:0] PLATFORM_ID = 32'h{platform_id_u32:08X},
     parameter [31:0] OPERATOR_BITMAP = 32'h{composition.operator_bitmap:08X},
     parameter [31:0] LANE_COUNT = 32'd{num_lanes},
     parameter [31:0] HOST_OPCODE_BITMAP = 32'h{composition.host_opcode_bitmap:08X},
