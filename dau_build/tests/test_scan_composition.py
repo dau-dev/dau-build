@@ -571,7 +571,7 @@ def test_generators_revalidate_a_model_copied_composition() -> None:
     bad_width = _wide_front_composition().model_copy(
         update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 96})}
     )
-    with pytest.raises(ScanCompositionError, match="IN_WIDTH must be 64 or 128"):
+    with pytest.raises(ScanCompositionError, match="IN_WIDTH must be one of"):
         generate_scan_composition_top_sv(bad_width)
 
 
@@ -777,4 +777,52 @@ def test_sources_validate_the_front_unpacker(tmp_path: Path) -> None:
     with pytest.raises(ScanCompositionError, match="dau_absent_unpacker.*not found"):
         generate_scan_composition_top_sv(
             composition.model_copy(update={"front_unpack": TileInstance(module="dau_absent_unpacker")}), sources=(source,)
+        )
+
+
+def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> None:
+    """A dispatch-shaped quad scan at data_width=512 emits a wide read-only
+    M_AXI_R (the burst reader) + the narrow write-only M_AXI_W (64-bit record
+    writers), the reader/dispatcher widened, the write path untouched."""
+    comp = ScanComposition(
+        name="wide",
+        module_name="dau_mm_wide_job",
+        lanes=tuple(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
+        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 512}),
+        data_width=512,
+    )
+    sv = generate_scan_composition_top_sv(comp)
+    assert "M_AXI_R ARADDR" in sv and "M_AXI_W AWADDR" in sv
+    assert "input wire [511:0] m_axi_r_rdata" in sv  # wide read
+    assert "output wire [63:0] m_axi_w_wdata" in sv  # narrow write (records stay 64-bit)
+    assert ".DATA_WIDTH(512)" in sv and ".IN_WIDTH(512)" in sv
+    assert ".m_axi_araddr(m_axi_r_araddr)" in sv and ".m_axi_awaddr(m_axi_w_awaddr)" in sv
+    assert "wire [511:0] scan_data;" in sv
+    # the single shared M_AXI is gone
+    assert "input wire [63:0] m_axi_rdata," not in sv
+
+
+def test_wide_data_width_needs_a_dispatcher_not_a_broadcast() -> None:
+    """The broadcast shape is 64-bit only — a wide data_width with no shared
+    partitioner is rejected (every lane would see every row)."""
+    with pytest.raises(ValidationError, match="broadcast is 64-bit only"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=tuple(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
+            data_width=256,
+        )
+
+
+def test_wide_packed_reader_is_a_named_followup() -> None:
+    """A front unpacker (packed reader) with data_width > 64 is refused with
+    the follow-up note (wide packed reads need the row-unpack widening)."""
+    with pytest.raises(ValidationError, match="wide packed reads.*is a follow-up"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count"),),
+            front_unpack=TileInstance(module="dau_int32_row_unpack", params={"OUT_WIDTH": 128}),
+            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+            data_width=256,
         )
