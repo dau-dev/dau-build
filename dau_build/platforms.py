@@ -231,6 +231,12 @@ class PlatformDefinition(BaseModel):
     # is supported: the cfgmem generator (flash.tcl / vivado_build_tcl)
     # writes SPIx4; another width would need its own cfgmem-generation path.
     spi_boot_buswidth: Literal[4] | None = None
+    # the platform's supported memory-read width tiers (the precompiled
+    # bitstream catalog dimension): each entry is a legal `width=` build
+    # selection on this board. Bounded by the memory system's AXI width and
+    # by what has closed timing on the part — a build request outside the
+    # list is refused before any tool runs.
+    width_tiers: tuple[int, ...] = (64,)
     job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
 
@@ -246,6 +252,18 @@ class PlatformDefinition(BaseModel):
     def _valid_program_method(cls, value: str) -> str:
         if value not in ("jtag", "flash"):
             raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
+        return value
+
+    @field_validator("width_tiers")
+    @classmethod
+    def _valid_width_tiers(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if not value:
+            raise ValueError("width_tiers must name at least one tier")
+        bad = [tier for tier in value if tier not in (64, 128, 256, 512)]
+        if bad:
+            raise ValueError(f"width_tiers entries must be 64/128/256/512, got {bad}")
+        if len(set(value)) != len(value):
+            raise ValueError(f"width_tiers has duplicates: {value}")
         return value
 
     @field_validator("platform_id")
@@ -315,6 +333,43 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
     headroom = {key: budget_by[key] - used_by[key] for key in budget_by}
     utilization = {key: used_by[key] / budget_by[key] for key in budget_by}
     return FitReport(fits=all(value >= 0 for value in headroom.values()), headroom=headroom, utilization=utilization)
+
+
+def min_lanes_for_full_rate(data_width: int) -> int:
+    """The width-tier sizing law: a W-bit front delivers W/128 quad rows per
+    beat and each lane drains one row per two cycles, so a catalog image
+    sized to the front's delivered bandwidth needs ``lanes >= 2 * (W/128)``
+    (64-bit two-beat framing is half a row per cycle — one lane matches it).
+    Today's wide dispatcher serializes to one row per cycle, which two lanes
+    already saturate; the law sizes for the front's full rate so precompiled
+    images do not under-lane when parallel dispatch lands."""
+    if data_width not in (64, 128, 256, 512):
+        raise ValueError(f"data_width must be 64/128/256/512, got {data_width}")
+    return max(1, 2 * (data_width // 128))
+
+
+def max_lanes(lane_resources: ResourceUse, platform: PlatformDefinition, *, overhead: ResourceUse | None = None) -> int:
+    """The envelope's lane ceiling: how many copies of one lane's resource
+    footprint fit the platform budget after the composition's shared
+    overhead (front/dispatcher/reader — pass the non-lane remainder as
+    ``overhead``). Returns 0 when even the overhead alone does not fit —
+    the caller decides whether that is a refusal or a smaller design.
+    (Lane count is also a timing-closure knob — the 2026-07-19 lesson —
+    so the pricing layer treats this as a CEILING, not a target.)"""
+    budget = platform.budget
+    remaining = {
+        "lut": budget.lut - (overhead.lut if overhead else 0),
+        "ff": budget.ff - (overhead.ff if overhead else 0),
+        "bram36": budget.bram36 - (overhead.bram36 if overhead else 0.0),
+        "dsp": budget.dsp - (overhead.dsp if overhead else 0),
+    }
+    if any(value < 0 for value in remaining.values()):
+        return 0
+    per_lane = {"lut": lane_resources.lut, "ff": lane_resources.ff, "bram36": lane_resources.bram36, "dsp": lane_resources.dsp}
+    ceilings = [int(remaining[key] // per_lane[key]) for key in per_lane if per_lane[key] > 0]
+    if not ceilings:
+        raise ValueError("lane_resources must use at least one resource")
+    return min(ceilings)
 
 
 def dpv1_platform() -> PlatformDefinition:

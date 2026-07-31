@@ -14,6 +14,8 @@ from dau_build.platforms import (
     XdmaPersonality,
     dpv1_platform,
     fits,
+    max_lanes,
+    min_lanes_for_full_rate,
     require_measured,
 )
 
@@ -111,6 +113,53 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert report.fits
     assert all(value == 0 for value in report.headroom.values())
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
+
+
+def test_width_tiers_default_and_dpv1_config() -> None:
+    # the model default is the universal 64-bit tier; dpv1's config names
+    # the two tiers its 128-bit MIG UI supports
+    assert PlatformDefinition.model_fields["width_tiers"].default == (64,)
+    assert dpv1_platform().width_tiers == (64, 128)
+
+
+def test_width_tiers_validation() -> None:
+    with pytest.raises(ValidationError, match="at least one tier"):
+        _dpv1_with(width_tiers=())
+    with pytest.raises(ValidationError, match="64/128/256/512"):
+        _dpv1_with(width_tiers=(64, 96))
+    with pytest.raises(ValidationError, match="duplicates"):
+        _dpv1_with(width_tiers=(64, 64))
+    assert _dpv1_with(width_tiers=(64, 128, 256, 512)).width_tiers == (64, 128, 256, 512)
+
+
+def test_min_lanes_for_full_rate_follows_the_sizing_law() -> None:
+    assert min_lanes_for_full_rate(64) == 1
+    assert min_lanes_for_full_rate(128) == 2
+    assert min_lanes_for_full_rate(256) == 4
+    assert min_lanes_for_full_rate(512) == 8
+    with pytest.raises(ValueError, match="64/128/256/512"):
+        min_lanes_for_full_rate(96)
+
+
+def test_max_lanes_is_the_budget_ceiling() -> None:
+    platform = dpv1_platform()  # budget lut=108800
+    lane = _Use(lut=1000, ff=800, bram36=0.5, dsp=1)
+    # no overhead: lut allows 108, ff allows more, dsp allows 740 -> min governs
+    assert max_lanes(lane, platform) == min(
+        platform.budget.lut // 1000,
+        platform.budget.ff // 800,
+        int(platform.budget.bram36 // 0.5),
+        platform.budget.dsp // 1,
+    )
+    # overhead shrinks the pool
+    overhead = _Use(lut=platform.budget.lut - 2500, ff=0, bram36=0.0, dsp=0)
+    assert max_lanes(lane, platform, overhead=overhead) == 2
+    # overhead alone over budget -> 0
+    too_big = _Use(lut=platform.budget.lut + 1, ff=0, bram36=0.0, dsp=0)
+    assert max_lanes(lane, platform, overhead=too_big) == 0
+    # a zero-cost lane is nonsense input, refused loudly
+    with pytest.raises(ValueError, match="at least one resource"):
+        max_lanes(_Use(lut=0, ff=0, bram36=0.0, dsp=0), platform)
 
 
 def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
