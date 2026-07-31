@@ -339,3 +339,31 @@ def test_project_tcl_matches_pre_fragment_goldens() -> None:
     )
     assert mm_job_shell_project_tcl(mm) == (fixtures / "mm_job_project.tcl").read_text()
     assert mm_ddr_job_shell_project_tcl(ddr) == (fixtures / "mm_ddr_job_project.tcl").read_text()
+
+
+def test_wide_data_width_ddr_tcl_wires_split_masters(tmp_path) -> None:
+    """A data_width>64 DDR shell request emits the dual-master BD wiring:
+    three smartconnect slaves (XDMA + wide M_AXI_R + narrow M_AXI_W) and an
+    address-map assignment per job master space."""
+    from dau_build.dpv1_shell import MmDdrJobShellRequest, mm_ddr_job_shell_project_tcl
+
+    prj = tmp_path / "mig.prj"
+    prj.write_text('<Project NoOfControllers="1"></Project>\n')
+    tile = tmp_path / "tile.sv"
+    tile.write_text("module tile; endmodule\n")
+    request = MmDdrJobShellRequest(
+        output_root=tmp_path,
+        hdl_sources=(tile,),
+        generated_sources=(("top.v", "module top; endmodule\n"),),
+        top_module="top",
+        mig_prj=prj,
+        data_width=512,
+    )
+    text = mm_ddr_job_shell_project_tcl(request)
+    assert "CONFIG.NUM_SI {3}" in text
+    assert "[get_bd_intf_pins top_0/M_AXI_R] [get_bd_intf_pins smc/S01_AXI]" in text
+    assert "[get_bd_intf_pins top_0/M_AXI_W] [get_bd_intf_pins smc/S02_AXI]" in text
+    assert "[get_bd_addr_spaces top_0/M_AXI_R]" in text and "[get_bd_addr_spaces top_0/M_AXI_W]" in text
+    # the shared-master wiring is gone
+    assert "[get_bd_intf_pins top_0/M_AXI]" not in text
+    assert "[get_bd_addr_spaces top_0/M_AXI]" not in text
