@@ -38,6 +38,24 @@ def _wide_tier_platform():
     return dpv1_platform().model_copy(update={"width_tiers": (64, 128, 256, 512)})
 
 
+def test_generator_refuses_a_copied_request_outside_the_tiers(tmp_path) -> None:
+    # model_copy(update=) skips validators — the tcl generator re-runs the
+    # tier gate so a copied request cannot slip a refused width through
+    import pytest as _pytest
+
+    prj = tmp_path / "mig.prj"
+    prj.write_text('<Project NoOfControllers="1"></Project>\n')
+    request = MmDdrJobShellRequest(
+        output_root=tmp_path,
+        hdl_sources=(),
+        generated_sources=(("top.v", "module top; endmodule\n"),),
+        top_module="top",
+        mig_prj=prj,
+    )
+    with _pytest.raises(ValueError, match="not a width tier"):
+        mm_ddr_job_shell_project_tcl(request.model_copy(update={"data_width": 512}))
+
+
 def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
     import pytest as _pytest
     from pydantic import ValidationError

@@ -371,10 +371,10 @@ def max_lanes(lane_resources: ResourceUse, platform: PlatformDefinition, *, over
         if use is not None and (use.lut < 0 or use.ff < 0 or use.bram36 < 0 or use.dsp < 0):
             raise ValueError(f"{label} components must be nonnegative")
     remaining = {
-        "lut": budget.lut - (overhead.lut if overhead else 0),
-        "ff": budget.ff - (overhead.ff if overhead else 0),
-        "bram36": _halves(budget.bram36, "budget") - (_halves(overhead.bram36, "overhead") if overhead else 0),
-        "dsp": budget.dsp - (overhead.dsp if overhead else 0),
+        "lut": budget.lut - (overhead.lut if overhead is not None else 0),
+        "ff": budget.ff - (overhead.ff if overhead is not None else 0),
+        "bram36": _halves(budget.bram36, "budget") - (_halves(overhead.bram36, "overhead") if overhead is not None else 0),
+        "dsp": budget.dsp - (overhead.dsp if overhead is not None else 0),
     }
     if any(value < 0 for value in remaining.values()):
         return 0

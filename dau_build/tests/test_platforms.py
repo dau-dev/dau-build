@@ -173,9 +173,7 @@ def test_max_lanes_bram_arithmetic_is_exact() -> None:
     # 730 half-BRAM lanes (335 // 0.1 == 3349.0 is the float trap)
     platform = dpv1_platform()
     lane = _Use(lut=1, ff=1, bram36=0.5, dsp=0)
-    assert max_lanes(lane, platform) == min(
-        platform.budget.lut, platform.budget.ff, round(platform.budget.bram36 * 2)
-    )
+    assert max_lanes(lane, platform) == min(platform.budget.lut, platform.budget.ff, round(platform.budget.bram36 * 2))
     # non-half-granular BRAM is not a real placement
     with pytest.raises(ValueError, match="half-BRAM granular"):
         max_lanes(_Use(lut=1, ff=1, bram36=0.3, dsp=0), platform)
