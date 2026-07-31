@@ -910,3 +910,102 @@ def test_wide_packed_reader_is_a_named_followup() -> None:
             partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
             data_width=256,
         )
+
+
+def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> None:
+    """The fused-chain protocol: a chain stage marked ``closes_out`` is a
+    terminal-shaped tile fused mid-lane (as-of join, grouped aggregator).
+    Its status is accepted unconditionally so the lane still presents ONE
+    close-out (the terminal's), while its errors latch into a per-lane
+    register that overrides the lane status and clears per job."""
+    composition = ScanComposition(
+        name="fused",
+        module_name="dau_mm_fused_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_rolling_moments",
+                count_port="moment_count",
+                chain=(
+                    TileInstance(module="dau_int32_asof_backward", closes_out=True),
+                    TileInstance(module="dau_int32_time_bucket_key"),
+                    TileInstance(module="dau_int32_grouped_field_aggregation", closes_out=True),
+                ),
+            ),
+        ),
+    )
+    sv = generate_scan_composition_top_sv(composition)
+
+    # the closing stages accept their own status the cycle it appears
+    assert "assign chain0_status_ready_0 = 1'b1;" in sv
+    assert "assign chain2_status_ready_0 = 1'b1;" in sv
+    # the silent stage keeps the ordinary upstream-first gating
+    assert "assign chain1_status_ready_0 = unit_status_ready_0 && chain1_status_valid_0;" in sv
+    # errors latch, override the lane status, and clear per job (multi-job safe)
+    assert "reg fused_err_0;" in sv and "reg [7:0] fused_err_code_0;" in sv
+    # a drained status lives for ONE cycle, so capture must outrank the
+    # per-job clear: an error coinciding with job_start would otherwise be
+    # lost and the corrupt job would report clean
+    capture = (
+        "end else if (!fused_err_0 && ((chain0_status_valid_0 && chain0_status_error_0) || (chain2_status_valid_0 && chain2_status_error_0))) begin"
+    )
+    assert capture in sv
+    assert sv.index(capture) < sv.index("end else if (job_start) begin"), "the per-job clear must not outrank error capture"
+    assert "if (chain0_status_valid_0 && chain0_status_error_0) begin" in sv
+    assert "else if (chain2_status_valid_0 && chain2_status_error_0) begin" in sv
+    assert "assign unit_status_valid_0 = fused_err_0 || fused_empty_close_0 || (tile_status_valid_0 || chain1_status_valid_0);" in sv
+    # an all-miss upstream stage produces no rows, so nothing downstream ever
+    # sees output_last: its own close-out is the lane's only end-of-batch
+    # evidence and must reach the writer instead of being drained away
+    assert "reg saw_out_0_0;" in sv and "reg empty_close_0_0;" in sv
+    assert "wire fused_empty_close_0 = empty_close_0_0 || empty_close_0_2;" in sv
+    assert "assign unit_status_error_0 = fused_err_0 ? 1'b1 : (chain1_status_valid_0 ? chain1_status_error_0 : tile_status_error_0);" in sv
+    # the terminal still closes the lane out
+    assert "assign tile_status_ready_0 = unit_status_ready_0 && !chain1_status_valid_0;" in sv
+
+
+def test_a_chain_without_closing_stages_is_byte_identical() -> None:
+    """The protocol is opt-in per stage: a chain of silent stages emits
+    exactly what it did before the field existed (the goldens prove the
+    same thing; this pins the intent)."""
+    silent = ScanComposition(
+        name="plain",
+        module_name="dau_mm_plain_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_field_sum_aggregation",
+                count_port="aggregated_count",
+                chain=(TileInstance(module="dau_int32_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
+            ),
+        ),
+    )
+    sv = generate_scan_composition_top_sv(silent)
+    assert "fused_err_0" not in sv
+    assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in sv
+
+
+def test_the_length_gate_follows_the_head_record_size() -> None:
+    """A fused chain whose head reads a 24-byte record was rejecting an
+    ODD number of perfectly good records, because the gate assumed the
+    16-byte quad row. The gate now takes the largest power of two
+    dividing the declared record size; a length on that grid that still
+    tears a record is the head tile's ERR_STREAM job."""
+    for row_bytes, grid in ((16, 16), (24, 8), (8, 8), (32, 32)):
+        composition = ScanComposition(
+            name="gate",
+            module_name="dau_mm_gate_job",
+            input_row_bytes=row_bytes,
+            lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="aggregated_count"),),
+        )
+        sv = generate_scan_composition_top_sv(composition)
+        bits = grid.bit_length() - 1
+        assert f"input_length_bytes[{bits - 1}:0] == {bits}'d0" in sv, f"{row_bytes}B record wants a {grid}B grid"
+
+    with pytest.raises(ScanCompositionError, match="positive multiple of 8"):
+        generate_scan_composition_top_sv(
+            ScanComposition(
+                name="bad",
+                module_name="m",
+                input_row_bytes=12,
+                lanes=(LaneTile(module="t", count_port="c"),),
+            )
+        )
