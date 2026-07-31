@@ -583,6 +583,12 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     silent = [j for j in range(len(lane.chain)) if j not in draining]
     stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in silent]
 
+    # a draining stage's status is consumed the cycle it appears, so an error
+    # missed here is gone for good: CAPTURE OUTRANKS the per-job clear. An
+    # error coinciding with job_start belongs to the job just ending and is
+    # carried into the new job's status rather than silently dropped — a loud
+    # failure on the next job beats a clean report over a corrupt one.
+    raising = " || ".join(f"(chain{j}_status_valid_{i} && chain{j}_status_error_{i})" for j in draining)
     lines = [
         f"    reg fused_err_{i};",
         f"    reg [7:0] fused_err_code_{i};",
@@ -590,17 +596,17 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
         "        if (!s_axi_aresetn) begin",
         f"            fused_err_{i} <= 1'b0;",
         f"            fused_err_code_{i} <= 8'd0;",
-        "        end else if (job_start) begin",
-        f"            fused_err_{i} <= 1'b0;",
-        f"            fused_err_code_{i} <= 8'd0;",
-        f"        end else if (!fused_err_{i}) begin",
+        f"        end else if (!fused_err_{i} && ({raising})) begin",
+        f"            fused_err_{i} <= 1'b1;",
     ]
     for index, j in enumerate(draining):
         keyword = "if" if index == 0 else "else if"
         lines.append(f"            {keyword} (chain{j}_status_valid_{i} && chain{j}_status_error_{i}) begin")
-        lines.append(f"                fused_err_{i} <= 1'b1;")
         lines.append(f"                fused_err_code_{i} <= chain{j}_status_error_code_{i};")
         lines.append("            end")
+    lines.append("        end else if (job_start) begin")
+    lines.append(f"            fused_err_{i} <= 1'b0;")
+    lines.append(f"            fused_err_code_{i} <= 8'd0;")
     lines.append("        end")
     lines.append("    end")
 

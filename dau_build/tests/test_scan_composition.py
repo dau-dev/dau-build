@@ -942,7 +942,14 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
     assert "assign chain1_status_ready_0 = unit_status_ready_0 && chain1_status_valid_0;" in sv
     # errors latch, override the lane status, and clear per job (multi-job safe)
     assert "reg fused_err_0;" in sv and "reg [7:0] fused_err_code_0;" in sv
-    assert "end else if (job_start) begin" in sv
+    # a drained status lives for ONE cycle, so capture must outrank the
+    # per-job clear: an error coinciding with job_start would otherwise be
+    # lost and the corrupt job would report clean
+    capture = (
+        "end else if (!fused_err_0 && ((chain0_status_valid_0 && chain0_status_error_0) || (chain2_status_valid_0 && chain2_status_error_0))) begin"
+    )
+    assert capture in sv
+    assert sv.index(capture) < sv.index("end else if (job_start) begin"), "the per-job clear must not outrank error capture"
     assert "if (chain0_status_valid_0 && chain0_status_error_0) begin" in sv
     assert "else if (chain2_status_valid_0 && chain2_status_error_0) begin" in sv
     assert "assign unit_status_valid_0 = fused_err_0 || (tile_status_valid_0 || chain1_status_valid_0);" in sv
