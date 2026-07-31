@@ -47,6 +47,15 @@ class TileInstance(BaseModel):
     module: str
     config: dict[str, str] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
     params: dict[str, int] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
+    # a CHAIN STAGE that emits a success close-out per batch (a terminal-shaped
+    # tile fused mid-lane: the as-of join, the grouped aggregator). The lane
+    # status mux allows exactly one close-out, so such a stage's status is
+    # DRAINED (accepted immediately) and only its ERRORS are latched into the
+    # lane status — the fused-chain protocol. False for the silent-on-success
+    # stages (filters, maps, key rewrites), which keep the byte-identical
+    # upstream-first mux. The private bridge sets this from the registry; this
+    # public generator cannot consult it.
+    closes_out: bool = False
 
 
 class LaneTile(TileInstance):
@@ -557,6 +566,71 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
 """
 
 
+def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: list[int]) -> str:
+    """Status glue for a lane whose chain fuses terminal-shaped stages.
+
+    Each draining stage's status is accepted unconditionally (``ready`` tied
+    high), so its success close-out is consumed the cycle it appears and the
+    stage rearms for the next job — the lane still presents exactly ONE
+    close-out (the terminal's), which is what the record writer's done waits
+    on. A draining stage's ERROR is latched into a per-lane register and
+    overrides the lane status, so a fused-away failure is never silently
+    swallowed; the latch clears on the job-start pulse the register block
+    already drives (``job_start``), making the protocol multi-job safe.
+    Silent stages keep the ordinary upstream-first mux beneath the latch."""
+    lane = composition.lanes[i]
+    front_filtered = not composition.wide_lane and (lane.partition is not None or composition.partitioner is not None)
+    silent = [j for j in range(len(lane.chain)) if j not in draining]
+    stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in silent]
+
+    lines = [
+        f"    reg fused_err_{i};",
+        f"    reg [7:0] fused_err_code_{i};",
+        "    always @(posedge s_axi_aclk) begin",
+        "        if (!s_axi_aresetn) begin",
+        f"            fused_err_{i} <= 1'b0;",
+        f"            fused_err_code_{i} <= 8'd0;",
+        "        end else if (job_start) begin",
+        f"            fused_err_{i} <= 1'b0;",
+        f"            fused_err_code_{i} <= 8'd0;",
+        f"        end else if (!fused_err_{i}) begin",
+    ]
+    for index, j in enumerate(draining):
+        keyword = "if" if index == 0 else "else if"
+        lines.append(f"            {keyword} (chain{j}_status_valid_{i} && chain{j}_status_error_{i}) begin")
+        lines.append(f"                fused_err_{i} <= 1'b1;")
+        lines.append(f"                fused_err_code_{i} <= chain{j}_status_error_code_{i};")
+        lines.append("            end")
+    lines.append("        end")
+    lines.append("    end")
+
+    # the draining stages accept their own status immediately
+    for j in draining:
+        lines.append(f"    assign chain{j}_status_ready_{i} = 1'b1;")
+
+    # beneath the latch, the silent stages and the terminal keep the
+    # upstream-first mux (the pending-order rule the chain contract defines)
+    valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
+    base_valid = f"tile_status_valid_{i}" + (f" || {valids}" if stems else "")
+    error_mux = f"tile_status_error_{i}"
+    code_mux = f"tile_status_error_code_{i}"
+    for stem in reversed(stems):
+        error_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_{i} : {error_mux}"
+        code_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_code_{i} : {code_mux}"
+    lines.append(f"    assign unit_status_valid_{i} = fused_err_{i} || ({base_valid});")
+    lines.append(f"    assign unit_status_error_{i} = fused_err_{i} ? 1'b1 : ({error_mux});")
+    lines.append(f"    assign unit_status_error_code_{i} = fused_err_{i} ? fused_err_code_{i} : ({code_mux});")
+
+    upstream: list[str] = []
+    for stem in stems:
+        gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
+        lines.append(f"    assign {stem}_status_ready_{i} = unit_status_ready_{i}{gate} && {stem}_status_valid_{i};")
+        upstream.append(stem)
+    gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
+    lines.append(f"    assign tile_status_ready_{i} = unit_status_ready_{i}{gate};")
+    return "\n".join(lines) + "\n"
+
+
 def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
     """The per-unit status mux for lane ``i``: a filterless lane forwards
     the tile status; a filtered lane muxes the partition status (which
@@ -566,6 +640,15 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
     lane = composition.lanes[i]
     if lane.chain:
         front_filtered = not composition.wide_lane and (lane.partition is not None or composition.partitioner is not None)
+        # the FUSED-CHAIN protocol: a chain stage that closes out on success is
+        # terminal-shaped fused mid-lane (as-of join, grouped aggregator). Its
+        # status is drained every batch (accepted the cycle it is raised, so it
+        # rearms for the next job) and only its ERRORS latch into the lane
+        # status; the terminal tile remains the lane's one close-out. Silent
+        # stages keep the byte-identical upstream-first mux.
+        draining = [j for j, stage in enumerate(lane.chain) if stage.closes_out]
+        if draining:
+            return _fused_chain_status_glue_sv(composition, i, draining)
         stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in range(len(lane.chain))]
         valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
         error_mux = f"tile_status_error_{i}"

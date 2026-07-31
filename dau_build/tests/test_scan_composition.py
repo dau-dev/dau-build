@@ -910,3 +910,62 @@ def test_wide_packed_reader_is_a_named_followup() -> None:
             partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
             data_width=256,
         )
+
+
+def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> None:
+    """The fused-chain protocol: a chain stage marked ``closes_out`` is a
+    terminal-shaped tile fused mid-lane (as-of join, grouped aggregator).
+    Its status is accepted unconditionally so the lane still presents ONE
+    close-out (the terminal's), while its errors latch into a per-lane
+    register that overrides the lane status and clears per job."""
+    composition = ScanComposition(
+        name="fused",
+        module_name="dau_mm_fused_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_rolling_moments",
+                count_port="moment_count",
+                chain=(
+                    TileInstance(module="dau_int32_asof_backward", closes_out=True),
+                    TileInstance(module="dau_int32_time_bucket_key"),
+                    TileInstance(module="dau_int32_grouped_field_aggregation", closes_out=True),
+                ),
+            ),
+        ),
+    )
+    sv = generate_scan_composition_top_sv(composition)
+
+    # the closing stages accept their own status the cycle it appears
+    assert "assign chain0_status_ready_0 = 1'b1;" in sv
+    assert "assign chain2_status_ready_0 = 1'b1;" in sv
+    # the silent stage keeps the ordinary upstream-first gating
+    assert "assign chain1_status_ready_0 = unit_status_ready_0 && chain1_status_valid_0;" in sv
+    # errors latch, override the lane status, and clear per job (multi-job safe)
+    assert "reg fused_err_0;" in sv and "reg [7:0] fused_err_code_0;" in sv
+    assert "end else if (job_start) begin" in sv
+    assert "if (chain0_status_valid_0 && chain0_status_error_0) begin" in sv
+    assert "else if (chain2_status_valid_0 && chain2_status_error_0) begin" in sv
+    assert "assign unit_status_valid_0 = fused_err_0 || (tile_status_valid_0 || chain1_status_valid_0);" in sv
+    assert "assign unit_status_error_0 = fused_err_0 ? 1'b1 : (chain1_status_valid_0 ? chain1_status_error_0 : tile_status_error_0);" in sv
+    # the terminal still closes the lane out
+    assert "assign tile_status_ready_0 = unit_status_ready_0 && !chain1_status_valid_0;" in sv
+
+
+def test_a_chain_without_closing_stages_is_byte_identical() -> None:
+    """The protocol is opt-in per stage: a chain of silent stages emits
+    exactly what it did before the field existed (the goldens prove the
+    same thing; this pins the intent)."""
+    silent = ScanComposition(
+        name="plain",
+        module_name="dau_mm_plain_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_field_sum_aggregation",
+                count_port="aggregated_count",
+                chain=(TileInstance(module="dau_int32_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
+            ),
+        ),
+    )
+    sv = generate_scan_composition_top_sv(silent)
+    assert "fused_err_0" not in sv
+    assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in sv
