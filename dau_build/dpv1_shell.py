@@ -103,6 +103,11 @@ class MmDdrJobShellRequest(BaseModel):
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000
     ddr_bytes: int = 0x4000_0000  # 1 GiB
+    # the job top's memory-read width (the width-tier knob): 64 = the classic
+    # single shared M_AXI job master; wider tiers mean the top exposes a wide
+    # read-only M_AXI_R plus the narrow write M_AXI_W, wired as two
+    # smartconnect slaves. Mirrors the composition's data_width.
+    data_width: int = 64
     jobs: int = 12
 
     @property
@@ -389,6 +394,26 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     # (125 on dpv1, 250 on a Gen2 x8 personality)
     xadc_dclk_mhz = request.platform.host_link.xdma_personality.axi_clock_mhz()
     smc_clocks = "3" if convert else "2"
+    # the job master(s): one shared M_AXI at 64, split read/write at wider tiers
+    if request.data_width == 64:
+        smc_num_si = "2"
+        job_master_connects = f"connect_bd_intf_net [get_bd_intf_pins {request.top_module}_0/M_AXI] [get_bd_intf_pins smc/S01_AXI]"
+    else:
+        smc_num_si = "3"
+        job_master_connects = (
+            f"connect_bd_intf_net [get_bd_intf_pins {request.top_module}_0/M_AXI_R] [get_bd_intf_pins smc/S01_AXI]\n"
+            f"connect_bd_intf_net [get_bd_intf_pins {request.top_module}_0/M_AXI_W] [get_bd_intf_pins smc/S02_AXI]"
+        )
+    _assign = (
+        "assign_bd_address -offset 0x00000000 -range 0x{bytes:08X} "
+        "-target_address_space [get_bd_addr_spaces {top}_0/{space}] [get_bd_addr_segs mig_0/memmap/memaddr] -force"
+    )
+    if request.data_width == 64:
+        job_master_addr_assigns = _assign.format(bytes=request.ddr_bytes, top=request.top_module, space="M_AXI")
+    else:
+        job_master_addr_assigns = "\n".join(
+            _assign.format(bytes=request.ddr_bytes, top=request.top_module, space=space) for space in ("M_AXI_R", "M_AXI_W")
+        )
     smc_lite_config = "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {2}" if convert else "CONFIG.NUM_SI {1} CONFIG.NUM_MI {2}"
     top_clk_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aclk]"
     top_rst_sink = "" if convert else f" \\\n    [get_bd_pins {request.top_module}_0/s_axi_aresetn]"
@@ -437,9 +462,9 @@ connect_bd_net [get_bd_pins xadc_0/temp_out] [get_bd_pins mig_0/device_temp_i]
 # one memory-side smartconnect: XDMA (128-bit) and the job master (64-bit)
 # into the controller's 128-bit S_AXI, bridging 125 MHz -> ui_clk
 set smc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect smc]
-set_property -dict [list CONFIG.NUM_SI {{2}} CONFIG.NUM_MI {{1}} CONFIG.NUM_CLKS {{{smc_clocks}}}] $smc
+set_property -dict [list CONFIG.NUM_SI {{{smc_num_si}}} CONFIG.NUM_MI {{1}} CONFIG.NUM_CLKS {{{smc_clocks}}}] $smc
 connect_bd_intf_net [get_bd_intf_pins xdma_0/M_AXI] [get_bd_intf_pins smc/S00_AXI]
-connect_bd_intf_net [get_bd_intf_pins {request.top_module}_0/M_AXI] [get_bd_intf_pins smc/S01_AXI]
+{job_master_connects}
 connect_bd_intf_net [get_bd_intf_pins smc/M00_AXI] [get_bd_intf_pins mig_0/S_AXI]
 
 # the proven shell routes M_AXI_LITE through an interconnect, never directly
@@ -458,7 +483,7 @@ connect_bd_net [get_bd_pins xdma_0/axi_aresetn] \\
     [get_bd_pins smc/aresetn] [get_bd_pins smc_lite/aresetn] [get_bd_pins xadc_0/s_axi_aresetn]{top_rst_sink}
 {job_wiring}
 assign_bd_address -offset 0x00000000 -range 0x{request.ddr_bytes:08X} -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
-assign_bd_address -offset 0x00000000 -range 0x{request.ddr_bytes:08X} -target_address_space [get_bd_addr_spaces {request.top_module}_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
+{job_master_addr_assigns}
 assign_bd_address -offset 0x{request.register_window_offset:08X} -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs {request.top_module}_0/S_AXI/*] -force
 assign_bd_address -offset 0x{request.xadc_window_offset:08X} -range 0x00010000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs xadc_0/s_axi_lite/*] -force
 
