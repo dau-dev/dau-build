@@ -125,6 +125,13 @@ class ScanComposition(BaseModel):
     front_unpack: TileInstance | None = None
     burst_beats: int = 32
     addr_width: int = 32
+    # the memory read datapath width (the width-tier catalog knob): the burst
+    # reader's DATA_WIDTH and, for a dispatch-shaped scan, the row-stream
+    # framing into the fan-out. 64 (default) keeps the classic single shared
+    # M_AXI byte-identical; 128/256/512 split a wide read-only M_AXI_R off from
+    # the narrow write M_AXI_W (the record writers stay 64-bit) so a wide DDR
+    # read never forces narrow writes on a wide bus.
+    data_width: int = 64
     # capability words the identity block advertises (register map 0.2).
     # These are caller-computed data — the walker never guesses them: the
     # bitmaps default to zero ("advertise nothing") so a composition only
@@ -151,30 +158,48 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
         for lane in composition.lanes:
             if lane.partition is not None:
                 raise ScanCompositionError(f"lane tile {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
-    # the rows/cycle axis rides the module-parameter channel: the feed
-    # stream's width is the front unpacker's OUT_WIDTH, and the fan-out
-    # must accept exactly that width
+    # Two width surfaces: DATA_WIDTH (the burst reader's DDR read/stream
+    # width, the memory-bandwidth knob) and the FEED width entering the
+    # fan-out (the rows/cycle framing the dispatcher accepts). When a front
+    # unpacker is present the reader reads PACKED rows (data_width 64) and the
+    # unpacker widens to its OUT_WIDTH; without one the reader emits quad rows
+    # directly at data_width, so the feed IS the reader stream.
+    _WIDTHS = (64, 128, 256, 512)
+    data_width = composition.data_width
+    if data_width not in _WIDTHS:
+        raise ScanCompositionError(f"data_width must be one of {_WIDTHS}, got {data_width}")
     front_width = composition.front_unpack.params.get("OUT_WIDTH", 64) if composition.front_unpack is not None else 64
     fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
-    if front_width not in (64, 128):
-        raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
-    if fanout_width not in (64, 128):
-        raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be 64 or 128, got {fanout_width}")
-    if front_width == 128:
+    if composition.front_unpack is not None:
+        # the packed path: OUT_WIDTH 64/128 is proven; a wider packed reader
+        # (data_width > 64) driving a 256/512 unpacker is a separate follow-up
+        if front_width not in (64, 128):
+            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
+        if data_width != 64:
+            raise ScanCompositionError(
+                f"a packed front unpacker reads 64-bit packed rows; data_width={data_width} (wide packed reads) is a follow-up — "
+                "drop the front_unpack to feed quad rows at data_width, or keep data_width=64"
+            )
+        feed_width = front_width
+    else:
+        feed_width = data_width
+    if fanout_width not in _WIDTHS:
+        raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
+    if feed_width > 64:
         if composition.partitioner is None:
             raise ScanCompositionError(
-                "a 128-bit front stream (front_unpack OUT_WIDTH=128) needs a shared partitioner/dispatcher accepting IN_WIDTH=128; "
-                "the stream broadcast is 64-bit only"
+                f"a {feed_width}-bit feed stream needs a shared partitioner/dispatcher accepting IN_WIDTH={feed_width}; "
+                "the stream broadcast is 64-bit only (each lane would otherwise see every row and every operator would widen)"
             )
-        if fanout_width != 128:
+        if fanout_width != feed_width:
             raise ScanCompositionError(
-                f"the front unpacker emits a 128-bit stream but the shared partitioner {composition.partitioner.module!r} accepts "
+                f"the feed stream is {feed_width}-bit but the shared partitioner {composition.partitioner.module!r} accepts "
                 f"IN_WIDTH={fanout_width}; the feed and fan-out widths must agree"
             )
     elif fanout_width != 64:
         raise ScanCompositionError(
             f"the shared partitioner {composition.partitioner.module!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
-            "compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
+            "widen data_width (quad rows) or compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
         )
 
     # two-phase load shape (the walker mirror of the registry-aware dau-core
@@ -262,60 +287,88 @@ def _s_axi_lite_ports_sv() -> str:
     input wire s_axi_rready,"""
 
 
-def _m_axi_ports_sv(*, addr_width: int, burst_beats: int) -> str:
-    """The AXI4 memory-master port block (64-bit data, INCR bursts, no
-    narrow bursts)."""
-    return f"""    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARADDR" *)
-    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME M_AXI, PROTOCOL AXI4, DATA_WIDTH 64, ADDR_WIDTH {addr_width}, HAS_BURST 1, HAS_LOCK 0, HAS_PROT 0, HAS_CACHE 0, HAS_QOS 0, HAS_REGION 0, HAS_WSTRB 1, HAS_BRESP 1, HAS_RRESP 1, MAX_BURST_LENGTH {burst_beats}, SUPPORTS_NARROW_BURST 0" *)
-    output wire [{addr_width - 1}:0] m_axi_araddr,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARLEN" *)
-    output wire [7:0] m_axi_arlen,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARSIZE" *)
-    output wire [2:0] m_axi_arsize,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARBURST" *)
-    output wire [1:0] m_axi_arburst,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARVALID" *)
-    output wire m_axi_arvalid,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI ARREADY" *)
-    input wire m_axi_arready,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI RDATA" *)
-    input wire [63:0] m_axi_rdata,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI RRESP" *)
-    input wire [1:0] m_axi_rresp,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI RLAST" *)
-    input wire m_axi_rlast,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI RVALID" *)
-    input wire m_axi_rvalid,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI RREADY" *)
-    output wire m_axi_rready,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWADDR" *)
-    output wire [{addr_width - 1}:0] m_axi_awaddr,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWLEN" *)
-    output wire [7:0] m_axi_awlen,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWSIZE" *)
-    output wire [2:0] m_axi_awsize,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWBURST" *)
-    output wire [1:0] m_axi_awburst,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWVALID" *)
-    output wire m_axi_awvalid,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI AWREADY" *)
-    input wire m_axi_awready,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI WDATA" *)
-    output wire [63:0] m_axi_wdata,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI WSTRB" *)
-    output wire [7:0] m_axi_wstrb,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI WLAST" *)
-    output wire m_axi_wlast,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI WVALID" *)
-    output wire m_axi_wvalid,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI WREADY" *)
-    input wire m_axi_wready,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI BRESP" *)
-    input wire [1:0] m_axi_bresp,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI BVALID" *)
-    input wire m_axi_bvalid,
-    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 M_AXI BREADY" *)
-    output wire m_axi_bready"""
+def _m_axi_read_ports_sv(*, iface: str, prefix: str, addr_width: int, data_width: int, burst_beats: int) -> str:
+    """The AR/R read-channel ports of one AXI4 memory master."""
+    return f"""    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARADDR" *)
+    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME {iface}, PROTOCOL AXI4, DATA_WIDTH {data_width}, ADDR_WIDTH {addr_width}, HAS_BURST 1, HAS_LOCK 0, HAS_PROT 0, HAS_CACHE 0, HAS_QOS 0, HAS_REGION 0, HAS_WSTRB 1, HAS_BRESP 1, HAS_RRESP 1, MAX_BURST_LENGTH {burst_beats}, SUPPORTS_NARROW_BURST 0" *)
+    output wire [{addr_width - 1}:0] {prefix}araddr,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARLEN" *)
+    output wire [7:0] {prefix}arlen,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARSIZE" *)
+    output wire [2:0] {prefix}arsize,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARBURST" *)
+    output wire [1:0] {prefix}arburst,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARVALID" *)
+    output wire {prefix}arvalid,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} ARREADY" *)
+    input wire {prefix}arready,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} RDATA" *)
+    input wire [{data_width - 1}:0] {prefix}rdata,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} RRESP" *)
+    input wire [1:0] {prefix}rresp,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} RLAST" *)
+    input wire {prefix}rlast,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} RVALID" *)
+    input wire {prefix}rvalid,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} RREADY" *)
+    output wire {prefix}rready"""
+
+
+def _m_axi_write_ports_sv(*, iface: str, prefix: str, addr_width: int, burst_beats: int, declare_iface: bool) -> str:
+    """The AW/W/B write-channel ports of one AXI4 memory master (the record
+    writers are always 64-bit — records are 64-bit words). ``declare_iface``
+    emits the XIL_INTERFACENAME parameter on AWADDR — set only when this is a
+    distinct interface (the split ``M_AXI_W``), not the shared ``M_AXI`` whose
+    read block already declared it."""
+    param = (
+        f'\n    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME {iface}, PROTOCOL AXI4, DATA_WIDTH 64, ADDR_WIDTH {addr_width}, HAS_BURST 1, HAS_LOCK 0, HAS_PROT 0, HAS_CACHE 0, HAS_QOS 0, HAS_REGION 0, HAS_WSTRB 1, HAS_BRESP 1, HAS_RRESP 1, MAX_BURST_LENGTH {burst_beats}, SUPPORTS_NARROW_BURST 0" *)'
+        if declare_iface
+        else ""
+    )
+    return f"""    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWADDR" *){param}
+    output wire [{addr_width - 1}:0] {prefix}awaddr,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWLEN" *)
+    output wire [7:0] {prefix}awlen,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWSIZE" *)
+    output wire [2:0] {prefix}awsize,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWBURST" *)
+    output wire [1:0] {prefix}awburst,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWVALID" *)
+    output wire {prefix}awvalid,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} AWREADY" *)
+    input wire {prefix}awready,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} WDATA" *)
+    output wire [63:0] {prefix}wdata,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} WSTRB" *)
+    output wire [7:0] {prefix}wstrb,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} WLAST" *)
+    output wire {prefix}wlast,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} WVALID" *)
+    output wire {prefix}wvalid,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} WREADY" *)
+    input wire {prefix}wready,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} BRESP" *)
+    input wire [1:0] {prefix}bresp,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} BVALID" *)
+    input wire {prefix}bvalid,
+    (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 {iface} BREADY" *)
+    output wire {prefix}bready"""
+
+
+def _m_axi_ports_sv(*, addr_width: int, burst_beats: int, data_width: int = 64) -> str:
+    """The AXI4 memory-master port block. At data_width=64 a SINGLE shared
+    ``M_AXI`` carries read and write (byte-identical to the classic top). At
+    128/256/512 the read master splits off: a wide read-only ``M_AXI_R`` (the
+    burst reader's DATA_WIDTH) plus the narrow write-only ``M_AXI_W`` (the
+    64-bit record writers), so a wide DDR read never forces narrow writes on a
+    wide bus. The two connect to the MIG through the memory smartconnect."""
+    if data_width == 64:
+        read = _m_axi_read_ports_sv(iface="M_AXI", prefix="m_axi_", addr_width=addr_width, data_width=64, burst_beats=burst_beats)
+        write = _m_axi_write_ports_sv(iface="M_AXI", prefix="m_axi_", addr_width=addr_width, burst_beats=burst_beats, declare_iface=False)
+        return read + ",\n" + write
+    read = _m_axi_read_ports_sv(iface="M_AXI_R", prefix="m_axi_r_", addr_width=addr_width, data_width=data_width, burst_beats=burst_beats)
+    write = _m_axi_write_ports_sv(iface="M_AXI_W", prefix="m_axi_w_", addr_width=addr_width, burst_beats=burst_beats, declare_iface=True)
+    return read + ",\n" + write
 
 
 def _register_localparams_sv(offsets: Sequence[tuple[str, int]]) -> str:
@@ -992,6 +1045,18 @@ def generate_scan_composition_top_sv(
     regs = composition.registers
     addr_width = composition.addr_width
     burst_beats = composition.burst_beats
+    data_width = composition.data_width
+    # single shared M_AXI at 64-bit; a split wide read (M_AXI_R) + narrow
+    # write (M_AXI_W) at wider tiers — the reader and write mux bind the top
+    # signals through these prefixes (both "m_axi_" at 64, byte-identical)
+    read_bus = "m_axi_" if data_width == 64 else "m_axi_r_"
+    write_bus = "m_axi_" if data_width == 64 else "m_axi_w_"
+    # emit the reader DATA_WIDTH param only when widened, so the 64-bit top
+    # stays byte-identical to the pre-width goldens (the RTL default is 64)
+    reader_data_width_param = "" if data_width == 64 else f"        .DATA_WIDTH({data_width}),\n"
+    # the S_AXI clock associates with the memory master(s): the shared M_AXI at
+    # 64, or the split M_AXI_R + M_AXI_W when widened
+    associated_busif = "S_AXI:M_AXI" if data_width == 64 else "S_AXI:M_AXI_R:M_AXI_W"
     module_name = composition.module_name
     num_lanes = len(composition.lanes)
     lanes = range(num_lanes)
@@ -1022,7 +1087,12 @@ def generate_scan_composition_top_sv(
     # 8 bytes (an odd packed-row count would round to a non-16-multiple length
     # and be rejected otherwise); bypass-mode odd-word framing stays the
     # unpacker's ERR_STREAM job.
-    length_align_bits = 3 if composition.front_unpack is not None else 4
+    # the input length must be a whole number of rows AND of reader beats: at
+    # a wide bus (data_width > 64) a beat spans several rows, so beat
+    # alignment (log2(data_width/8)) dominates the row grid (3 packed / 4 quad)
+    _row_align = 3 if composition.front_unpack is not None else 4
+    _beat_align = (data_width // 8).bit_length() - 1
+    length_align_bits = max(_row_align, _beat_align)
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
 
@@ -1108,7 +1178,7 @@ module {module_name} #(
     parameter [31:0] SORT_CAPACITY = 32'd{composition.sort_capacity}
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 s_axi_aclk CLK" *)
-    (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF S_AXI:M_AXI, ASSOCIATED_RESET s_axi_aresetn" *)
+    (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF {associated_busif}, ASSOCIATED_RESET s_axi_aresetn" *)
     input wire s_axi_aclk,
     (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 s_axi_aresetn RST" *)
     (* X_INTERFACE_PARAMETER = "POLARITY ACTIVE_LOW" *)
@@ -1116,7 +1186,7 @@ module {module_name} #(
 
 {_s_axi_lite_ports_sv()}
 
-{_m_axi_ports_sv(addr_width=addr_width, burst_beats=burst_beats)}
+{_m_axi_ports_sv(addr_width=addr_width, burst_beats=burst_beats, data_width=data_width)}
 );
     // window-relative decode (the AXI address carries the BAR offset)
 {localparams}
@@ -1139,7 +1209,7 @@ module {module_name} #(
     wire [31:0] dbg_final_fifo_count;
     wire scan_valid;
     wire scan_ready;
-    wire [63:0] scan_data;
+    wire [{data_width - 1}:0] scan_data;
     wire scan_last;
 {front_unpack_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
@@ -1182,7 +1252,7 @@ module {module_name} #(
     dau_axi_burst_reader #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats}),
-        .LENGTH_ALIGN_BITS({length_align_bits})
+{reader_data_width_param}        .LENGTH_ALIGN_BITS({length_align_bits})
     ) reader (
         .clk(s_axi_aclk),
         .rst(!s_axi_aresetn),
@@ -1193,17 +1263,17 @@ module {module_name} #(
         .done(reader_done),
         .error(reader_error),
         .error_code(reader_error_code),
-        .m_axi_araddr(m_axi_araddr),
-        .m_axi_arlen(m_axi_arlen),
-        .m_axi_arsize(m_axi_arsize),
-        .m_axi_arburst(m_axi_arburst),
-        .m_axi_arvalid(m_axi_arvalid),
-        .m_axi_arready(m_axi_arready),
-        .m_axi_rdata(m_axi_rdata),
-        .m_axi_rresp(m_axi_rresp),
-        .m_axi_rlast(m_axi_rlast),
-        .m_axi_rvalid(m_axi_rvalid),
-        .m_axi_rready(m_axi_rready),
+        .m_axi_araddr({read_bus}araddr),
+        .m_axi_arlen({read_bus}arlen),
+        .m_axi_arsize({read_bus}arsize),
+        .m_axi_arburst({read_bus}arburst),
+        .m_axi_arvalid({read_bus}arvalid),
+        .m_axi_arready({read_bus}arready),
+        .m_axi_rdata({read_bus}rdata),
+        .m_axi_rresp({read_bus}rresp),
+        .m_axi_rlast({read_bus}rlast),
+        .m_axi_rvalid({read_bus}rvalid),
+        .m_axi_rready({read_bus}rready),
         .stream_valid(scan_valid),
         .stream_ready(scan_ready),
         .stream_data(scan_data),
@@ -1237,20 +1307,20 @@ module {module_name} #(
         .s_bresp(wr_bresp),
         .s_bvalid(wr_bvalid_flat),
         .s_bready(wr_bready_flat),
-        .m_axi_awaddr(m_axi_awaddr),
-        .m_axi_awlen(m_axi_awlen),
-        .m_axi_awsize(m_axi_awsize),
-        .m_axi_awburst(m_axi_awburst),
-        .m_axi_awvalid(m_axi_awvalid),
-        .m_axi_awready(m_axi_awready),
-        .m_axi_wdata(m_axi_wdata),
-        .m_axi_wstrb(m_axi_wstrb),
-        .m_axi_wlast(m_axi_wlast),
-        .m_axi_wvalid(m_axi_wvalid),
-        .m_axi_wready(m_axi_wready),
-        .m_axi_bresp(m_axi_bresp),
-        .m_axi_bvalid(m_axi_bvalid),
-        .m_axi_bready(m_axi_bready)
+        .m_axi_awaddr({write_bus}awaddr),
+        .m_axi_awlen({write_bus}awlen),
+        .m_axi_awsize({write_bus}awsize),
+        .m_axi_awburst({write_bus}awburst),
+        .m_axi_awvalid({write_bus}awvalid),
+        .m_axi_awready({write_bus}awready),
+        .m_axi_wdata({write_bus}wdata),
+        .m_axi_wstrb({write_bus}wstrb),
+        .m_axi_wlast({write_bus}wlast),
+        .m_axi_wvalid({write_bus}wvalid),
+        .m_axi_wready({write_bus}wready),
+        .m_axi_bresp({write_bus}bresp),
+        .m_axi_bvalid({write_bus}bvalid),
+        .m_axi_bready({write_bus}bready)
     );
 
 {register_process}
@@ -1294,6 +1364,12 @@ def generate_scan_composition_sim_sv(
         _validate_against_sources(composition, sources)
     addr_width = composition.addr_width
     burst_beats = composition.burst_beats
+    data_width = composition.data_width
+    if data_width != 64:
+        # the JOB-level sim harness backdoor-loads a 64-bit dau_axi_ram_sim;
+        # wide read tiers are validated by the shell-top generation + silicon
+        # (the reader/dispatcher RTL are cocotb-proven at all tiers in dau-core)
+        raise ScanCompositionError(f"the composition sim harness is 64-bit; data_width={data_width} is a shell-top/silicon path only")
     num_lanes = len(composition.lanes)
     lanes = range(num_lanes)
     name = module_name if module_name is not None else f"{composition.module_name}_sim"
@@ -1376,7 +1452,7 @@ module {name} (
     wire rd_rready;
     wire scan_valid;
     wire scan_ready;
-    wire [63:0] scan_data;
+    wire [{data_width - 1}:0] scan_data;
     wire scan_last;
 {front_unpack_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
