@@ -160,6 +160,25 @@ def test_max_lanes_is_the_budget_ceiling() -> None:
     # a zero-cost lane is nonsense input, refused loudly
     with pytest.raises(ValueError, match="at least one resource"):
         max_lanes(_Use(lut=0, ff=0, bram36=0.0, dsp=0), platform)
+    # negative components (malformed envelopes) refuse instead of
+    # inflating the ceiling
+    with pytest.raises(ValueError, match="nonnegative"):
+        max_lanes(_Use(lut=-1, ff=0, bram36=0.0, dsp=0), platform)
+    with pytest.raises(ValueError, match="nonnegative"):
+        max_lanes(lane, platform, overhead=_Use(lut=-5000, ff=0, bram36=0.0, dsp=0))
+
+
+def test_max_lanes_bram_arithmetic_is_exact() -> None:
+    # half-BRAM units, not float floor division: 365 BRAM36 holds exactly
+    # 730 half-BRAM lanes (335 // 0.1 == 3349.0 is the float trap)
+    platform = dpv1_platform()
+    lane = _Use(lut=1, ff=1, bram36=0.5, dsp=0)
+    assert max_lanes(lane, platform) == min(
+        platform.budget.lut, platform.budget.ff, round(platform.budget.bram36 * 2)
+    )
+    # non-half-granular BRAM is not a real placement
+    with pytest.raises(ValueError, match="half-BRAM granular"):
+        max_lanes(_Use(lut=1, ff=1, bram36=0.3, dsp=0), platform)
 
 
 def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:

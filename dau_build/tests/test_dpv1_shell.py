@@ -31,6 +31,30 @@ def _request(tmp_path: Path) -> MmJobShellRequest:
     )
 
 
+def _wide_tier_platform():
+    from dau_build.platforms import dpv1_platform
+
+    # a wide-tier board stand-in: dpv1 facts with the full catalog unlocked
+    return dpv1_platform().model_copy(update={"width_tiers": (64, 128, 256, 512)})
+
+
+def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    prj = tmp_path / "mig.prj"
+    prj.write_text('<Project NoOfControllers="1"></Project>\n')
+    with _pytest.raises(ValidationError, match="not a width tier of platform 'dpv1'"):
+        MmDdrJobShellRequest(
+            output_root=tmp_path,
+            hdl_sources=(),
+            generated_sources=(("top.v", "module top; endmodule\n"),),
+            top_module="top",
+            mig_prj=prj,
+            data_width=512,
+        )
+
+
 def test_personality_mirrors_the_proven_shell() -> None:
     # the hardware rules: 64-bit prefetchable BARs, 128K KB-scale AXI-Lite, QPLL1
     assert dpv1_xdma_personality().params["axil_master_64bit_en"] == "true"
@@ -357,6 +381,7 @@ def test_wide_data_width_ddr_tcl_wires_split_masters(tmp_path) -> None:
         generated_sources=(("top.v", "module top; endmodule\n"),),
         top_module="top",
         mig_prj=prj,
+        platform=_wide_tier_platform(),
         data_width=512,
     )
     text = mm_ddr_job_shell_project_tcl(request)

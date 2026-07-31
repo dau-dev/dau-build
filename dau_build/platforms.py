@@ -357,19 +357,37 @@ def max_lanes(lane_resources: ResourceUse, platform: PlatformDefinition, *, over
     (Lane count is also a timing-closure knob — the 2026-07-19 lesson —
     so the pricing layer treats this as a CEILING, not a target.)"""
     budget = platform.budget
+
+    def _halves(value: float, label: str) -> int:
+        # BRAM counts in exact half-BRAM36 (RAMB18) units: float floor
+        # division undercounts (335 // 0.1 == 3349.0) and real placements
+        # are half-granular anyway
+        halves = round(value * 2)
+        if abs(value * 2 - halves) > 1e-9:
+            raise ValueError(f"{label} bram36 must be half-BRAM granular, got {value}")
+        return halves
+
+    for label, use in (("lane_resources", lane_resources), ("overhead", overhead)):
+        if use is not None and (use.lut < 0 or use.ff < 0 or use.bram36 < 0 or use.dsp < 0):
+            raise ValueError(f"{label} components must be nonnegative")
     remaining = {
         "lut": budget.lut - (overhead.lut if overhead else 0),
         "ff": budget.ff - (overhead.ff if overhead else 0),
-        "bram36": budget.bram36 - (overhead.bram36 if overhead else 0.0),
+        "bram36": _halves(budget.bram36, "budget") - (_halves(overhead.bram36, "overhead") if overhead else 0),
         "dsp": budget.dsp - (overhead.dsp if overhead else 0),
     }
     if any(value < 0 for value in remaining.values()):
         return 0
-    per_lane = {"lut": lane_resources.lut, "ff": lane_resources.ff, "bram36": lane_resources.bram36, "dsp": lane_resources.dsp}
-    ceilings = [int(remaining[key] // per_lane[key]) for key in per_lane if per_lane[key] > 0]
+    per_lane = {
+        "lut": lane_resources.lut,
+        "ff": lane_resources.ff,
+        "bram36": _halves(lane_resources.bram36, "lane_resources"),
+        "dsp": lane_resources.dsp,
+    }
+    ceilings = [remaining[key] // per_lane[key] for key in per_lane if per_lane[key] > 0]
     if not ceilings:
         raise ValueError("lane_resources must use at least one resource")
-    return min(ceilings)
+    return int(min(ceilings))
 
 
 def dpv1_platform() -> PlatformDefinition:
