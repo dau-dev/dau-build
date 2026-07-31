@@ -566,7 +566,7 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
 """
 
 
-def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: list[int]) -> str:
+def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: list[int], *, clk: str, rst: str, start: str) -> str:
     """Status glue for a lane whose chain fuses terminal-shaped stages.
 
     Each draining stage's status is accepted unconditionally (``ready`` tied
@@ -589,11 +589,21 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     # carried into the new job's status rather than silently dropped — a loud
     # failure on the next job beats a clean report over a corrupt one.
     raising = " || ".join(f"(chain{j}_status_valid_{i} && chain{j}_status_error_{i})" for j in draining)
+    # THE EMPTY-BATCH CLOSE. A draining stage that produced NO output (an
+    # all-miss as-of join, a filter that kept nothing) starves everything
+    # downstream: no row means no output_last, so no downstream stage — and
+    # not the terminal — ever closes, and the record writer would wait
+    # forever. That stage's own close-out is the only end-of-batch evidence
+    # in the lane, so when it closes empty the lane closes with it. Tracked
+    # per stage: `saw_out` sets on the stage's first output beat and clears
+    # per job. Only the most upstream empty stage can fire (a starved
+    # downstream stage never closes at all), so the lane still presents one
+    # close-out.
     lines = [
         f"    reg fused_err_{i};",
         f"    reg [7:0] fused_err_code_{i};",
-        "    always @(posedge s_axi_aclk) begin",
-        "        if (!s_axi_aresetn) begin",
+        f"    always @(posedge {clk}) begin",
+        f"        if ({rst}) begin",
         f"            fused_err_{i} <= 1'b0;",
         f"            fused_err_code_{i} <= 8'd0;",
         f"        end else if (!fused_err_{i} && ({raising})) begin",
@@ -604,7 +614,7 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
         lines.append(f"            {keyword} (chain{j}_status_valid_{i} && chain{j}_status_error_{i}) begin")
         lines.append(f"                fused_err_code_{i} <= chain{j}_status_error_code_{i};")
         lines.append("            end")
-    lines.append("        end else if (job_start) begin")
+    lines.append(f"        end else if ({start}) begin")
     lines.append(f"            fused_err_{i} <= 1'b0;")
     lines.append(f"            fused_err_code_{i} <= 8'd0;")
     lines.append("        end")
@@ -613,6 +623,35 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     # the draining stages accept their own status immediately
     for j in draining:
         lines.append(f"    assign chain{j}_status_ready_{i} = 1'b1;")
+
+    # per-stage output-seen tracking and the empty-close pulse
+    for j in draining:
+        lines.append(f"    reg saw_out_{i}_{j};")
+        lines.append(f"    reg empty_close_{i}_{j};")
+    lines.append(f"    always @(posedge {clk}) begin")
+    lines.append(f"        if ({rst}) begin")
+    for j in draining:
+        lines.append(f"            saw_out_{i}_{j} <= 1'b0;")
+        lines.append(f"            empty_close_{i}_{j} <= 1'b0;")
+    lines.append(f"        end else if ({start}) begin")
+    for j in draining:
+        lines.append(f"            saw_out_{i}_{j} <= 1'b0;")
+        lines.append(f"            empty_close_{i}_{j} <= 1'b0;")
+    lines.append("        end else begin")
+    for j in draining:
+        lines.append(f"            if (chain{j}_out_valid_{i} && chain{j}_out_ready_{i}) begin")
+        lines.append(f"                saw_out_{i}_{j} <= 1'b1;")
+        lines.append("            end")
+        lines.append(
+            f"            if (chain{j}_status_valid_{i} && !chain{j}_status_error_{i} && !saw_out_{i}_{j}"
+            f" && !(chain{j}_out_valid_{i} && chain{j}_out_ready_{i})) begin"
+        )
+        lines.append(f"                empty_close_{i}_{j} <= 1'b1;")
+        lines.append("            end")
+    lines.append("        end")
+    lines.append("    end")
+    empty_close = " || ".join(f"empty_close_{i}_{j}" for j in draining)
+    lines.append(f"    wire fused_empty_close_{i} = {empty_close};")
 
     # beneath the latch, the silent stages and the terminal keep the
     # upstream-first mux (the pending-order rule the chain contract defines)
@@ -623,7 +662,7 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     for stem in reversed(stems):
         error_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_{i} : {error_mux}"
         code_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_code_{i} : {code_mux}"
-    lines.append(f"    assign unit_status_valid_{i} = fused_err_{i} || ({base_valid});")
+    lines.append(f"    assign unit_status_valid_{i} = fused_err_{i} || fused_empty_close_{i} || ({base_valid});")
     lines.append(f"    assign unit_status_error_{i} = fused_err_{i} ? 1'b1 : ({error_mux});")
     lines.append(f"    assign unit_status_error_code_{i} = fused_err_{i} ? fused_err_code_{i} : ({code_mux});")
 
@@ -637,7 +676,9 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     return "\n".join(lines) + "\n"
 
 
-def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
+def _lane_status_glue_sv(
+    composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk", rst: str = "!s_axi_aresetn", start: str = "job_start"
+) -> str:
     """The per-unit status mux for lane ``i``: a filterless lane forwards
     the tile status; a filtered lane muxes the partition status (which
     wins) over the tile status; a chained lane muxes every stage's status
@@ -654,7 +695,7 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
         # stages keep the byte-identical upstream-first mux.
         draining = [j for j, stage in enumerate(lane.chain) if stage.closes_out]
         if draining:
-            return _fused_chain_status_glue_sv(composition, i, draining)
+            return _fused_chain_status_glue_sv(composition, i, draining, clk=clk, rst=rst, start=start)
         stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in range(len(lane.chain))]
         valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
         error_mux = f"tile_status_error_{i}"
@@ -826,7 +867,7 @@ def _lane_tile_upstream(composition: ScanComposition, i: int) -> str:
     return "filt_out" if not chain else f"chain{len(chain) - 1}_out"
 
 
-def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -> str:
+def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str, start: str = "job_start") -> str:
     """Every lane unit: front (partitioner tap / broadcast tap / partition
     filter), chain stages, operator tile, status glue, and record writer."""
     addr_width = composition.addr_width
@@ -851,7 +892,7 @@ def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str) -
         .{composition.lanes[i].count_port}(tile_bar_count_{i})
     );
 
-{_lane_status_glue_sv(composition, i)}
+{_lane_status_glue_sv(composition, i, clk=clk, rst=writer_rst, start=start)}
     dau_axi_record_writer #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats})
@@ -1512,7 +1553,7 @@ def generate_scan_composition_sim_sv(
     length_align_bits = 3 if composition.front_unpack is not None else 4
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
-    lane_instances = _lane_units_sv(composition, clk="clk", writer_rst="rst")
+    lane_instances = _lane_units_sv(composition, clk="clk", writer_rst="rst", start="start")
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
     error_priority = _writer_error_priority_sv(num_lanes, error="error", error_code="error_code")

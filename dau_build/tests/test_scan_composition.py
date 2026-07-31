@@ -952,7 +952,12 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
     assert sv.index(capture) < sv.index("end else if (job_start) begin"), "the per-job clear must not outrank error capture"
     assert "if (chain0_status_valid_0 && chain0_status_error_0) begin" in sv
     assert "else if (chain2_status_valid_0 && chain2_status_error_0) begin" in sv
-    assert "assign unit_status_valid_0 = fused_err_0 || (tile_status_valid_0 || chain1_status_valid_0);" in sv
+    assert "assign unit_status_valid_0 = fused_err_0 || fused_empty_close_0 || (tile_status_valid_0 || chain1_status_valid_0);" in sv
+    # an all-miss upstream stage produces no rows, so nothing downstream ever
+    # sees output_last: its own close-out is the lane's only end-of-batch
+    # evidence and must reach the writer instead of being drained away
+    assert "reg saw_out_0_0;" in sv and "reg empty_close_0_0;" in sv
+    assert "wire fused_empty_close_0 = empty_close_0_0 || empty_close_0_2;" in sv
     assert "assign unit_status_error_0 = fused_err_0 ? 1'b1 : (chain1_status_valid_0 ? chain1_status_error_0 : tile_status_error_0);" in sv
     # the terminal still closes the lane out
     assert "assign tile_status_ready_0 = unit_status_ready_0 && !chain1_status_valid_0;" in sv
