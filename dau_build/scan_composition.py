@@ -116,7 +116,11 @@ class ScanComposition(BaseModel):
     still sees the clean 32-bit key). Its config carries the four field
     descriptors (``cfg_field{0..3}_{offset,width,signed}``) and
     ``cfg_bypass``. Absent (``None``), the top emits exactly as before —
-    every param-less golden stays byte-identical."""
+    every param-less golden stays byte-identical.
+
+    ``wide_lane`` selects the registry-legalized single-lane shape whose
+    stages consume the burst reader's whole wide beat directly. The private
+    bridge sets this flag; this public generator cannot consult its registry."""
 
     name: str
     module_name: str
@@ -132,6 +136,7 @@ class ScanComposition(BaseModel):
     # the narrow write M_AXI_W (the record writers stay 64-bit) so a wide DDR
     # read never forces narrow writes on a wide bus.
     data_width: int = 64
+    wide_lane: bool = False
     # capability words the identity block advertises (register map 0.2).
     # These are caller-computed data — the walker never guesses them: the
     # bitmaps default to zero ("advertise nothing") so a composition only
@@ -154,6 +159,15 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     widths disagree."""
     if not composition.lanes:
         raise ScanCompositionError("a scan composition needs at least one lane")
+    if composition.wide_lane:
+        if len(composition.lanes) != 1:
+            raise ScanCompositionError("a wide_lane scan composition needs exactly one lane")
+        if composition.partitioner is not None:
+            raise ScanCompositionError("a wide_lane scan composition cannot carry a shared partitioner")
+        if composition.front_unpack is not None:
+            raise ScanCompositionError("a wide_lane scan composition cannot carry a front_unpack")
+        if composition.lanes[0].partition is not None:
+            raise ScanCompositionError("a wide_lane scan composition cannot carry a lane partition")
     if composition.partitioner is not None:
         for lane in composition.lanes:
             if lane.partition is not None:
@@ -168,6 +182,8 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     data_width = composition.data_width
     if data_width not in _WIDTHS:
         raise ScanCompositionError(f"data_width must be one of {_WIDTHS}, got {data_width}")
+    if composition.wide_lane and data_width not in (128, 256, 512):
+        raise ScanCompositionError(f"wide_lane data_width must be one of (128, 256, 512), got {data_width}")
     front_width = composition.front_unpack.params.get("OUT_WIDTH", 64) if composition.front_unpack is not None else 64
     fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
     if composition.front_unpack is not None:
@@ -185,7 +201,7 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
         feed_width = data_width
     if fanout_width not in _WIDTHS:
         raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
-    if feed_width > 64:
+    if feed_width > 64 and not composition.wide_lane:
         if composition.partitioner is None:
             raise ScanCompositionError(
                 f"a {feed_width}-bit feed stream needs a shared partitioner/dispatcher accepting IN_WIDTH={feed_width}; "
@@ -493,6 +509,16 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
     stream, tap the broadcast directly (filterless lane), or instantiate the
     lane's partition filter off the broadcast."""
     lane = composition.lanes[i]
+    if composition.wide_lane:
+        return f"""    assign filt_out_valid_{i} = scan_valid;
+    assign scan_ready = filt_out_ready_{i};
+    assign filt_out_data_{i} = scan_data;
+    assign filt_out_last_{i} = scan_last;
+    assign filt_status_valid_{i} = 1'b0;
+    assign filt_status_ready_{i} = 1'b0;
+    assign filt_status_error_{i} = 1'b0;
+    assign filt_status_error_code_{i} = 8'd0;
+"""
     if composition.partitioner is not None:
         return f"""    assign filt_out_valid_{i} = part_out_valid[{i}];
     assign part_out_ready[{i}] = filt_out_ready_{i};
@@ -539,7 +565,7 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
     ready fires only when nothing upstream of it is pending)."""
     lane = composition.lanes[i]
     if lane.chain:
-        front_filtered = lane.partition is not None or composition.partitioner is not None
+        front_filtered = not composition.wide_lane and (lane.partition is not None or composition.partitioner is not None)
         stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in range(len(lane.chain))]
         valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
         error_mux = f"tile_status_error_{i}"
@@ -577,10 +603,11 @@ def _lane_status_glue_sv(composition: ScanComposition, i: int) -> str:
 def _lane_chain_wire_decls_sv(composition: ScanComposition, i: int) -> str:
     """Per-chain-stage wire declarations for lane ``i`` (empty for a
     chainless lane, keeping the chainless emission byte-identical)."""
+    stream_width = composition.data_width if composition.wide_lane else 64
     return "".join(
         f"""    wire chain{j}_out_valid_{i};
     wire chain{j}_out_ready_{i};
-    wire [63:0] chain{j}_out_data_{i};
+    wire [{stream_width - 1}:0] chain{j}_out_data_{i};
     wire chain{j}_out_last_{i};
     wire chain{j}_status_valid_{i};
     wire chain{j}_status_ready_{i};
@@ -595,10 +622,11 @@ def _lane_wire_decls_sv(composition: ScanComposition) -> str:
     """Per-lane internal wire declarations (lane front, chain stages, tile,
     status glue, writer, and the latched count register)."""
     addr_width = composition.addr_width
+    stream_width = composition.data_width if composition.wide_lane else 64
     return "\n".join(
         f"""    wire filt_out_valid_{i};
     wire filt_out_ready_{i};
-    wire [63:0] filt_out_data_{i};
+    wire [{stream_width - 1}:0] filt_out_data_{i};
     wire filt_out_last_{i};
     wire filt_status_valid_{i};
     wire filt_status_ready_{i};
@@ -1075,7 +1103,7 @@ def generate_scan_composition_top_sv(
     lane_flat_assigns = _lane_flat_assigns_sv(composition)
     lane_instances = _lane_units_sv(composition, clk="s_axi_aclk", writer_rst="!s_axi_aresetn")
     stream_prefix = "feed" if composition.front_unpack is not None else "scan"
-    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
+    fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="s_axi_aclk")
     front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="job_error", error_code="job_error_code")
@@ -1386,7 +1414,7 @@ def generate_scan_composition_sim_sv(
         for i in lanes
     )
     stream_prefix = "feed" if composition.front_unpack is not None else "scan"
-    fanout_wire_decls, fanout_instance = _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
+    fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="clk")
     front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="error", error_code="error_code")
