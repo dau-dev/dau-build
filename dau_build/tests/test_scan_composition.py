@@ -981,3 +981,31 @@ def test_a_chain_without_closing_stages_is_byte_identical() -> None:
     sv = generate_scan_composition_top_sv(silent)
     assert "fused_err_0" not in sv
     assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in sv
+
+
+def test_the_length_gate_follows_the_head_record_size() -> None:
+    """A fused chain whose head reads a 24-byte record was rejecting an
+    ODD number of perfectly good records, because the gate assumed the
+    16-byte quad row. The gate now takes the largest power of two
+    dividing the declared record size; a length on that grid that still
+    tears a record is the head tile's ERR_STREAM job."""
+    for row_bytes, grid in ((16, 16), (24, 8), (8, 8), (32, 32)):
+        composition = ScanComposition(
+            name="gate",
+            module_name="dau_mm_gate_job",
+            input_row_bytes=row_bytes,
+            lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="aggregated_count"),),
+        )
+        sv = generate_scan_composition_top_sv(composition)
+        bits = grid.bit_length() - 1
+        assert f"input_length_bytes[{bits - 1}:0] == {bits}'d0" in sv, f"{row_bytes}B record wants a {grid}B grid"
+
+    with pytest.raises(ScanCompositionError, match="positive multiple of 8"):
+        generate_scan_composition_top_sv(
+            ScanComposition(
+                name="bad",
+                module_name="m",
+                input_row_bytes=12,
+                lanes=(LaneTile(module="t", count_port="c"),),
+            )
+        )

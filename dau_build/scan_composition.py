@@ -146,6 +146,15 @@ class ScanComposition(BaseModel):
     # read never forces narrow writes on a wide bus.
     data_width: int = 64
     wide_lane: bool = False
+    # the byte size of ONE record the composition's first consumer reads.
+    # 16 is the standard quad row; a fused chain whose head takes a wider
+    # record (the as-of join's 24-byte 3-word record) must say so or the
+    # length gate rejects an odd number of perfectly good records. The
+    # register can only enforce power-of-two alignment, so the gate uses
+    # the largest power of two dividing this — a length that is on the
+    # word grid but tears a record is the head tile's ERR_STREAM job (the
+    # same division of labour the packed front already uses).
+    input_row_bytes: int = 16
     # capability words the identity block advertises (register map 0.2).
     # These are caller-computed data — the walker never guesses them: the
     # bitmaps default to zero ("advertise nothing") so a composition only
@@ -158,6 +167,17 @@ class ScanComposition(BaseModel):
 
     def model_post_init(self, _context) -> None:
         _validate_composition_shape(self)
+
+
+def _largest_power_of_two_divisor_bits(row_bytes: int) -> int:
+    """The alignment the length gate can enforce for a record of
+    ``row_bytes``: the exponent of the largest power of two dividing it
+    (16 -> 4, 24 -> 3, 8 -> 3). A 24-byte record is not power-of-two
+    sized, so the gate admits every 8-byte-aligned length and leaves a
+    torn record to the head tile's ERR_STREAM path."""
+    if row_bytes <= 0 or row_bytes % 8:
+        raise ScanCompositionError(f"input_row_bytes must be a positive multiple of 8, got {row_bytes}")
+    return (row_bytes & -row_bytes).bit_length() - 1
 
 
 def _validate_composition_shape(composition: ScanComposition) -> None:
@@ -1248,7 +1268,7 @@ def generate_scan_composition_top_sv(
     # the input length must be a whole number of rows AND of reader beats: at
     # a wide bus (data_width > 64) a beat spans several rows, so beat
     # alignment (log2(data_width/8)) dominates the row grid (3 packed / 4 quad)
-    _row_align = 3 if composition.front_unpack is not None else 4
+    _row_align = 3 if composition.front_unpack is not None else _largest_power_of_two_divisor_bits(composition.input_row_bytes)
     _beat_align = (data_width // 8).bit_length() - 1
     length_align_bits = max(_row_align, _beat_align)
     grid_bytes = 1 << length_align_bits
