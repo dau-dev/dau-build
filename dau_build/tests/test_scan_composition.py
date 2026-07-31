@@ -802,6 +802,90 @@ def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> N
     assert "input wire [63:0] m_axi_rdata," not in sv
 
 
+def _wide_lane_composition() -> ScanComposition:
+    return ScanComposition(
+        name="wide-lane",
+        module_name="dau_mm_wide_lane_job",
+        lanes=(
+            LaneTile(
+                module="dau_int32_wide_row_projection",
+                params={"SLOTS": 4},
+                count_port="record_count",
+                chain=(
+                    TileInstance(module="dau_int32_wide_row_predicate_filter", params={"SLOTS": 4}),
+                    TileInstance(module="dau_int32_wide_row_transform", params={"SLOTS": 4}),
+                ),
+            ),
+        ),
+        data_width=512,
+        wide_lane=True,
+    )
+
+
+def test_wide_lane_taps_the_wide_reader_directly() -> None:
+    """A wide lane consumes whole reader beats through every chain stage,
+    then emits standard 64-bit records to the unchanged writer."""
+    sv = generate_scan_composition_top_sv(_wide_lane_composition())
+
+    assert "    assign filt_out_valid_0 = scan_valid;\n" in sv
+    assert "    assign scan_ready = filt_out_ready_0;\n" in sv
+    assert "    assign filt_out_data_0 = scan_data;\n" in sv
+    assert "    assign filt_out_last_0 = scan_last;\n" in sv
+    assert "    assign filt_status_valid_0 = 1'b0;\n" in sv
+    assert "    assign filt_status_ready_0 = 1'b0;\n" in sv
+    assert "    assign filt_status_error_0 = 1'b0;\n" in sv
+    assert "    assign filt_status_error_code_0 = 8'd0;\n" in sv
+    assert "dau_stream_broadcast" not in sv
+    assert " partitioner (" not in sv
+    assert "bcast_" not in sv
+    assert "part_out_" not in sv
+
+    assert "wire [511:0] filt_out_data_0;" in sv
+    assert "wire [511:0] chain0_out_data_0;" in sv
+    assert "wire [511:0] chain1_out_data_0;" in sv
+    assert "wire [63:0] tile_out_data_0;" in sv
+    assert "wire [63:0] wr_wdata_0;" in sv
+    assert sv.count(".SLOTS(4)") == 3
+
+    assert "M_AXI_R ARADDR" in sv and "M_AXI_W AWADDR" in sv
+    assert "input wire [511:0] m_axi_r_rdata" in sv
+    assert "output wire [63:0] m_axi_w_wdata" in sv
+    assert ".DATA_WIDTH(512)" in sv
+    assert "ASSOCIATED_BUSIF S_AXI:M_AXI_R:M_AXI_W" in sv
+    assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[5:0] == 6'd0);" in sv
+
+
+def test_wide_lane_requires_exactly_one_lane() -> None:
+    lane = LaneTile(module="dau_int32_wide_row_projection", count_port="record_count")
+    with pytest.raises(ValidationError, match="wide_lane.*exactly one lane"):
+        ScanComposition(name="bad", module_name="dau_bad", lanes=(lane, lane), data_width=512, wide_lane=True)
+
+
+def test_wide_lane_rejects_a_shared_partitioner() -> None:
+    composition = _wide_lane_composition().model_dump()
+    composition["partitioner"] = TileInstance(module="dau_int32_key_mask_dispatcher")
+    with pytest.raises(ValidationError, match="wide_lane.*shared partitioner"):
+        ScanComposition.model_validate(composition)
+
+
+def test_wide_lane_rejects_a_front_unpacker() -> None:
+    composition = _wide_lane_composition().model_dump()
+    composition["front_unpack"] = TileInstance(module="dau_int32_row_unpack")
+    with pytest.raises(ValidationError, match="wide_lane.*front_unpack"):
+        ScanComposition.model_validate(composition)
+
+
+def test_wide_lane_rejects_a_narrow_data_width() -> None:
+    with pytest.raises(ValidationError, match="wide_lane data_width.*128, 256, 512"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=(LaneTile(module="dau_int32_wide_row_projection", count_port="record_count"),),
+            data_width=64,
+            wide_lane=True,
+        )
+
+
 def test_wide_data_width_needs_a_dispatcher_not_a_broadcast() -> None:
     """The broadcast shape is 64-bit only — a wide data_width with no shared
     partitioner is rejected (every lane would see every row)."""
