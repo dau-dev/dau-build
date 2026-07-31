@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ccflow import BaseModel
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from dau_build.platforms import PlatformDefinition
 
@@ -109,6 +109,16 @@ class MmDdrJobShellRequest(BaseModel):
     # smartconnect slaves. Mirrors the composition's data_width.
     data_width: int = 64
     jobs: int = 12
+
+    @model_validator(mode="after")
+    def _width_within_platform_tiers(self) -> MmDdrJobShellRequest:
+        # the catalog gate at the source: a width outside the platform's
+        # tier list never reaches tcl generation
+        if self.data_width not in self.platform.width_tiers:
+            raise ValueError(
+                f"data_width {self.data_width} is not a width tier of platform {self.platform.name!r} (width_tiers={list(self.platform.width_tiers)})"
+            )
+        return self
 
     @property
     def resolved_part(self) -> str:
@@ -381,6 +391,9 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     ui_clk domain; resets follow the proven wiring (sys_rst and aresetn
     tied high, calibration status on LED_A4, XADC temperature into
     device_temp_i)."""
+    # re-run the tier gate here: model_copy(update=) skips validators, so a
+    # copied request could otherwise carry a width the platform refuses
+    request._width_within_platform_tiers()
     preamble = _project_preamble_tcl(
         request,
         banner=(
