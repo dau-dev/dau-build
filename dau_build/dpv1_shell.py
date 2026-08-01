@@ -312,6 +312,30 @@ connect_bd_net [get_bd_pins xdma_0/axi_aresetn] [get_bd_pins job_rst/ext_reset_i
 """
 
 
+def _spi_cfgmem_tcl(platform) -> str:
+    """The SPI-flash packaging step for a board that BOOTS FROM FLASH.
+
+    Such a board never comes up from a raw JTAG bitstream write, so the
+    shell build has to emit the mcs the flasher writes. The width and rate
+    have to be set on the design and the bitstream REGENERATED -- they are
+    baked into the bitstream at write time, so a plain bit copied from the
+    run directory carries the tool defaults no matter what the flash step
+    later does with it.
+    """
+    if platform.spi_boot_buswidth is None:
+        return ""
+    rate = platform.spi_boot_configrate
+    rate_line = f"set_property BITSTREAM.CONFIG.CONFIGRATE {rate} [current_design]\n" if rate is not None else ""
+    return (
+        f"set_property BITSTREAM.CONFIG.SPI_BUSWIDTH {platform.spi_boot_buswidth} [current_design]\n"
+        f"{rate_line}"
+        'write_bitstream -force "$origin_dir/dau_mm_job_spi.bit"\n'
+        f"write_cfgmem -format mcs -interface SPIx{platform.spi_boot_buswidth} -size 32 -force "
+        '-loadbit "up 0 $origin_dir/dau_mm_job_spi.bit" -file "$origin_dir/dau_mm_job.mcs"\n'
+        'puts "DAU_MM_JOB_MCS $origin_dir/dau_mm_job.mcs"\n'
+    )
+
+
 def _lane_swizzle_verify_tcl(lane_placements: tuple[tuple[int, str], ...]) -> str:
     """Post-route verification that every swizzled lane landed on its site."""
     swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in lane_placements)
@@ -339,6 +363,11 @@ def _build_postamble_tcl(request) -> str:
     when the platform declares lane placements."""
     placements = request.platform.lane_placements
     hook_line = 'set_property STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl" [get_runs impl_1]\n' if placements else ""
+    # A board whose resident path is SPI flash needs the mcs the flasher
+    # actually writes, and the bitstream has to carry the SPI width/rate
+    # BEFORE it is generated -- a raw JTAG write of a plain bitstream never
+    # boots such a board. Driven by the platform fact, never hand-run.
+    spi_block = _spi_cfgmem_tcl(request.platform)
     verify_block = _lane_swizzle_verify_tcl(placements) if placements else ""
     return f"""validate_bd_design
 save_bd_design
@@ -367,6 +396,7 @@ report_timing_summary -file "$origin_dir/timing_mm.rpt"
 
 {verify_block}set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 file copy -force "$origin_dir/project_mm/project_mm.runs/impl_1/Top_wrapper.bit" "$origin_dir/dau_mm_job.bit"
+{spi_block}
 puts "DAU_MM_JOB_BUILD_OK wns=$wns"
 exit 0
 """
