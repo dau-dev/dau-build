@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ccflow import BaseModel
+from pydantic import ConfigDict
 
 __all__ = (
     "LaneTile",
@@ -43,6 +44,8 @@ class TileInstance(BaseModel):
     on the instance). A tile with no ``params`` is emitted exactly as before
     the channel existed (no ``#(...)``), so every param-less golden stays
     byte-identical."""
+
+    model_config = ConfigDict(frozen=True)
 
     module: str
     config: dict[str, str] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
@@ -128,6 +131,8 @@ class ScanComposition(BaseModel):
     ``wide_lane`` selects the registry-legalized single-lane shape whose
     stages consume the burst reader's whole wide beat directly. The private
     bridge sets this flag; this public generator cannot consult its registry."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     module_name: str
