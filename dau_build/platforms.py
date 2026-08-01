@@ -231,6 +231,10 @@ class PlatformDefinition(BaseModel):
     # is supported: the cfgmem generator (flash.tcl / vivado_build_tcl)
     # writes SPIx4; another width would need its own cfgmem-generation path.
     spi_boot_buswidth: Literal[4] | None = None
+    # the SPI configuration clock rate (MHz) baked into the bitstream for a
+    # self-configuring board. It sets how long the board takes to come up
+    # from flash, so it is a measured board fact rather than a tool default.
+    spi_boot_configrate: int | None = None
     # the platform's supported memory-read width tiers (the precompiled
     # bitstream catalog dimension): each entry is a legal `width=` build
     # selection on this board. Bounded by the memory system's AXI width and

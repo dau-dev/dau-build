@@ -178,5 +178,10 @@ puts "lane swizzle verified"
 
 set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 file copy -force "$origin_dir/project_mm/project_mm.runs/impl_1/Top_wrapper.bit" "$origin_dir/dau_mm_job.bit"
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
+write_bitstream -force "$origin_dir/dau_mm_job_spi.bit"
+write_cfgmem -format mcs -interface SPIx4 -size 32 -force -loadbit "up 0 $origin_dir/dau_mm_job_spi.bit" -file "$origin_dir/dau_mm_job.mcs"
+puts "DAU_MM_JOB_MCS $origin_dir/dau_mm_job.mcs"
+
 puts "DAU_MM_JOB_BUILD_OK wns=$wns"
 exit 0

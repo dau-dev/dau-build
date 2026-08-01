@@ -410,3 +410,29 @@ def test_wide_data_width_ddr_tcl_wires_split_masters(tmp_path) -> None:
     # the shared-master wiring is gone
     assert "[get_bd_intf_pins top_0/M_AXI]" not in text
     assert "[get_bd_addr_spaces top_0/M_AXI]" not in text
+
+
+def test_a_flash_booting_platform_emits_its_spi_mcs() -> None:
+    """dpv2's resident path IS SPI flash: it never enumerates from a raw JTAG
+    bitstream write. A shell build that emits only a .bit therefore produces
+    nothing that board can boot, so the mcs must come out of the same build."""
+    from dau_build.dpv1_shell import _spi_cfgmem_tcl
+    from dau_build.platforms import dpv1_platform
+
+    spi = dpv1_platform().model_copy(update={"spi_boot_buswidth": 4, "spi_boot_configrate": 33})
+    tcl = _spi_cfgmem_tcl(spi)
+    assert "BITSTREAM.CONFIG.SPI_BUSWIDTH 4" in tcl
+    assert "BITSTREAM.CONFIG.CONFIGRATE 33" in tcl
+    # the bitstream must be REGENERATED after the properties are set: the
+    # width is baked in at write time, so copying the run's default bit
+    # would ship the tool default however the flash step is invoked
+    assert tcl.index("SPI_BUSWIDTH") < tcl.index("write_bitstream") < tcl.index("write_cfgmem")
+    assert "-interface SPIx4" in tcl
+
+    # dpv1 declares SPIx4 too but pins no rate, so it gets the width and the
+    # mcs without a CONFIGRATE line
+    assert "CONFIGRATE" not in _spi_cfgmem_tcl(dpv1_platform())
+
+    # a board that does NOT self-configure from flash gains nothing, and its
+    # build must stay byte-identical to what it emitted before
+    assert _spi_cfgmem_tcl(dpv1_platform().model_copy(update={"spi_boot_buswidth": None})) == ""
