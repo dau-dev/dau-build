@@ -119,12 +119,10 @@ class ScanComposition(BaseModel):
     ``partitioner`` routes each row to exactly one lane — lanes then carry
     no per-lane partition.
 
-    An optional ``front_unpack`` feed tile is placed between the burst
-    reader and the fan-out: the reader's row stream feeds it, and its
-    widened output stream feeds the broadcast/partition (so the fan-out
-    still sees the clean 32-bit key). Its config carries the four field
-    descriptors (``cfg_field{0..3}_{offset,width,signed}``) and
-    ``cfg_bypass``. Absent (``None``), the top emits exactly as before —
+    One optional front-stage tile may be placed between the burst reader and
+    the fan-out. ``front_unpack`` widens packed fields; ``front_gearbox``
+    turns wide reader beats into whole ``input_row_bytes`` records for a
+    shared dispatcher. Absent (``None``), the top emits exactly as before —
     every param-less golden stays byte-identical.
 
     ``wide_lane`` selects the registry-legalized single-lane shape whose
@@ -136,6 +134,7 @@ class ScanComposition(BaseModel):
     lanes: tuple[LaneTile, ...]
     partitioner: TileInstance | None = None
     front_unpack: TileInstance | None = None
+    front_gearbox: TileInstance | None = None
     burst_beats: int = 32
     addr_width: int = 32
     # the memory read datapath width (the width-tier catalog knob): the burst
@@ -195,6 +194,8 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a shared partitioner")
         if composition.front_unpack is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a front_unpack")
+        if composition.front_gearbox is not None:
+            raise ScanCompositionError("a wide_lane scan composition cannot carry a front_gearbox")
         if composition.lanes[0].partition is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a lane partition")
     if composition.partitioner is not None:
@@ -203,18 +204,43 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
                 raise ScanCompositionError(f"lane tile {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
     # Two width surfaces: DATA_WIDTH (the burst reader's DDR read/stream
     # width, the memory-bandwidth knob) and the FEED width entering the
-    # fan-out (the rows/cycle framing the dispatcher accepts). When a front
-    # unpacker is present the reader reads PACKED rows (data_width 64) and the
-    # unpacker widens to its OUT_WIDTH; without one the reader emits quad rows
-    # directly at data_width, so the feed IS the reader stream.
+    # fan-out (the rows/cycle framing the dispatcher accepts). A front unpacker
+    # widens packed rows; a front gearbox emits one input record; without either
+    # front stage the feed IS the reader stream.
     _WIDTHS = (64, 128, 256, 512)
     data_width = composition.data_width
     if data_width not in _WIDTHS:
         raise ScanCompositionError(f"data_width must be one of {_WIDTHS}, got {data_width}")
     if composition.wide_lane and data_width not in (128, 256, 512):
         raise ScanCompositionError(f"wide_lane data_width must be one of (128, 256, 512), got {data_width}")
+    if composition.front_unpack is not None and composition.front_gearbox is not None:
+        raise ScanCompositionError("front_unpack and front_gearbox are mutually exclusive front-stage slots")
+    if composition.front_gearbox is not None:
+        if data_width <= 64:
+            raise ScanCompositionError("front_gearbox requires data_width > 64")
+        if composition.partitioner is None:
+            raise ScanCompositionError("front_gearbox requires a shared partitioner")
+        if "RECORD_WORDS" in composition.front_gearbox.params:
+            raise ScanCompositionError("front_gearbox RECORD_WORDS is derived from input_row_bytes; do not override it via params")
+        if "IN_WIDTH" in composition.front_gearbox.params:
+            raise ScanCompositionError("front_gearbox IN_WIDTH is derived from data_width; do not override it via params")
+        if "cfg_input_records" in composition.front_gearbox.config:
+            raise ScanCompositionError("front_gearbox cfg_input_records is derived from input_length_bytes; do not bind it via config")
+        _largest_power_of_two_divisor_bits(composition.input_row_bytes)
+        # the router's record framing is DERIVED too. Its IN_WIDTH in
+        # whole-record mode is the record bus (RECORD_WORDS * 64), so making
+        # the caller hand-set it just reintroduces a mismatch the gearbox's
+        # own derivation was designed to make unrepresentable.
+        for derived in ("IN_WIDTH", "RECORD_WORDS", "RECORD_INPUT"):
+            if derived in composition.partitioner.params:
+                raise ScanCompositionError(f"partitioner {derived} is derived from the front gearbox's record size; do not override it via params")
+
     front_width = composition.front_unpack.params.get("OUT_WIDTH", 64) if composition.front_unpack is not None else 64
-    fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
+    if composition.front_gearbox is not None:
+        # derived, so the feed-framing rule below sees the record bus
+        fanout_width = (composition.input_row_bytes // 8) * 64
+    else:
+        fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
     if composition.front_unpack is not None:
         # the packed path: OUT_WIDTH 64/128 is proven; a wider packed reader
         # (data_width > 64) driving a 256/512 unpacker is a separate follow-up
@@ -226,9 +252,11 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
                 "drop the front_unpack to feed quad rows at data_width, or keep data_width=64"
             )
         feed_width = front_width
+    elif composition.front_gearbox is not None:
+        feed_width = composition.input_row_bytes * 8
     else:
         feed_width = data_width
-    if fanout_width not in _WIDTHS:
+    if composition.front_gearbox is None and fanout_width not in _WIDTHS:
         raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
     if feed_width > 64 and not composition.wide_lane:
         if composition.partitioner is None:
@@ -266,6 +294,7 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
 
     _stray(composition.partitioner, allowed=False)
     _stray(composition.front_unpack, allowed=False)
+    _stray(composition.front_gearbox, allowed=False)
     for lane in composition.lanes:
         _stray(lane, allowed=False)
         _stray(lane.partition, allowed=False)
@@ -958,7 +987,7 @@ def _fanout_sv(composition: ScanComposition, *, clk: str, stream_prefix: str = "
     partitioner when the composition carries one, the stream broadcast
     otherwise. ``stream_prefix`` names the row stream driving the fan-out
     input (``scan`` from the burst reader by default, ``feed`` from the
-    front unpacker when the composition carries one)."""
+    front unpacker, or ``geared`` from the front gearbox)."""
     num_lanes = len(composition.lanes)
     if composition.partitioner is not None:
         wire_decls = f"""    wire [{num_lanes - 1}:0] part_out_valid;
@@ -971,7 +1000,12 @@ def _fanout_sv(composition: ScanComposition, *, clk: str, stream_prefix: str = "
     wire [{num_lanes * 8 - 1}:0] part_status_error_code;"""
         if "NUM_PARTITIONS" in composition.partitioner.params:
             raise ScanCompositionError("the shared partitioner's NUM_PARTITIONS is derived from the lane count; do not override it via params")
-        partitioner_extra_params = "".join(f",\n        .{name}({value})" for name, value in composition.partitioner.params.items())
+        derived_params = dict(composition.partitioner.params)
+        if composition.front_gearbox is not None:
+            # whole-record framing, derived from the composition's record size
+            record_words = composition.input_row_bytes // 8
+            derived_params.update({"RECORD_WORDS": record_words, "RECORD_INPUT": 1, "IN_WIDTH": record_words * 64})
+        partitioner_extra_params = "".join(f",\n        .{name}({value})" for name, value in sorted(derived_params.items()))
         instance = f"""    {composition.partitioner.module} #(
         .NUM_PARTITIONS({num_lanes}){partitioner_extra_params}
     ) partitioner (
@@ -1031,6 +1065,8 @@ def _uses_load_phase(composition: ScanComposition) -> bool:
         tiles.append(composition.partitioner)
     if composition.front_unpack is not None:
         tiles.append(composition.front_unpack)
+    if composition.front_gearbox is not None:
+        tiles.append(composition.front_gearbox)
     for lane in composition.lanes:
         tiles.append(lane)
         if lane.partition is not None:
@@ -1140,6 +1176,84 @@ def _front_unpack_error_latch_sv(composition: ScanComposition) -> str:
     )
 
 
+def _front_gearbox_wire_decls_sv(composition: ScanComposition) -> str:
+    """Whole-record stream, status bundle, and sticky gearbox error."""
+    if composition.front_gearbox is None:
+        return ""
+    return f"""    wire geared_valid;
+    wire geared_ready;
+    wire [{composition.input_row_bytes * 8 - 1}:0] geared_data;
+    wire geared_last;
+    wire front_gearbox_status_valid;
+    wire front_gearbox_status_ready;
+    wire front_gearbox_status_error;
+    wire [7:0] front_gearbox_status_error_code;
+    reg front_gearbox_error;
+    reg [7:0] front_gearbox_error_code;
+"""
+
+
+def _front_gearbox_instance_sv(composition: ScanComposition, *, clk: str) -> str:
+    """Wide reader stream in, one whole record per beat out to dispatcher."""
+    tile = composition.front_gearbox
+    if tile is None:
+        return ""
+    extra_params = "".join(f",\n        .{name}({value})" for name, value in tile.params.items())
+    return f"""    {tile.module} #(
+        .IN_WIDTH({composition.data_width}),
+        .RECORD_WORDS({composition.input_row_bytes // 8}){extra_params}
+    ) front_gearbox (
+        .clk({clk}),
+        .rst(lane_rst),
+        .cfg_input_records(input_length_bytes / 32'd{composition.input_row_bytes}),
+{_tile_config_binds_sv(tile.config)}        .input_valid(scan_valid),
+        .input_ready(scan_ready),
+        .input_data(scan_data),
+        .input_last(scan_last),
+        .output_valid(geared_valid),
+        .output_ready(geared_ready),
+        .output_data(geared_data),
+        .output_last(geared_last),
+        .status_valid(front_gearbox_status_valid),
+        .status_ready(front_gearbox_status_ready),
+        .status_error(front_gearbox_status_error),
+        .status_error_code(front_gearbox_status_error_code)
+    );
+
+    assign front_gearbox_status_ready = 1'b1;
+
+"""
+
+
+def _front_gearbox_error_branch_sv(composition: ScanComposition, *, error: str, error_code: str) -> str:
+    """Surface the sticky gearbox error after reader errors."""
+    if composition.front_gearbox is None:
+        return ""
+    return f"""            end else if (front_gearbox_error) begin
+                {error} = 1'b1;
+                {error_code} = front_gearbox_error_code;
+"""
+
+
+def _front_gearbox_error_reset_sv(composition: ScanComposition) -> str:
+    """Reset fragment clearing the sticky gearbox error."""
+    if composition.front_gearbox is None:
+        return ""
+    return "            front_gearbox_error <= 1'b0;\n            front_gearbox_error_code <= 8'd0;\n"
+
+
+def _front_gearbox_error_latch_sv(composition: ScanComposition) -> str:
+    """Latch gearbox close-out errors until peripheral reset."""
+    if composition.front_gearbox is None:
+        return ""
+    return (
+        "            if (front_gearbox_status_valid && front_gearbox_status_error) begin\n"
+        "                front_gearbox_error <= 1'b1;\n"
+        "                front_gearbox_error_code <= front_gearbox_status_error_code;\n"
+        "            end\n"
+    )
+
+
 def _writer_error_priority_sv(num_lanes: int, *, error: str, error_code: str) -> str:
     """First-error-wins fall-through over the lane writers (the reader's
     branch comes first at the call site)."""
@@ -1163,6 +1277,8 @@ def _validate_against_sources(composition: ScanComposition, sources: Sequence[Pa
     tiles: list[tuple[TileInstance, str | None]] = []
     if composition.front_unpack is not None:
         tiles.append((composition.front_unpack, None))
+    if composition.front_gearbox is not None:
+        tiles.append((composition.front_gearbox, None))
     if composition.partitioner is not None:
         tiles.append((composition.partitioner, None))
     for lane in composition.lanes:
@@ -1252,13 +1368,21 @@ def generate_scan_composition_top_sv(
     lane_wire_decls = _lane_wire_decls_sv(composition)
     lane_flat_assigns = _lane_flat_assigns_sv(composition)
     lane_instances = _lane_units_sv(composition, clk="s_axi_aclk", writer_rst="!s_axi_aresetn")
-    stream_prefix = "feed" if composition.front_unpack is not None else "scan"
+    stream_prefix = "scan"
+    if composition.front_unpack is not None:
+        stream_prefix = "feed"
+    elif composition.front_gearbox is not None:
+        stream_prefix = "geared"
     fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="s_axi_aclk")
-    front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="job_error", error_code="job_error_code")
-    front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
-    front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
+    front_gearbox_wire_decls = _front_gearbox_wire_decls_sv(composition)
+    front_gearbox_instance = _front_gearbox_instance_sv(composition, clk="s_axi_aclk")
+    front_stage_error_branch = _front_unpack_error_branch_sv(
+        composition, error="job_error", error_code="job_error_code"
+    ) + _front_gearbox_error_branch_sv(composition, error="job_error", error_code="job_error_code")
+    front_stage_error_reset = _front_unpack_error_reset_sv(composition) + _front_gearbox_error_reset_sv(composition)
+    front_stage_error_latch = _front_unpack_error_latch_sv(composition) + _front_gearbox_error_latch_sv(composition)
     # packed rows land one per 8-byte word (unpack mode); pre-widened quad
     # rows are two 8-byte words. Both sit on an 8-byte grid, so a front-unpack
     # composition relaxes the reader/length gate from the 16-byte quad grid to
@@ -1314,7 +1438,7 @@ def generate_scan_composition_top_sv(
             input_length_bytes <= 32'd0;
             job_start <= 1'b0;
             length_fail <= 1'b0;
-{load_phase_reset}{front_unpack_error_reset}            prev_done <= 1'b1;
+{load_phase_reset}{front_stage_error_reset}            prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
 {lane_reset_items}
 {lane_count_clear_items.replace("                ", "            ")}
@@ -1325,7 +1449,7 @@ def generate_scan_composition_top_sv(
                 length_fail <= !length_ok;
 {lane_count_clear_items}
             end
-{front_unpack_error_latch}{lane_count_latch_items}
+{front_stage_error_latch}{lane_count_latch_items}
 """,
         write_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[{addr_width - 1}:0];
                     ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
@@ -1389,7 +1513,7 @@ module {module_name} #(
     wire scan_ready;
     wire [{data_width - 1}:0] scan_data;
     wire scan_last;
-{front_unpack_wire_decls}{fanout_wire_decls}
+{front_unpack_wire_decls}{front_gearbox_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
 {lane_wire_decls}
 
@@ -1417,7 +1541,7 @@ module {module_name} #(
             if (reader_error) begin
                 job_error = 1'b1;
                 job_error_code = reader_error_code;
-{front_unpack_error_branch}{error_priority}
+{front_stage_error_branch}{error_priority}
             end else begin
                 job_error = 1'b0;
                 job_error_code = 8'd0;
@@ -1462,7 +1586,7 @@ module {module_name} #(
         .dbg_final_fifo_count(dbg_final_fifo_count)
     );
 
-{front_unpack_instance}{fanout_instance}
+{front_unpack_instance}{front_gearbox_instance}{fanout_instance}
 
 {lane_instances}
 
@@ -1563,13 +1687,21 @@ def generate_scan_composition_sim_sv(
     assign lane_count[{64 * (i + 1) - 1}:{64 * i}] = lane_bar_count_{i};"""
         for i in lanes
     )
-    stream_prefix = "feed" if composition.front_unpack is not None else "scan"
+    stream_prefix = "scan"
+    if composition.front_unpack is not None:
+        stream_prefix = "feed"
+    elif composition.front_gearbox is not None:
+        stream_prefix = "geared"
     fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="clk")
-    front_unpack_error_branch = _front_unpack_error_branch_sv(composition, error="error", error_code="error_code")
-    front_unpack_error_reset = _front_unpack_error_reset_sv(composition)
-    front_unpack_error_latch = _front_unpack_error_latch_sv(composition)
+    front_gearbox_wire_decls = _front_gearbox_wire_decls_sv(composition)
+    front_gearbox_instance = _front_gearbox_instance_sv(composition, clk="clk")
+    front_stage_error_branch = _front_unpack_error_branch_sv(composition, error="error", error_code="error_code") + _front_gearbox_error_branch_sv(
+        composition, error="error", error_code="error_code"
+    )
+    front_stage_error_reset = _front_unpack_error_reset_sv(composition) + _front_gearbox_error_reset_sv(composition)
+    front_stage_error_latch = _front_unpack_error_latch_sv(composition) + _front_gearbox_error_latch_sv(composition)
     length_align_bits = 3 if composition.front_unpack is not None else 4
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
@@ -1632,7 +1764,7 @@ module {name} (
     wire scan_ready;
     wire [{data_width - 1}:0] scan_data;
     wire scan_last;
-{front_unpack_wire_decls}{fanout_wire_decls}
+{front_unpack_wire_decls}{front_gearbox_wire_decls}{fanout_wire_decls}
 {_wr_flat_decls_sv(composition)}
     wire [{addr_width - 1}:0] mx_awaddr;
     wire [7:0] mx_awlen;
@@ -1674,7 +1806,7 @@ module {name} (
             if (reader_error) begin
                 error = 1'b1;
                 error_code = reader_error_code;
-{front_unpack_error_branch}{error_priority}
+{front_stage_error_branch}{error_priority}
             end else begin
                 error = 1'b0;
                 error_code = 8'd0;
@@ -1718,7 +1850,7 @@ module {name} (
         .dbg_final_fifo_count()
     );
 
-{front_unpack_instance}{fanout_instance}
+{front_unpack_instance}{front_gearbox_instance}{fanout_instance}
 
 {lane_instances}
 
@@ -1800,7 +1932,7 @@ module {name} (
             prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
             length_fail <= 1'b0;
-{front_unpack_error_reset}{lane_count_clears}
+{front_stage_error_reset}{lane_count_clears}
         end else begin
             prev_done <= done;
             pipeline_error_reset <= done && !prev_done && error;
@@ -1808,7 +1940,7 @@ module {name} (
                 length_fail <= !length_ok;
 {lane_count_start_clears}
             end
-{front_unpack_error_latch}{lane_count_latches}
+{front_stage_error_latch}{lane_count_latches}
         end
     end
 endmodule
