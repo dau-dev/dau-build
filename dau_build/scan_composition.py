@@ -208,6 +208,8 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     # widens packed rows; a front gearbox emits one input record; without either
     # front stage the feed IS the reader stream.
     _WIDTHS = (64, 128, 256, 512)
+    # both the gearbox and the record dispatcher elaboration-guard RECORD_WORDS
+    _MAX_RECORD_WORDS = 16
     data_width = composition.data_width
     if data_width not in _WIDTHS:
         raise ScanCompositionError(f"data_width must be one of {_WIDTHS}, got {data_width}")
@@ -256,8 +258,20 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
         feed_width = composition.input_row_bytes * 8
     else:
         feed_width = data_width
-    if composition.front_gearbox is None and fanout_width not in _WIDTHS:
-        raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
+    # behind a gearbox the router's bus carries one whole RECORD, not a row,
+    # so its width is a record size (a 3-word record is 192 bits) and the
+    # 64/128/256/512 row ladder does not apply. The record still has to be a
+    # size the RTL can elaborate: both the gearbox and the dispatcher guard
+    # RECORD_WORDS to [1, 16], and a $fatal is a far worse failure than a
+    # composition error — it surfaces mid-synthesis with no attribution.
+    if composition.front_gearbox is None:
+        if fanout_width not in _WIDTHS:
+            raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
+    elif not (64 <= fanout_width <= _MAX_RECORD_WORDS * 64) or fanout_width % 64:
+        raise ScanCompositionError(
+            f"a geared record bus must be a whole number of 64-bit words, at most {_MAX_RECORD_WORDS}; got {fanout_width} bits "
+            f"({composition.input_row_bytes}-byte records)"
+        )
     if feed_width > 64 and not composition.wide_lane:
         if composition.partitioner is None:
             raise ScanCompositionError(
