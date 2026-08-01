@@ -654,6 +654,104 @@ def test_front_unpack_absent_stays_byte_identical() -> None:
     assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
 
 
+def _front_gearbox_composition() -> ScanComposition:
+    """A wide reader geared into whole three-word records before dispatch."""
+    return ScanComposition(
+        name="geared",
+        module_name="dau_mm_geared_job",
+        lanes=tuple(LaneTile(module="dau_int32_temporal_hero", count_port="record_count") for _ in range(8)),
+        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher"),
+        front_gearbox=TileInstance(module="dau_record_gearbox"),
+        data_width=512,
+        input_row_bytes=24,
+    )
+
+
+def test_front_gearbox_wires_wide_reader_to_whole_record_dispatcher() -> None:
+    text = generate_scan_composition_top_sv(_front_gearbox_composition())
+
+    assert "    wire geared_valid;\n    wire geared_ready;\n    wire [191:0] geared_data;\n    wire geared_last;\n" in text
+    gearbox_block = text.split("dau_record_gearbox #(")[1].split(");")[0]
+    assert ".IN_WIDTH(512)" in gearbox_block
+    assert ".RECORD_WORDS(3)" in gearbox_block
+    assert ".cfg_input_records(input_length_bytes / 32'd24)," in gearbox_block
+    assert ".input_valid(scan_valid)," in gearbox_block
+    assert ".input_ready(scan_ready)," in gearbox_block
+    assert ".input_data(scan_data)," in gearbox_block
+    assert ".input_last(scan_last)," in gearbox_block
+    assert ".output_valid(geared_valid)," in gearbox_block
+    assert ".output_ready(geared_ready)," in gearbox_block
+    assert ".output_data(geared_data)," in gearbox_block
+    assert ".output_last(geared_last)," in gearbox_block
+
+    dispatcher_block = text.split(") partitioner (")[1].split(");")[0]
+    assert ".input_valid(geared_valid)," in dispatcher_block
+    assert ".input_ready(geared_ready)," in dispatcher_block
+    assert ".input_data(geared_data)," in dispatcher_block
+    assert ".input_last(geared_last)," in dispatcher_block
+    assert text.index("dau_axi_burst_reader") < text.index("dau_record_gearbox #(") < text.index(") partitioner (")
+
+
+def test_front_gearbox_status_is_latched_and_folded_into_job_error() -> None:
+    text = generate_scan_composition_top_sv(_front_gearbox_composition())
+
+    assert "assign front_gearbox_status_ready = 1'b1;" in text
+    assert "    reg front_gearbox_error;\n    reg [7:0] front_gearbox_error_code;\n" in text
+    assert (
+        "            if (front_gearbox_status_valid && front_gearbox_status_error) begin\n"
+        "                front_gearbox_error <= 1'b1;\n"
+        "                front_gearbox_error_code <= front_gearbox_status_error_code;\n"
+        "            end\n"
+    ) in text
+    assert "                front_gearbox_error <= 1'b0;\n" not in text
+    assert "            front_gearbox_error <= 1'b0;\n" in text
+    assert (
+        "            if (reader_error) begin\n"
+        "                job_error = 1'b1;\n"
+        "                job_error_code = reader_error_code;\n"
+        "            end else if (front_gearbox_error) begin\n"
+        "                job_error = 1'b1;\n"
+        "                job_error_code = front_gearbox_error_code;\n"
+        "            end else if (writer_error_0) begin\n"
+    ) in text
+
+
+def test_front_gearbox_shape_refusals() -> None:
+    lanes = tuple(LaneTile(module="dau_int32_temporal_hero", count_port="record_count") for _ in range(8))
+    gearbox = TileInstance(module="dau_record_gearbox")
+    dispatcher = TileInstance(module="dau_int32_key_mask_dispatcher")
+
+    with pytest.raises(ValidationError, match="front_gearbox requires data_width > 64"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=lanes,
+            partitioner=dispatcher,
+            front_gearbox=gearbox,
+            input_row_bytes=24,
+        )
+    with pytest.raises(ValidationError, match="front_gearbox requires a shared partitioner"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=lanes,
+            front_gearbox=gearbox,
+            data_width=512,
+            input_row_bytes=24,
+        )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad",
+            lanes=lanes,
+            partitioner=dispatcher,
+            front_unpack=TileInstance(module="dau_int32_row_unpack"),
+            front_gearbox=gearbox,
+            data_width=512,
+            input_row_bytes=24,
+        )
+
+
 _CONFORMING_TILE = """
 module lane_tile (
     input  wire logic        clk,
