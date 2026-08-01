@@ -256,6 +256,9 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
         feed_width = composition.input_row_bytes * 8
     else:
         feed_width = data_width
+    # behind a gearbox the router's bus carries one whole RECORD, not a row,
+    # so its width is a record size (a 3-word record is 192 bits) and the
+    # 64/128/256/512 row ladder does not apply
     if composition.front_gearbox is None and fanout_width not in _WIDTHS:
         raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
     if feed_width > 64 and not composition.wide_lane:
