@@ -1107,3 +1107,19 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
                 lanes=(LaneTile(module="t", count_port="c"),),
             )
         )
+
+
+def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:
+    """Skipping the row-width ladder for geared compositions must not admit
+    record sizes the gearbox and dispatcher elaboration-guard to [1, 16]
+    words: a $fatal surfaces mid-synthesis with no attribution, so the
+    composition has to refuse first."""
+    base = _front_gearbox_composition()
+    with pytest.raises(ScanCompositionError, match="geared record bus"):
+        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 136}))  # 17 words
+    # a size that is not whole words is already refused upstream, by the rule
+    # that owns the invariant rather than by the record-range check
+    with pytest.raises(ScanCompositionError, match="positive multiple of 8"):
+        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 20}))
+    # the legal end of the range still composes
+    generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 128}))
