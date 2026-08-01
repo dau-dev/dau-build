@@ -1535,8 +1535,7 @@ def test_program_method_flash_selects_the_vivado_programmer() -> None:
     from dau_build.platforms import dpv1_platform
     from dau_build.programmers import VivadoHwServerProgrammer
 
-    flash_board = dpv1_platform().model_copy(deep=True)
-    flash_board.program_method = "flash"
+    flash_board = dpv1_platform().model_copy(update={"program_method": "flash"})
     config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
     programmer = config.resolve_programmer()
     assert isinstance(programmer, VivadoHwServerProgrammer)

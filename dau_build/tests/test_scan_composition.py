@@ -1123,3 +1123,25 @@ def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:
         generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 20}))
     # the legal end of the range still composes
     generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 128}))
+
+
+def test_the_build_specs_are_frozen() -> None:
+    """A spec that can mutate after validation is a spec whose identity, and
+    therefore whose cache key and staged artifacts, depend on call order.
+    Freezing is what makes the hash mean something."""
+    import pytest as _pytest
+    from pydantic import ValidationError as _ValidationError
+
+    from dau_build.build_spec import DauBuildSpec
+    from dau_build.platforms import dpv1_platform
+
+    frozen = (
+        TileInstance(module="dau_tile"),
+        _bar_noc_composition(),
+        dpv1_platform(),
+    )
+    for model in frozen:
+        field = next(iter(type(model).model_fields))
+        with _pytest.raises(_ValidationError, match="frozen"):
+            setattr(model, field, getattr(model, field))
+    assert DauBuildSpec.model_config.get("frozen") is True

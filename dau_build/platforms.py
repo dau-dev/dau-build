@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Literal, Protocol
 
 from ccflow import BaseModel
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
 
@@ -208,6 +208,8 @@ class PlatformDefinition(BaseModel):
     that forces a faster ``axi_aclk`` (250 MHz at Gen2 x8) never drags the
     proven job-logic timing closure with it. ``None`` (the dpv1 default)
     keeps the job logic on ``axi_aclk`` unchanged."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     part: str

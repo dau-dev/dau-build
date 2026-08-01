@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from ccflow import BaseModel
-from pydantic import Field, StringConstraints, ValidationError
+from pydantic import ConfigDict, Field, StringConstraints, ValidationError
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
@@ -32,6 +32,7 @@ class DauBuildSpecError(ValueError):
 
 
 class DauBuildSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
     name: str
     top_name: str
     platform: str
