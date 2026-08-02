@@ -4,6 +4,7 @@ import base64
 import os
 import re
 import shlex
+import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -43,9 +44,26 @@ SHELL_STAGE_EXCLUDES = (
 class ToolStep(BaseModel):
     name: str
     argv: tuple[str, ...]
+    required_executable: str | None = None
+    executable_override: str | None = None
+    executable_requires_absolute: bool = False
 
-    def __init__(self, name: str, argv: tuple[str, ...] = ()) -> None:
-        super().__init__(name=name, argv=argv)
+    def __init__(
+        self,
+        name: str,
+        argv: tuple[str, ...] = (),
+        *,
+        required_executable: str | None = None,
+        executable_override: str | None = None,
+        executable_requires_absolute: bool = False,
+    ) -> None:
+        super().__init__(
+            name=name,
+            argv=argv,
+            required_executable=required_executable,
+            executable_override=executable_override,
+            executable_requires_absolute=executable_requires_absolute,
+        )
 
     @property
     def command_line(self) -> str:
@@ -429,7 +447,12 @@ def thunderbolt_release_plan(config: HardwareToolchainConfig) -> tuple[ToolStep,
 
 
 def vivado_build_step(config: HardwareToolchainConfig) -> ToolStep:
-    return ToolStep("vivado-build", (config.vivado_executable, "-mode", "batch", "-source", str(config.project_tcl)))
+    return ToolStep(
+        "vivado-build",
+        (config.vivado_executable, "-mode", "batch", "-source", str(config.project_tcl)),
+        required_executable=config.vivado_executable,
+        executable_override="model.vivado",
+    )
 
 
 def stage_shell_step(*, source_shell_root: Path, work_root: Path) -> ToolStep:
@@ -508,7 +531,14 @@ def vivado_overlay_build_step(
         vivado_invocation=config.vivado_invocation,
         vivado_mount_root=config.vivado_mount_root,
     )
-    return ToolStep("vivado-overlay-build", ("bash", "-lc", script))
+    return ToolStep(
+        "vivado-overlay-build",
+        ("bash", "-lc", script),
+        required_executable=(
+            config.vivado_executable if config.vivado_invocation == "source-only" or Path(config.vivado_executable).is_absolute() else None
+        ),
+        executable_override="model.vivado",
+    )
 
 
 def validate_vivado_artifacts_step(
@@ -566,6 +596,8 @@ def thunderbolt_hold_step(config: HardwareToolchainConfig, *, dau_utils_root: Pa
         _runtime_pm_argv(config, "hold")
         if dau_utils_root is None
         else ("sh", "-c", _local_runtime_pm_script(config, "hold", dau_utils_root, python)),
+        required_executable=config.runtime_pm_executable if dau_utils_root is None else python,
+        executable_override="model.runtime_pm_executable" if dau_utils_root is None else "plan.python",
     )
 
 
@@ -575,6 +607,8 @@ def thunderbolt_release_step(config: HardwareToolchainConfig, *, dau_utils_root:
         _runtime_pm_argv(config, "release")
         if dau_utils_root is None
         else ("sh", "-c", _local_runtime_pm_script(config, "release", dau_utils_root, python)),
+        required_executable=config.runtime_pm_executable if dau_utils_root is None else python,
+        executable_override="model.runtime_pm_executable" if dau_utils_root is None else "plan.python",
     )
 
 
@@ -628,7 +662,13 @@ def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
     script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold}; else echo 'pm hold skipped (device absent)'; fi"
-    return _privileged_sh(config, "pm-hold-device", script)
+    return ToolStep(
+        "pm-hold-device",
+        (*config.privilege_prefix, "sh", "-c", script),
+        required_executable=config.runtime_pm_executable,
+        executable_override="model.runtime_pm_executable",
+        executable_requires_absolute=bool(config.privilege_prefix),
+    )
 
 
 def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -> ToolStep:
@@ -636,13 +676,23 @@ def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -
     matching disarm step runs ONLY on plan success: the executor stops on
     the first failure and never reaches it, so a wedge self-recovers by
     reboot to the SPI-resident design (timeout is SECONDS)."""
-    return ToolStep("deadman-arm", (config.deadman_executable, "arm", "--timeout", str(timeout_s)))
+    return ToolStep(
+        "deadman-arm",
+        (config.deadman_executable, "arm", "--timeout", str(timeout_s)),
+        required_executable=config.deadman_executable,
+        executable_override="model.deadman_executable",
+    )
 
 
 def deadman_disarm_step(config: HardwareToolchainConfig) -> ToolStep:
     # deliberately NOT named *release: the failure path's cleanup pass runs
     # only *release steps, and the deadman must stay armed on failure
-    return ToolStep("deadman-disarm", (config.deadman_executable, "disarm"))
+    return ToolStep(
+        "deadman-disarm",
+        (config.deadman_executable, "disarm"),
+        required_executable=config.deadman_executable,
+        executable_override="model.deadman_executable",
+    )
 
 
 def secondary_bus_reset_step(config: HardwareToolchainConfig) -> ToolStep:
@@ -773,12 +823,30 @@ def _run_plan_steps(steps: Sequence[ToolStep]) -> int:
     return 0
 
 
+def _require_step_executables(steps: Sequence[ToolStep]) -> None:
+    for step in steps:
+        executable = step.required_executable
+        if executable is None:
+            continue
+        if step.executable_requires_absolute and not Path(executable).is_absolute():
+            raise RuntimeError(
+                f"required executable {executable!r} for plan step {step.name!r} cannot be safely resolved "
+                f"through its privileged command prefix; set {step.executable_override}=<absolute-path>"
+            )
+        if shutil.which(executable) is None:
+            raise RuntimeError(
+                f"required executable {executable!r} for plan step {step.name!r} could not be resolved; "
+                f"set {step.executable_override}=<absolute-path>"
+            )
+
+
 def execute_plan_steps(steps: Sequence[ToolStep], *, endpoint_bdf: str | None = None) -> int:
     """Run a hardware plan's steps in order. When ``endpoint_bdf`` is given,
     the whole run is serialized under an advisory lock keyed on that device
     (a board is one exclusive resource: no two plan runs from the operator's
     processes may remove/reset/program the same endpoint at once). Without it
     (a device-less plan) the steps run unserialized."""
+    _require_step_executables(steps)
     if endpoint_bdf is None:
         return _run_plan_steps(steps)
     import fcntl

@@ -1050,6 +1050,7 @@ class HardwarePlanTask(BuildCallableModel):
     reset_bridge_bdf: str | None = None
     expected_endpoint_id: str | None = None
     runtime_pm_executable: str | None = None
+    deadman_executable: str | None = None
     runtime_pm_patterns: tuple[str, ...] | None = None
     rescan_bdfs: tuple[str, ...] | None = None
     privilege_prefix: tuple[str, ...] | None = None
@@ -1081,6 +1082,7 @@ class HardwarePlanTask(BuildCallableModel):
             reset_bridge_bdf=self.reset_bridge_bdf,
             expected_endpoint_id=self.expected_endpoint_id,
             runtime_pm_executable=self.runtime_pm_executable,
+            deadman_executable=self.deadman_executable,
             runtime_pm_patterns=self.runtime_pm_patterns,
             rescan_bdfs=self.rescan_bdfs,
             privilege_prefix=self.privilege_prefix,

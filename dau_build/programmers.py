@@ -66,7 +66,12 @@ class OpenFpgaLoaderProgrammer(Programmer):
     def detect_step(self, config: HardwareToolchainConfig) -> ToolStep:
         from dau_build.hardware_plan import ToolStep
 
-        return ToolStep("jtag-detect", (self.executable, "-c", self._cable(config), "--detect"))
+        return ToolStep(
+            "jtag-detect",
+            (self.executable, "-c", self._cable(config), "--detect"),
+            required_executable=self.executable,
+            executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+        )
 
     def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
         from dau_build.hardware_plan import ToolStep
@@ -78,8 +83,18 @@ class OpenFpgaLoaderProgrammer(Programmer):
                     "configuration memory-dead (the boot sequence needs the cfgmem-written image); use the "
                     "vivado cfgmem path (the flash plan's flash.tcl) or a volatile SRAM program"
                 )
-            return ToolStep("program-persistent", (self.executable, "-c", self._cable(config), "-f", str(config.bitstream)))
-        return ToolStep("program-volatile", (self.executable, "-c", self._cable(config), str(config.bitstream)))
+            return ToolStep(
+                "program-persistent",
+                (self.executable, "-c", self._cable(config), "-f", str(config.bitstream)),
+                required_executable=self.executable,
+                executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+            )
+        return ToolStep(
+            "program-volatile",
+            (self.executable, "-c", self._cable(config), str(config.bitstream)),
+            required_executable=self.executable,
+            executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+        )
 
 
 class VivadoHwServerProgrammer(Programmer):
@@ -115,7 +130,14 @@ class VivadoHwServerProgrammer(Programmer):
             vivado_executable=config.vivado_executable,
             vivado_invocation=config.vivado_invocation,
         )
-        return ToolStep("flash", ("bash", "-lc", script))
+        return ToolStep(
+            "flash",
+            ("bash", "-lc", script),
+            required_executable=(
+                config.vivado_executable if config.vivado_invocation == "source-only" or Path(config.vivado_executable).is_absolute() else None
+            ),
+            executable_override="model.vivado",
+        )
 
 
 for _programmer_cls in (Programmer, OpenFpgaLoaderProgrammer, VivadoHwServerProgrammer):
