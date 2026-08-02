@@ -1760,6 +1760,65 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
 
 
+def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path) -> None:
+    result = run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=["plan=plans/sram-program", "platform=platforms/dau/dpv1", "model.deadman_executable=/opt/dau/bin/deadman"],
+        model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
+    )
+    assert "deadman-arm\t/opt/dau/bin/deadman arm --timeout 180" in result.message
+    assert "deadman-disarm\t/opt/dau/bin/deadman disarm" in result.message
+
+
+def test_execute_refuses_missing_deadman_before_any_step(monkeypatch, tmp_path: Path) -> None:
+    missing = "/missing/dau-utils-deadman"
+    config = _bench_config(
+        work_root=tmp_path,
+        bitstream_path=Path("/tmp/design.bit"),
+        deadman_executable=missing,
+    )
+    steps = hardware_plan.SramProgramPlan().compose(config)
+
+    monkeypatch.setattr("shutil.which", lambda executable: None if executable == missing else f"/resolved/{executable}")
+
+    def fail_run(*args, **kwargs):
+        pytest.fail("no plan step may run before executable preflight succeeds")
+
+    monkeypatch.setattr(hardware_plan.subprocess, "run", fail_run)
+    with pytest.raises(RuntimeError) as exc_info:
+        hardware_plan.execute_plan_steps(steps)
+
+    message = str(exc_info.value)
+    assert missing in message
+    assert "deadman-arm" in message
+    assert "model.deadman_executable" in message
+
+
+def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_path: Path) -> None:
+    executable = "dau-utils-pci-runtime-pm"
+    config = _bench_config(
+        work_root=tmp_path,
+        bitstream_path=Path("/tmp/design.bit"),
+        runtime_pm_executable=executable,
+        privilege_prefix=("sudo",),
+    )
+    steps = hardware_plan.SramProgramPlan().compose(config)
+
+    # Finding the script in the user's virtualenv does not make it visible
+    # under sudo's secure_path.
+    monkeypatch.setattr("shutil.which", lambda candidate: f"/home/operator/.venv/bin/{candidate}")
+    monkeypatch.setattr(hardware_plan.subprocess, "run", lambda *args, **kwargs: pytest.fail("no plan step may run"))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        hardware_plan.execute_plan_steps(steps)
+
+    message = str(exc_info.value)
+    assert executable in message
+    assert "pm-hold-device" in message
+    assert "model.runtime_pm_executable" in message
+
+
 def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) -> None:
     """`model.privilege_prefix` must be declared in the packaged task config so
     Hydra's struct mode accepts the override (e.g. clear it to run as root)."""
