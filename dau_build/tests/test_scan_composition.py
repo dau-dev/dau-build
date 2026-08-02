@@ -1145,3 +1145,48 @@ def test_the_build_specs_are_frozen() -> None:
         with _pytest.raises(_ValidationError, match="frozen"):
             setattr(model, field, getattr(model, field))
     assert DauBuildSpec.model_config.get("frozen") is True
+
+
+def test_a_wide_job_master_can_actually_reach_its_high_address_bits() -> None:
+    """AXI-Lite carries 32 bits per access, so a job master wider than 32
+    bits needs a SECOND register or its top bits are unreachable — which is
+    exactly why a build could only ever map the low 4 GiB of an 8 GB module.
+
+    The narrow case must stay byte-identical: a 32-bit design's register
+    block is proven silicon and must not move.
+    """
+    narrow = _bar_noc_composition()
+    wide = narrow.model_copy(update={"addr_width": 64})
+
+    narrow_sv = generate_scan_composition_top_sv(narrow)
+    wide_sv = generate_scan_composition_top_sv(wide)
+
+    # the narrow design decodes only the low register, exactly as before
+    assert "ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[31:0];" in narrow_sv
+    assert "ADDR_INPUT_ADDRESS_HIGH" not in narrow_sv
+    assert "OUTPUT_ADDRESS_HIGH" not in narrow_sv
+
+    # the wide design splits the job read address across both halves
+    assert "ADDR_INPUT_ADDRESS_LOW: input_address[31:0] <= s_axi_wdata;" in wide_sv
+    assert "ADDR_INPUT_ADDRESS_HIGH: input_address[63:32] <= s_axi_wdata[31:0];" in wide_sv
+    assert "ADDR_INPUT_ADDRESS_HIGH: s_axi_rdata <= input_address[63:32];" in wide_sv
+
+    # ...and every lane's WRITE address too, or a lane could only write low
+    for lane in range(len(narrow.lanes)):
+        assert f"ADDR_LANE{lane}_OUTPUT_ADDRESS: lane_output_address_{lane}[31:0] <= s_axi_wdata;" in wide_sv
+        assert f"ADDR_LANE{lane}_OUTPUT_ADDRESS_HIGH: lane_output_address_{lane}[63:32] <= s_axi_wdata[31:0];" in wide_sv
+        assert f"ADDR_LANE{lane}_OUTPUT_ADDRESS_HIGH = 12'h" in wide_sv
+
+
+def test_the_wide_address_registers_sit_where_dau_core_says() -> None:
+    """The walker's offsets mirror `dau_core.registers`; a drift here means
+    the host writes one address and the design decodes another."""
+    from dau_core.registers import NocLaneRegisterOffset, RegisterOffset
+
+    from dau_build.scan_composition import RegisterLayout
+
+    regs = RegisterLayout()
+    assert regs.input_address_high == int(RegisterOffset.INPUT_ADDRESS_HIGH)
+    assert regs.lane_output_address_high == int(NocLaneRegisterOffset.OUTPUT_ADDRESS_HIGH)
+    # and the lane high register stays inside the lane stride
+    assert regs.lane_output_address_high < regs.lane_stride

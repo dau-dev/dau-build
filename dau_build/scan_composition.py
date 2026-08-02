@@ -99,10 +99,12 @@ class RegisterLayout(BaseModel):
     load_phase: int = 0x084
     job_status: int = 0x054
     input_address_low: int = 0x058
+    input_address_high: int = 0x05C
     input_length_low: int = 0x060
     lane_base: int = 0x100
     lane_stride: int = 0x20
     lane_output_address_low: int = 0x00
+    lane_output_address_high: int = 0x14
     lane_result_length_low: int = 0x04
     lane_record_count_low: int = 0x08
     lane_record_count_high: int = 0x0C
@@ -1379,6 +1381,11 @@ def generate_scan_composition_top_sv(
         f"    localparam [11:0] ADDR_LANE{i}_RECORD_COUNT_LOW = 12'h{regs.lane_register(i, regs.lane_record_count_low):03X};\n"
         f"    localparam [11:0] ADDR_LANE{i}_RECORD_COUNT_HIGH = 12'h{regs.lane_register(i, regs.lane_record_count_high):03X};\n"
         f"    localparam [11:0] ADDR_LANE{i}_ERROR = 12'h{regs.lane_register(i, regs.lane_error):03X};"
+        + (
+            f"\n    localparam [11:0] ADDR_LANE{i}_OUTPUT_ADDRESS_HIGH = 12'h{regs.lane_register(i, regs.lane_output_address_high):03X};"
+            if addr_width > 32
+            else ""
+        )
         for i in lanes
     )
     uses_load_phase = _uses_load_phase(composition)
@@ -1420,13 +1427,29 @@ def generate_scan_composition_top_sv(
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
     error_priority = _writer_error_priority_sv(num_lanes, error="job_error", error_code="job_error_code")
-    write_case_items = "\n".join(f"                    ADDR_LANE{i}_OUTPUT_ADDRESS: lane_output_address_{i} <= s_axi_wdata;" for i in lanes)
+
+    def lane_high_read(i: int) -> str:
+        if addr_width <= 32:
+            return ""
+        return f"\n                    ADDR_LANE{i}_OUTPUT_ADDRESS_HIGH: s_axi_rdata <= lane_output_address_{i}[{addr_width - 1}:32];"
+
+    # the lane write address takes the same low/high treatment as the job read
+    # address: a bare 32-bit write into a wider register leaves the top bits
+    # unreachable, so a lane could only ever write below 4 GiB
+    if addr_width > 32:
+        write_case_items = "\n".join(
+            f"                    ADDR_LANE{i}_OUTPUT_ADDRESS: lane_output_address_{i}[31:0] <= s_axi_wdata;\n"
+            f"                    ADDR_LANE{i}_OUTPUT_ADDRESS_HIGH: lane_output_address_{i}[{addr_width - 1}:32] <= s_axi_wdata[{addr_width - 33}:0];"
+            for i in lanes
+        )
+    else:
+        write_case_items = "\n".join(f"                    ADDR_LANE{i}_OUTPUT_ADDRESS: lane_output_address_{i} <= s_axi_wdata;" for i in lanes)
     read_case_items = "\n".join(
         f"""                    ADDR_LANE{i}_OUTPUT_ADDRESS: s_axi_rdata <= lane_output_address_{i}[31:0];
                     ADDR_LANE{i}_RESULT_LENGTH: s_axi_rdata <= lane_result_length_{i};
                     ADDR_LANE{i}_RECORD_COUNT_LOW: s_axi_rdata <= lane_bar_count_{i}[31:0];
                     ADDR_LANE{i}_RECORD_COUNT_HIGH: s_axi_rdata <= lane_bar_count_{i}[63:32];
-                    ADDR_LANE{i}_ERROR: s_axi_rdata <= {{24'd0, writer_error_code_{i}}};"""
+                    ADDR_LANE{i}_ERROR: s_axi_rdata <= {{24'd0, writer_error_code_{i}}};{lane_high_read(i)}"""
         for i in lanes
     )
     lane_reset_items = "\n".join(f"            lane_output_address_{i} <= {addr_width}'d0;" for i in lanes)
@@ -1437,6 +1460,23 @@ def generate_scan_composition_top_sv(
             end"""
         for i in lanes
     )
+    wide_address = addr_width > 32
+    input_address_low_write = (
+        "                    ADDR_INPUT_ADDRESS_LOW: input_address[31:0] <= s_axi_wdata;\n"
+        if wide_address
+        else f"                    ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[{addr_width - 1}:0];\n"
+    )
+    input_address_high_write = (
+        f"                    ADDR_INPUT_ADDRESS_HIGH: input_address[{addr_width - 1}:32] <= s_axi_wdata[{addr_width - 33}:0];\n"
+        if wide_address
+        else ""
+    )
+    # a narrower-than-32 slice zero-extends on assignment to the 32-bit read
+    # data, so no concatenation is needed (and a 64-bit master's high half is
+    # exactly 32 bits, where a pad would be zero-width and illegal)
+    input_address_high_read = (
+        f"\n                    ADDR_INPUT_ADDRESS_HIGH: s_axi_rdata <= input_address[{addr_width - 1}:32];" if wide_address else ""
+    )
     register_names: tuple[tuple[str, int], ...] = (
         ("LAST_ERROR", regs.last_error),
         ("JOB_CONTROL", regs.job_control),
@@ -1444,6 +1484,8 @@ def generate_scan_composition_top_sv(
         ("INPUT_ADDRESS_LOW", regs.input_address_low),
         ("INPUT_LENGTH_LOW", regs.input_length_low),
     )
+    if wide_address:
+        register_names = register_names + (("INPUT_ADDRESS_HIGH", regs.input_address_high),)
     if uses_load_phase:
         register_names = register_names + (("LOAD_PHASE", regs.load_phase),)
     localparams = _register_localparams_sv(register_names)
@@ -1451,6 +1493,11 @@ def generate_scan_composition_top_sv(
     load_phase_write = "                    ADDR_LOAD_PHASE: load_phase <= s_axi_wdata[0];\n" if uses_load_phase else ""
     # leading newline so an unused register leaves the read block byte-identical
     load_phase_read = "\n                    ADDR_LOAD_PHASE: s_axi_rdata <= {31'd0, load_phase};" if uses_load_phase else ""
+    # THE HIGH HALF OF THE JOB ADDRESS. AXI-Lite carries 32 bits per access,
+    # so a job master wider than 32 bits needs a second register or its top
+    # bits are unreachable — which is exactly why a build could only ever
+    # map the low 4 GiB. Emitted ONLY when the master is actually wider, so
+    # a 32-bit design's register block stays byte-identical.
     register_process = _axi_lite_register_process_sv(
         write_default_comment="other job fields accepted and ignored",
         reset_extra=f"""            input_address <= {addr_width}'d0;
@@ -1470,11 +1517,10 @@ def generate_scan_composition_top_sv(
             end
 {front_stage_error_latch}{lane_count_latch_items}
 """,
-        write_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[{addr_width - 1}:0];
-                    ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
+        write_cases_extra=f"""{input_address_low_write}{input_address_high_write}                    ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
 {load_phase_write}{write_case_items}
 """,
-        read_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: s_axi_rdata <= input_address[31:0];
+        read_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: s_axi_rdata <= input_address[31:0];{input_address_high_read}
                     ADDR_INPUT_LENGTH_LOW: s_axi_rdata <= input_length_bytes;{load_phase_read}
                     12'hFC0: s_axi_rdata <= dbg_first_stream_word[31:0];
                     12'hFC4: s_axi_rdata <= dbg_first_stream_word[63:32];
