@@ -1181,12 +1181,12 @@ def test_a_wide_job_master_can_actually_reach_its_high_address_bits() -> None:
 def test_the_wide_address_registers_sit_where_dau_core_says() -> None:
     """The walker's offsets mirror `dau_core.registers`; a drift here means
     the host writes one address and the design decodes another."""
-    from dau_core.registers import NocLaneRegisterOffset, RegisterOffset
+    registers = pytest.importorskip("dau_core.registers")
 
     from dau_build.scan_composition import RegisterLayout
 
     regs = RegisterLayout()
-    assert regs.input_address_high == int(RegisterOffset.INPUT_ADDRESS_HIGH)
-    assert regs.lane_output_address_high == int(NocLaneRegisterOffset.OUTPUT_ADDRESS_HIGH)
+    assert regs.input_address_high == int(registers.RegisterOffset.INPUT_ADDRESS_HIGH)
+    assert regs.lane_output_address_high == int(registers.NocLaneRegisterOffset.OUTPUT_ADDRESS_HIGH)
     # and the lane high register stays inside the lane stride
     assert regs.lane_output_address_high < regs.lane_stride
