@@ -1196,6 +1196,7 @@ def test_cli_execute_releases_runtime_pm_after_failed_local_plan_step(monkeypatc
         calls.append(tuple(argv))
         return Completed(return_codes[len(calls) - 1])
 
+    monkeypatch.setattr(hardware_plan.shutil, "which", lambda executable: f"/resolved/{executable}")
     monkeypatch.setattr(hardware_plan.subprocess, "run", fake_run)
 
     with pytest.raises(BuildStepError, match="exit code 23"):
