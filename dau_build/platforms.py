@@ -24,7 +24,7 @@ from types import MappingProxyType
 from typing import Literal, Protocol
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, field_serializer, field_validator
+from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
 
@@ -136,40 +136,29 @@ class HostLink(BaseModel):
         return value
 
 
-class PlatformMemory(BaseModel):
-    """The device-side memory a design stages through. ``constraints_xdc``
-    carries the memory system's additions to the board pin constraints
-    (IOSTANDARDs for the controller reference clock, calibration LEDs —
-    pin placement stays in the MIG ``.prj``)."""
+StorageTechnology = Literal["bram", "ddr", "spi-flash", "nvme", "sata"]
+StorageAccess = Literal["owned", "shared"]
+
+
+class StorageTier(BaseModel):
+    """One declared storage tier of a platform's inventory. ``owned`` tiers
+    back private single-cycle arenas; ``shared`` tiers sit behind handle-based
+    transactions. Far technologies are schema-legal and HDL-absent until their
+    tripwire fires (STORAGE_AND_NOC.md). ``constraints_xdc`` carries the
+    memory system's additions to the board pin constraints (IOSTANDARDs for
+    the controller reference clock, calibration LEDs — pin placement stays in
+    the MIG ``.prj``)."""
 
     model_config = ConfigDict(frozen=True)
 
-    kind: str
-    size_bytes: int
+    name: str = Field(min_length=1)
+    technology: StorageTechnology
+    capacity_bytes: int = Field(gt=0)
+    access: StorageAccess
+    persistent: bool = False
+    bandwidth_bytes_per_s: int | None = Field(default=None, gt=0)
     mig_prj: str | None = None
-    bandwidth_bytes_per_s: int | None = None
     constraints_xdc: str = ""
-
-    @field_validator("kind")
-    @classmethod
-    def _kind_nonempty(cls, value: str) -> str:
-        if not value:
-            raise ValueError("memory kind must be non-empty")
-        return value
-
-    @field_validator("size_bytes")
-    @classmethod
-    def _size_positive(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("memory size_bytes must be positive")
-        return value
-
-    @field_validator("bandwidth_bytes_per_s")
-    @classmethod
-    def _bandwidth_positive(cls, value: int | None) -> int | None:
-        if value is not None and value <= 0:
-            raise ValueError("memory bandwidth_bytes_per_s must be positive when set")
-        return value
 
 
 class HostAccess(BaseModel):
@@ -236,7 +225,10 @@ class PlatformDefinition(BaseModel):
     part: str
     budget: ResourceBudget
     host_link: HostLink
-    memory: PlatformMemory
+    storage_tiers: tuple[StorageTier, ...] = ()
+    # which shared tier a BUILD instantiates (a bitstream drives one memory
+    # controller); None = the first shared tier
+    active_memory_tier: str | None = None
     host_access: HostAccess | None = None
     constraints: tuple[str, ...] = ()
     constraints_xdc: str = ""
@@ -272,6 +264,31 @@ class PlatformDefinition(BaseModel):
     # resource points, rate models) must ask effective_job_clock_mhz().
     job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _storage_tiers_cohere(self) -> PlatformDefinition:
+        names = [tier.name for tier in self.storage_tiers]
+        if len(names) != len(set(names)):
+            raise ValueError(f"duplicate storage tier names: {names}")
+        if self.active_memory_tier is not None:
+            tier = next((t for t in self.storage_tiers if t.name == self.active_memory_tier), None)
+            if tier is None:
+                raise ValueError(f"active_memory_tier {self.active_memory_tier!r} names no declared tier")
+            if tier.access != "shared":
+                raise ValueError(f"active_memory_tier {self.active_memory_tier!r} is owned, not shared")
+        return self
+
+    @property
+    def memory(self) -> StorageTier:
+        """The memory system this build instantiates: the named active shared
+        tier, else the first shared tier. A property, not a field — the
+        inventory is ``storage_tiers``; this is a selection over it."""
+        if self.active_memory_tier is not None:
+            return next(t for t in self.storage_tiers if t.name == self.active_memory_tier)
+        shared = next((t for t in self.storage_tiers if t.access == "shared"), None)
+        if shared is None:
+            raise ValueError(f"platform {self.name!r} declares no shared storage tier")
+        return shared
 
     def effective_job_clock_mhz(self) -> int:
         """The frequency the job logic actually runs at: ``job_clock_mhz``
