@@ -287,3 +287,15 @@ def test_dpv1_host_access_pins_the_proven_bench_facts() -> None:
     assert access.runtime_pm_patterns == ("Thunderbolt", "JHL", "10ee:7011", "Xilinx")
     assert access.runtime_pm_executable == "dau-utils-pci-runtime-pm"
     assert access.jtag_cable == "digilent_hs2"
+
+
+def test_effective_job_clock_distinguishes_conversion_from_frequency() -> None:
+    # job_clock_mhz's PRESENCE requests a clock converter; its ABSENCE means
+    # the job inherits axi_aclk, not that the frequency is unknown. dpv1
+    # leaves it None deliberately and still runs at 125 MHz.
+    platform = dpv1_platform()
+    assert platform.job_clock_mhz is None  # no converter on dpv1
+    assert platform.effective_job_clock_mhz() == 125  # but the frequency is known
+
+    converted = platform.model_copy(update={"job_clock_mhz": 150})
+    assert converted.effective_job_clock_mhz() == 150  # a converter overrides
