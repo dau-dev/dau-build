@@ -247,8 +247,23 @@ class PlatformDefinition(BaseModel):
     # by what has closed timing on the part — a build request outside the
     # list is refused before any tool runs.
     width_tiers: tuple[int, ...] = (64,)
+    # job_clock_mhz is a CONVERSION REQUEST, not a frequency fact: its
+    # presence makes the shell insert a clock converter and run the job logic
+    # at this rate; its absence means the job inherits the XDMA axi_aclk
+    # unconverted. dpv1 deliberately leaves it None and still runs at 125.
+    # Anything that needs the actual frequency (pricing against measured
+    # resource points, rate models) must ask effective_job_clock_mhz().
     job_clock_mhz: int | None = None
     placeholders: tuple[str, ...] = ()
+
+    def effective_job_clock_mhz(self) -> int:
+        """The frequency the job logic actually runs at: ``job_clock_mhz``
+        when a converter is requested, otherwise the XDMA ``axi_aclk`` the
+        job inherits (125 on dpv1's Gen2 x4 personality). This is the clock
+        to price and rate-model against; ``job_clock_mhz`` alone cannot
+        answer that question because ``None`` there means "unconverted", not
+        "unknown"."""
+        return self.job_clock_mhz or self.host_link.xdma_personality.axi_clock_mhz()
 
     @field_validator("name", "part")
     @classmethod
