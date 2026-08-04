@@ -25,11 +25,6 @@ from pydantic import ConfigDict, Field, model_validator
 
 from dau_build.platforms import PlatformDefinition
 
-DPV1_PART = "xc7a200tfbg484-2"
-
-# lane index -> GTPE2 channel site (reversed lane order on the DAU platform variant 1 (dpv1))
-GT_LANE_SWIZZLE = ((3, "GTPE2_CHANNEL_X0Y7"), (0, "GTPE2_CHANNEL_X0Y6"), (2, "GTPE2_CHANNEL_X0Y5"), (1, "GTPE2_CHANNEL_X0Y4"))
-
 
 # The platform (part, the 47 value_src=user XCI personality parameters
 # applied verbatim — a hand-picked subset is memory-dead on hardware —
@@ -40,12 +35,6 @@ def _dpv1_platform() -> PlatformDefinition:
     from dau_build.config import resolve_platform
 
     return resolve_platform("platforms/dau/dpv1")
-
-
-def _default_platform() -> PlatformDefinition:
-    """A fresh dpv1 platform per request (the resolved config is cached, the
-    instance is copied so no two requests share a mutable default)."""
-    return _dpv1_platform().model_copy(deep=True)
 
 
 def dpv1_xdma_personality():
@@ -70,7 +59,7 @@ class MmJobShellRequest(BaseModel):
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
-    platform: PlatformDefinition = Field(default_factory=_default_platform)
+    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
     part: str | None = None
     input_buffer_address: int = 0x0000_0000
     output_buffer_address: int = 0x0010_0000
@@ -100,7 +89,7 @@ class MmDdrJobShellRequest(BaseModel):
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
     mig_prj: Path
-    platform: PlatformDefinition = Field(default_factory=_default_platform)
+    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
     part: str | None = None
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000
@@ -145,7 +134,9 @@ def _gt_channel_ref_name(lane_placements: tuple[tuple[int, str], ...]) -> str:
     return lane_placements[0][1].rsplit("_X", 1)[0]
 
 
-def gt_lane_swizzle_hook_tcl(lane_placements: tuple[tuple[int, str], ...] = GT_LANE_SWIZZLE) -> str:
+def gt_lane_swizzle_hook_tcl(
+    lane_placements: tuple[tuple[int, str], ...] = _dpv1_platform().lane_placements,
+) -> str:
     """Pre-opt_design hook applying the platform's lane swizzle (default: the
     DAU platform variant 1 (dpv1) mapping), version-robust across XDMA
     internal hierarchy renames. The GT channel family (GTP/GTX) is derived

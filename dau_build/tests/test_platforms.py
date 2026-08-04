@@ -43,6 +43,17 @@ def test_composed_platform_nested_config_is_frozen() -> None:
         platform.budget.lut = original_lut + 1
     assert platform.budget.lut == original_lut
 
+    with pytest.raises(ValidationError, match="frozen"):
+        platform.host_link.pcie_lanes = 8
+    with pytest.raises(ValidationError, match="frozen"):
+        platform.memory.size_bytes = 2 << 30
+    with pytest.raises(ValidationError, match="frozen"):
+        platform.host_link.xdma_personality.params = {}
+    with pytest.raises(TypeError):
+        platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        XdmaPersonality().params["plltype"] = "TAMPERED"  # type: ignore[index]
+
     access = platform.host_access
     assert access is not None
     assert isinstance(access.rescan_bdfs, tuple)
@@ -196,12 +207,10 @@ def test_max_lanes_bram_arithmetic_is_exact() -> None:
 
 
 def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
-    from dau_build.dpv1_shell import DPV1_PART, GT_LANE_SWIZZLE, dpv1_constraints_xdc, dpv1_ddr_constraints_xdc, dpv1_xdma_personality
+    from dau_build.dpv1_shell import dpv1_constraints_xdc, dpv1_ddr_constraints_xdc, dpv1_xdma_personality, gt_lane_swizzle_hook_tcl
 
     platform = dpv1_platform()
     assert len(platform.host_link.xdma_personality.params) == 47
-    # part stays a shell constant (request default); the config must not drift
-    assert platform.part == DPV1_PART
     # lane count is consistent with the personality's link width
     assert platform.host_link.pcie_lanes == platform.host_link.xdma_personality.link_width() == 4
     # the proven host trains x2 at 5.0 GT/s over Thunderbolt
@@ -210,9 +219,8 @@ def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
     assert platform.memory.mig_prj == "dpv1_mig.prj"
     # the shell's personality accessor resolves the same config
     assert dpv1_xdma_personality() == platform.host_link.xdma_personality
-    # the lane swizzle and pin constraints are platform data; the shell
-    # constants/accessors must not drift from the config
-    assert platform.lane_placements == GT_LANE_SWIZZLE
+    # the default hook reads the lane swizzle from the platform
+    assert gt_lane_swizzle_hook_tcl() == gt_lane_swizzle_hook_tcl(platform.lane_placements)
     assert dpv1_constraints_xdc().endswith(platform.constraints_xdc)
     assert dpv1_ddr_constraints_xdc().endswith(platform.memory.constraints_xdc)
     # dpv1 is hardware-proven: no placeholder values
