@@ -200,7 +200,7 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
 
 
 def _probe_platform(**overrides):
-    from dau_build.platforms import HostLink, PlatformDefinition, PlatformMemory, ResourceBudget, XdmaPersonality
+    from dau_build.platforms import HostLink, PlatformDefinition, ResourceBudget, StorageTier, XdmaPersonality
 
     base = {
         "name": "probe-k7",
@@ -211,7 +211,7 @@ def _probe_platform(**overrides):
             pcie_lanes=8,
             xdma_personality=XdmaPersonality(params={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
         ),
-        "memory": PlatformMemory(kind="ddr3", size_bytes=8 << 30),
+        "storage_tiers": (StorageTier(name="ddr", technology="ddr", capacity_bytes=8 << 30, access="shared"),),
         "constraints_xdc": "set_property CFGBVS GND [current_design]\n",
     }
     base.update(overrides)

@@ -161,14 +161,16 @@ Like the engines, simulators are polymorphic and fully hydra-configurable — e.
 `platform=platforms/dau/dpv1` composes `dau_build.platforms.PlatformDefinition`
 into the `platform` key. Options live under `platforms/<vendor>/<board>`. The
 packaged `platforms/dau/dpv1` option is the authoritative dpv1 definition: part
-number, program method, `ResourceBudget`, `PlatformMemory`, and a `HostLink`
+number, program method, `ResourceBudget`, `storage_tiers`, and a `HostLink`
 whose `XdmaPersonality.params` are the 47 proven bring-up XCI parameters,
 quoted verbatim and order-preserved so the generated Vivado `CONFIG.*` block is
 byte-for-byte identical to the known-good core.
 
 `PlatformDefinition` is composed of `ResourceBudget` (`lut`, `ff`, `bram36`,
-`dsp`), `PlatformMemory` (`kind`, `size_bytes`, `mig_prj`,
-`bandwidth_bytes_per_s`, `constraints_xdc`), and `HostLink` (`interface`,
+`dsp`), `storage_tiers` (each a `StorageTier`: `name`, `technology`,
+`capacity_bytes`, `access`, `persistent`, `bandwidth_bytes_per_s`, `mig_prj`,
+`constraints_xdc`; `platform.memory` selects the active shared tier), and
+`HostLink` (`interface`,
 `pcie_lanes`, `xdma_personality`, `expected_link_width`,
 `expected_link_speed_gts`), plus the board-level `constraints_xdc` (pin
 constraint text the shell project generators emit behind their banner),

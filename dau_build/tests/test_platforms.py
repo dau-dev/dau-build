@@ -9,8 +9,8 @@ from dau_build.platforms import (
     HostLink,
     PlaceholderPlatformError,
     PlatformDefinition,
-    PlatformMemory,
     ResourceBudget,
+    StorageTier,
     XdmaPersonality,
     dpv1_platform,
     fits,
@@ -46,7 +46,7 @@ def test_composed_platform_nested_config_is_frozen() -> None:
     with pytest.raises(ValidationError, match="frozen"):
         platform.host_link.pcie_lanes = 8
     with pytest.raises(ValidationError, match="frozen"):
-        platform.memory.size_bytes = 2 << 30
+        platform.storage_tiers[0].capacity_bytes = 2 << 30
     with pytest.raises(ValidationError, match="frozen"):
         platform.host_link.xdma_personality.params = {}
     with pytest.raises(TypeError):
@@ -73,7 +73,15 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
             pcie_lanes=8,
             xdma_personality=XdmaPersonality(params={"pl_link_cap_max_link_width": "X8", "axisten_freq": "125"}),
         ),
-        memory=PlatformMemory(kind="ddr3", size_bytes=8 << 30, constraints_xdc="set_property IOSTANDARD LVDS [get_ports sys_clk_clk_p]\n"),
+        storage_tiers=(
+            StorageTier(
+                name="ddr",
+                technology="ddr",
+                capacity_bytes=8 << 30,
+                access="shared",
+                constraints_xdc="set_property IOSTANDARD LVDS [get_ports sys_clk_clk_p]\n",
+            ),
+        ),
         constraints=("pins.xdc", "timing.xdc"),
         constraints_xdc="set_property CFGBVS GND [current_design]\n",
         lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
@@ -103,8 +111,8 @@ def test_validation_rejects_bad_values() -> None:
         HostLink(interface="pcie-xdma", pcie_lanes=8, expected_link_width=3)
     with pytest.raises(ValidationError, match="expected_link_speed_gts"):
         HostLink(interface="pcie-xdma", pcie_lanes=8, expected_link_speed_gts=0)
-    with pytest.raises(ValidationError, match="size_bytes"):
-        PlatformMemory(kind="ddr3", size_bytes=0)
+    with pytest.raises(ValidationError, match="capacity_bytes"):
+        StorageTier(name="ddr", technology="ddr", capacity_bytes=0, access="shared")
     with pytest.raises(ValidationError, match="program_method"):
         _dpv1_with(program_method="usb")
     with pytest.raises(ValidationError, match="part must be non-empty"):
@@ -253,7 +261,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     overlay = tmp_path / "user-configs"
     (overlay / "platform").mkdir(parents=True)
     (overlay / "platform" / "myboard.yaml").write_text(
-        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nmemory:\n  _target_: dau_build.platforms.PlatformMemory\n  kind: ddr3\n  size_bytes: 1073741824"
+        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
     )
     board = resolve_platform("myboard", config_dir=str(overlay))
     assert board.name == "myboard"
@@ -270,7 +278,7 @@ def _dpv1_with(**overrides: object) -> PlatformDefinition:
         "part": "xc7a200tfbg484-2",
         "budget": ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
         "host_link": HostLink(interface="pcie-xdma", pcie_lanes=4),
-        "memory": PlatformMemory(kind="ddr3", size_bytes=1 << 30),
+        "storage_tiers": (StorageTier(name="ddr", technology="ddr", capacity_bytes=1 << 30, access="shared"),),
     }
     base.update(overrides)
     return PlatformDefinition(**base)  # type: ignore[arg-type]
@@ -307,3 +315,40 @@ def test_effective_job_clock_distinguishes_conversion_from_frequency() -> None:
 
     converted = platform.model_copy(update={"job_clock_mhz": 150})
     assert converted.effective_job_clock_mhz() == 150  # a converter overrides
+
+
+def test_storage_tiers_declare_the_full_inventory() -> None:
+    platform = dpv1_platform()
+    names = [tier.name for tier in platform.storage_tiers]
+    assert names == ["bram", "ddr"]
+    bram, ddr = platform.storage_tiers
+    assert bram.access == "owned" and bram.capacity_bytes == 335 * 4608
+    assert ddr.access == "shared" and ddr.mig_prj == "dpv1_mig.prj"
+    # the active memory system a build instantiates is the shared tier
+    assert platform.memory is ddr
+    assert platform.memory.capacity_bytes == 1073741824
+
+
+def _revalidated(platform, **updates):
+    # model_copy(update=...) skips validation on frozen models; the validators
+    # under test only run through model_validate
+    return type(platform).model_validate({**platform.model_dump(), **updates})
+
+
+def test_storage_tier_validators_refuse_bad_declarations() -> None:
+    platform = dpv1_platform()
+    tier = {"name": "ddr", "technology": "ddr", "capacity_bytes": 1 << 30, "access": "shared"}
+    with pytest.raises(ValidationError, match="duplicate"):
+        _revalidated(platform, storage_tiers=(tier, tier))
+    with pytest.raises(ValidationError, match="capacity_bytes"):
+        StorageTier(name="x", technology="ddr", capacity_bytes=0, access="shared")
+    with pytest.raises(ValidationError, match="active_memory_tier"):
+        _revalidated(platform, active_memory_tier="nonexistent")
+    with pytest.raises(ValidationError, match="owned"):  # active tier must be shared
+        _revalidated(platform, active_memory_tier="bram")
+
+
+def test_bram_tier_capacity_coheres_with_the_budget() -> None:
+    platform = dpv1_platform()
+    bram = next(t for t in platform.storage_tiers if t.technology == "bram")
+    assert bram.capacity_bytes <= platform.budget.bram36 * 4608
