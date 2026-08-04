@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ccflow import BaseModel
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from dau_build.platforms import PlatformDefinition
 
@@ -63,6 +63,8 @@ class MmJobShellRequest(BaseModel):
     override; ``resolved_part`` is what the project builds with). Staging
     addresses are plain values; DAU flows pass their register-contract
     numbers."""
+
+    model_config = ConfigDict(frozen=True)
 
     output_root: Path
     hdl_sources: tuple[Path, ...]

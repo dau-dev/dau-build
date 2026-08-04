@@ -36,6 +36,22 @@ def test_dpv1_round_trips_through_model_serialization() -> None:
     assert PlatformDefinition.model_validate(platform.model_dump()) == platform
 
 
+def test_composed_platform_nested_config_is_frozen() -> None:
+    platform = dpv1_platform()
+    original_lut = platform.budget.lut
+    with pytest.raises(ValidationError, match="frozen"):
+        platform.budget.lut = original_lut + 1
+    assert platform.budget.lut == original_lut
+
+    access = platform.host_access
+    assert access is not None
+    assert isinstance(access.rescan_bdfs, tuple)
+    original_rescan_bdfs = access.rescan_bdfs
+    with pytest.raises(TypeError):
+        access.rescan_bdfs[0] = "0000:ff:00.0"  # type: ignore[index]
+    assert access.rescan_bdfs == original_rescan_bdfs
+
+
 def test_round_trip_preserves_personality_and_constraints() -> None:
     platform = PlatformDefinition(
         name="probe",

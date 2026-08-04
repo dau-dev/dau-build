@@ -70,6 +70,8 @@ class BuildSpec(BaseModel):
     ``DauBuildSpec`` the build tasks consume; the two are deliberately
     separate (config vs domain object)."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: _NonEmptyStr
     top_name: _NonEmptyStr
     platform: _NonEmptyStr

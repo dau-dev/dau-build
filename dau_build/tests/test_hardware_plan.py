@@ -1492,12 +1492,21 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     )
 
     # a board with different access data changes the plans through config alone
-    other = dpv1_platform().model_copy(deep=True)
-    other.host_access.pci_id = "10ee:9038"
-    other.host_access.endpoint_bdf = "0000:65:00.0"
-    other.host_access.rescan_bdfs = ("0000:64:00.0",)
-    other.host_access.runtime_pm_patterns = ("Acme",)
-    other.host_access.jtag_cable = "ft4232"
+    other = dpv1_platform()
+    assert other.host_access is not None
+    other = other.model_copy(
+        update={
+            "host_access": other.host_access.model_copy(
+                update={
+                    "pci_id": "10ee:9038",
+                    "endpoint_bdf": "0000:65:00.0",
+                    "rescan_bdfs": ("0000:64:00.0",),
+                    "runtime_pm_patterns": ("Acme",),
+                    "jtag_cable": "ft4232",
+                }
+            )
+        }
+    )
     config = HardwareToolchainConfig.for_platform(other, work_root=Path("/w"))
     steps = recovery_plan(config)
     by_name = {step.name: step for step in steps}
@@ -1626,9 +1635,9 @@ def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
         HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")
 
     # empty tuples are authoritative — never silently the dpv1 defaults
-    bare = dpv1_platform().model_copy(deep=True)
-    bare.host_access.rescan_bdfs = ()
-    bare.host_access.runtime_pm_patterns = ()
+    bare = dpv1_platform()
+    assert bare.host_access is not None
+    bare = bare.model_copy(update={"host_access": bare.host_access.model_copy(update={"rescan_bdfs": (), "runtime_pm_patterns": ()})})
     config = HardwareToolchainConfig.for_platform(bare, work_root=Path("/w"))
     steps = recovery_plan(config)
     by_name = {step.name: step for step in steps}

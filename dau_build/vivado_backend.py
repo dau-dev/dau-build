@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from ccflow import BaseModel
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
 
@@ -38,6 +38,8 @@ DEFAULT_STAGE_TASK_NAME = "stage-vivado-overlay"
 
 
 class VivadoBackendRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     dau_core_hdl_root: Path
     build_root: Path
     dau_artifact_bundle_path: Path | None = None

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from ccflow import BaseModel
+from pydantic import ConfigDict
 
 from dau_build.vivado_backend import flash_script as vivado_flash_script
 
@@ -38,6 +39,8 @@ class Programmer(BaseModel):
     (``None`` when the programmer has none); ``program_step`` produces the
     configuration step (volatile by default, ``mode="persistent"`` for a
     non-volatile write)."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
 
