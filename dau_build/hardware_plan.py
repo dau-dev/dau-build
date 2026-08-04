@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ccflow import BaseModel
+from pydantic import ConfigDict
 
 from dau_build.vivado_backend import (
     VivadoBackendArtifactValidation,
@@ -71,6 +72,8 @@ class ToolStep(BaseModel):
 
 
 class HardwareToolchainConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     work_root: Path
     bitstream_path: Path | None = None
     vivado_executable: str = "vivado"

@@ -62,6 +62,8 @@ class XdmaPersonality(BaseModel):
 class ResourceBudget(BaseModel):
     """Placeable capacity of a platform, in ``ResourceEnvelope`` units."""
 
+    model_config = ConfigDict(frozen=True)
+
     lut: int
     ff: int
     bram36: float
@@ -158,6 +160,8 @@ class HostAccess(BaseModel):
     hardware plans probe and the programming cable. These are measured
     bench facts (BDFs, bridge rescan order, runtime-PM device patterns) —
     board/host configuration, not code defaults."""
+
+    model_config = ConfigDict(frozen=True)
 
     pci_id: str
     endpoint_bdf: str
