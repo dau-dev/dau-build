@@ -19,10 +19,12 @@ public/private wall.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Literal, Protocol
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_serializer, field_validator
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
 
@@ -36,7 +38,18 @@ class XdmaPersonality(BaseModel):
     keeping it here (not inline in the shell generator) makes it reusable
     across platforms."""
 
-    params: dict[str, str] = Field(default_factory=dict)
+    model_config = ConfigDict(frozen=True)
+
+    params: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
+
+    @field_validator("params")
+    @classmethod
+    def _freeze_params(cls, value: Mapping[str, str]) -> Mapping[str, str]:
+        return MappingProxyType(dict(value))
+
+    @field_serializer("params")
+    def _serialize_params(self, value: Mapping[str, str]) -> dict[str, str]:
+        return dict(value)
 
     def to_tcl_config(self, *, indent: str = "    ") -> str:
         return " \\\n".join(f"{indent}CONFIG.{key} {{{value}}}" for key, value in self.params.items())
@@ -86,6 +99,8 @@ class HostLink(BaseModel):
     over Thunderbolt despite the X4 personality) — bring-up checks compare
     against these, not the electrical maximum."""
 
+    model_config = ConfigDict(frozen=True)
+
     interface: str
     pcie_lanes: int
     xdma_personality: XdmaPersonality = Field(default_factory=XdmaPersonality)
@@ -126,6 +141,8 @@ class PlatformMemory(BaseModel):
     carries the memory system's additions to the board pin constraints
     (IOSTANDARDs for the controller reference clock, calibration LEDs —
     pin placement stays in the MIG ``.prj``)."""
+
+    model_config = ConfigDict(frozen=True)
 
     kind: str
     size_bytes: int

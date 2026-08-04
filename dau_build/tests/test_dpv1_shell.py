@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from dau_build.dpv1_shell import (
-    GT_LANE_SWIZZLE,
     MmDdrJobShellRequest,
     MmJobShellRequest,
     _lane_swizzle_verify_tcl,
@@ -99,8 +98,10 @@ def test_project_tcl_embeds_personality_staging_and_hook(tmp_path: Path) -> None
 
 
 def test_swizzle_hook_covers_all_lanes() -> None:
+    from dau_build.platforms import dpv1_platform
+
     text = gt_lane_swizzle_hook_tcl()
-    for lane, channel in GT_LANE_SWIZZLE:
+    for lane, channel in dpv1_platform().lane_placements:
         assert channel in text
     assert "expected 4 GTPE2_CHANNEL lane cells" in text
     assert "reset_property" in text
@@ -217,6 +218,14 @@ def _probe_platform(**overrides):
     return PlatformDefinition(**base)
 
 
+def _with_xdma_params(platform, **updates):
+    from dau_build.platforms import XdmaPersonality
+
+    personality = XdmaPersonality(params={**platform.host_link.xdma_personality.params, **updates})
+    host_link = platform.host_link.model_copy(update={"xdma_personality": personality})
+    return platform.model_copy(update={"host_link": host_link})
+
+
 def test_constraints_match_committed_goldens() -> None:
     """Moving the pin constraints from code into the dpv1 platform config
     must not change a byte of the emitted XDC."""
@@ -272,7 +281,9 @@ def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
     assert swapped.resolved_part == "xc7k325tffg900-2"
 
 
-def test_default_platform_instances_are_not_shared(tmp_path: Path) -> None:
+def test_default_platform_is_safely_shared(tmp_path: Path) -> None:
+    import pytest as _pytest
+
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
     common = {
@@ -282,8 +293,10 @@ def test_default_platform_instances_are_not_shared(tmp_path: Path) -> None:
         "top_module": "my_mm_top",
     }
     first = MmJobShellRequest(**common)
-    first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"
     second = MmJobShellRequest(**common)
+    assert first.platform is second.platform
+    with _pytest.raises(TypeError):
+        first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # type: ignore[index]
     assert second.platform.host_link.xdma_personality.params["plltype"] == "QPLL1"
 
 
@@ -303,8 +316,7 @@ def test_job_clock_convert_wraps_the_bram_shell(tmp_path: Path) -> None:
     """A platform with ``job_clock_mhz`` runs the job top in its own MMCM-derived
     clock domain: the register aperture crosses inside smc_lite (NUM_CLKS 2) and
     the staging BRAMs stay on axi_aclk (the true-dual-port RAM is the crossing)."""
-    platform = _probe_platform(job_clock_mhz=125)
-    platform.host_link.xdma_personality.params["axisten_freq"] = "250"
+    platform = _with_xdma_params(_probe_platform(job_clock_mhz=125), axisten_freq="250")
     request = _request(tmp_path).model_copy(update={"platform": platform})
     text = mm_job_shell_project_tcl(request)
     # the job clock domain: MMCM from axi_aclk, synchronized reset
@@ -324,8 +336,7 @@ def test_job_clock_convert_wraps_the_bram_shell(tmp_path: Path) -> None:
 def test_job_clock_convert_wraps_the_ddr_shell(tmp_path: Path) -> None:
     """The DDR shell gains the job domain as a third smartconnect clock next
     to the memory controller's ui_clk; the XADC stays on axi_aclk."""
-    platform = _probe_platform(job_clock_mhz=125)
-    platform.host_link.xdma_personality.params["axisten_freq"] = "250"
+    platform = _with_xdma_params(_probe_platform(job_clock_mhz=125), axisten_freq="250")
     request = _ddr_request(tmp_path).model_copy(update={"platform": platform})
     text = mm_ddr_job_shell_project_tcl(request)
     assert "CONFIG.NUM_SI {2} CONFIG.NUM_MI {1} CONFIG.NUM_CLKS {3}" in text
