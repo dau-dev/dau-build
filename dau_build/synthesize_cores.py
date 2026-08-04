@@ -210,10 +210,20 @@ class SynthesizeCoresTask(BuildCallableModel):
             # an envelope is registered for the DEFAULT parameters; an
             # overridden build is a different shape, not drift
             compare=definition.name not in self.parameters,
+            part=self._part(),
+            clock_period_ns=self.clock_period_ns,
         )
 
     @staticmethod
-    def parse_reports(definition, *, output_root: Path, clocked: bool = True, compare: bool = True) -> CoreEnvelopeReport:
+    def parse_reports(
+        definition,
+        *,
+        output_root: Path,
+        clocked: bool = True,
+        compare: bool = True,
+        part: str | None = None,
+        clock_period_ns: float | None = None,
+    ) -> CoreEnvelopeReport:
         """Parse a core's utilization (and, when clocked, timing) reports into
         an envelope report, comparing against the registered envelope only
         when the build used the registered (default) parameters."""
@@ -231,10 +241,23 @@ class SynthesizeCoresTask(BuildCallableModel):
                 raise BuildStepError(f"no slack line in {definition.module}.timing.rpt")
             wns = float(slack.group(2)) if slack.group(1) == "MET" else -abs(float(slack.group(2)))
             met = slack.group(1) == "MET"
+        # Drift is checked against the point measured for THIS part and clock.
+        # A core may carry several measurement points; comparing against
+        # another part's numbers is the cross-part fallback the registry
+        # exists to prevent, so an unmeasured coordinate reports "no
+        # comparison" rather than a mismatch against the wrong board.
         registered = definition.resources
         matches = None
         if compare and registered is not None:
-            matches = (registered.lut, registered.ff, registered.bram36, registered.dsp) == (lut, ff, bram, dsp)
+            if isinstance(registered, (list, tuple)):
+                point = next(
+                    (m for m in registered if m.part == part and (clock_period_ns is None or m.clock_ns == clock_period_ns)),
+                    None,
+                )
+            else:
+                point = registered
+            if point is not None:
+                matches = (point.lut, point.ff, point.bram36, point.dsp) == (lut, ff, bram, dsp)
         return CoreEnvelopeReport(
             name=definition.name,
             module=definition.module,

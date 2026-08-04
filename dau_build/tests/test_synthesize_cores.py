@@ -89,13 +89,13 @@ def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
     (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
-    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path)
+    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
     assert report.wns_ns == 4.350 and report.met
     assert report.registered_matches is True  # the registered envelope came from this shape
 
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "999"))
-    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path)
+    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
     assert drifted.registered_matches is False
 
 
