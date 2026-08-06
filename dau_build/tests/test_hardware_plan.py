@@ -1681,6 +1681,10 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
         "lspci-endpoint",
         "verify-device",
         "deadman-disarm",
+        # last, so the executor's cleanup scan finds it when an earlier step
+        # fails -- while the disarm, which does not end in "release", stays
+        # skipped so a failure leaves the board self-recovering
+        "thunderbolt-release",
     ]
     by_name = {step.name: step.command_line for step in steps}
     hold = by_name["pm-hold-path"]
@@ -1986,3 +1990,30 @@ def test_execute_without_a_device_runs_unserialized(tmp_path) -> None:
     marker = tmp_path / "ran"
     code = execute_plan_steps((ToolStep("t", ("sh", "-c", f"touch {marker}")),))
     assert code == 0 and marker.exists()
+
+
+def test_a_failed_sram_ladder_releases_pm_but_leaves_the_deadman_armed() -> None:
+    """The two cleanup properties, which pull in opposite directions and are
+    both load-bearing. The hold must not leak — every device it pinned stays
+    at power/control=on until the host reboots otherwise — but the deadman
+    must SURVIVE a failure, because that is what reboots a wedged board back
+    to its flash-resident design."""
+    from dau_build.hardware_plan import SramProgramPlan
+
+    steps = SramProgramPlan().compose(_bench_config(work_root=Path("/tmp/w"), reset_bridge_bdf="0000:03:01.0"))
+    names = [step.name for step in steps]
+    assert names[-1] == "thunderbolt-release", names
+    assert names.index("deadman-disarm") < names.index("thunderbolt-release")
+
+    # the executor's cleanup contract: after a failure it runs LATER steps
+    # whose name ends in "release", and nothing else
+    failing = names.index("program-volatile")
+    cleanup = [name for name in names[failing + 1 :] if name.endswith("release")]
+    assert cleanup == ["thunderbolt-release"]
+    assert "deadman-disarm" not in cleanup
+
+    # release and hold resolve the same device set, so nothing the hold
+    # pinned is left with no path to unpin it
+    by_name = {step.name: step.command_line for step in steps}
+    patterns = {token for token in by_name["pm-hold-path"].split() if token.startswith("--pattern")}
+    assert patterns and patterns <= set(by_name["thunderbolt-release"].split()) | {"--pattern"}
