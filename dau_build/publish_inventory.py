@@ -52,7 +52,9 @@ PUBLISHED_METADATA_KEYS: tuple[str, ...] = (
 #   spec_hash            - pins the canonical spec version publicly
 #   resource_estimate_*  - measured area and timing are competitive data
 #   wns_ns, build_status - build-internal outcomes
-_WITHHELD_ROLES = frozenset({"hdl-source", "generated-project-input", "build-log", "report"})
+#
+# Artifact roles need no denylist: the projection keeps the one bitstream and
+# drops every other artifact by construction.
 
 
 def _capabilities_from_contract(contract: Mapping[str, Any]) -> tuple[Capability, ...]:
@@ -97,12 +99,26 @@ def publish_inventory(
     Keeps exactly one artifact — the bitstream, by digest — carrying the
     capabilities the composition advertises, plus the whitelisted metadata
     keys. Raises when the source manifest has no bitstream, because an
-    inventory without one describes nothing.
+    inventory without one describes nothing, and when the build did not
+    close timing, because publishing an image is a claim that it runs.
+
+    The timing refusal is why ``wns_ns`` can stay withheld: a published
+    inventory asserts closure by existing, so the margin never has to be
+    disclosed to be trusted. A build that missed is a build nobody should
+    flash, and the ladder that recovers a wedged board is not something a
+    consumer of a published image has.
     """
     bitstreams = [artifact for artifact in manifest.artifacts if artifact.role == "bitstream"]
     if len(bitstreams) != 1:
         raise ValueError(f"a published inventory needs exactly one bitstream artifact, found {len(bitstreams)}")
     source = bitstreams[0]
+
+    status = manifest.metadata.get("build_status")
+    if status is not None and status != "built":
+        raise ValueError(f"refusing to publish a bitstream whose build_status is {status!r}, not 'built'")
+    wns = manifest.metadata.get("wns_ns")
+    if wns is not None and float(wns) < 0.0:
+        raise ValueError(f"refusing to publish a bitstream that missed timing (wns_ns={wns})")
 
     metadata = {key: manifest.metadata[key] for key in PUBLISHED_METADATA_KEYS if key in manifest.metadata}
     capabilities = _capabilities_from_contract(contract) if contract else ()
@@ -112,6 +128,11 @@ def publish_inventory(
         path=Path(source.path).name if source.path else None,
         kind="binary",
         role="bitstream",
+        # which image this is: an SRAM load wants the .bit and an SPI flash
+        # wants the .mcs, so a consumer that cannot tell them apart cannot
+        # pick a load path. Neither says anything about the composition.
+        format=source.format,
+        media_type=source.media_type,
         digest=source.digest,
         provides=capabilities,
     )

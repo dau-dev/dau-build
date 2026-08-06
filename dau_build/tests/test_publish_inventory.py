@@ -109,6 +109,29 @@ def test_publish_inventory_refuses_a_manifest_without_exactly_one_bitstream(tmp_
         publish_inventory(without)
 
 
+def test_publish_inventory_refuses_a_bitstream_that_missed_timing(tmp_path: Path) -> None:
+    """Publishing an image claims it runs. The margin itself stays withheld,
+    so this refusal is what makes the claim worth anything."""
+    manifest = _private_manifest(tmp_path)
+    missed = manifest.model_copy(update={"metadata": {**manifest.metadata, "wns_ns": -0.348}})
+    with pytest.raises(ValueError, match="missed timing"):
+        publish_inventory(missed, contract=_CONTRACT)
+
+
+def test_publish_inventory_refuses_an_unfinished_build(tmp_path: Path) -> None:
+    manifest = _private_manifest(tmp_path)
+    unfinished = manifest.model_copy(update={"metadata": {**manifest.metadata, "build_status": "planned"}})
+    with pytest.raises(ValueError, match="build_status"):
+        publish_inventory(unfinished, contract=_CONTRACT)
+
+
+def test_the_published_bitstream_says_which_image_kind_it_is(tmp_path: Path) -> None:
+    """An SRAM load wants the .bit and an SPI flash wants the .mcs."""
+    published = publish_inventory(_private_manifest(tmp_path), contract=_CONTRACT)
+    (artifact,) = published.artifacts
+    assert artifact.format == "bit"
+
+
 def test_write_published_inventory_round_trips(tmp_path: Path) -> None:
     build_root = tmp_path / "build"
     build_root.mkdir()
