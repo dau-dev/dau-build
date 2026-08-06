@@ -1672,7 +1672,7 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     )
     steps = SramProgramPlan(verify_command="sudo probe-magic").compose(config)
     assert [step.name for step in steps] == [
-        "pm-hold-device",
+        "pm-hold-path",
         "deadman-arm",
         "remove-endpoint",
         "program-volatile",
@@ -1683,11 +1683,20 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
         "deadman-disarm",
     ]
     by_name = {step.name: step.command_line for step in steps}
-    assert "dau-utils-pci-runtime-pm hold --device 0000:04:00.0" in by_name["pm-hold-device"]
+    hold = by_name["pm-hold-path"]
+    assert "dau-utils-pci-runtime-pm hold --device 0000:04:00.0" in hold
     # tolerant ONLY when the endpoint is absent; a hold failure with the
     # device present must fail the step
-    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in by_name["pm-hold-device"]
-    assert "pm hold skipped (device absent)" in by_name["pm-hold-device"]
+    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in hold
+    assert "pm hold skipped (device absent)" in hold
+    # the BRIDGES above the endpoint are held too, unconditionally and
+    # BEFORE it: the next step removes the endpoint, and on a hot-plug path
+    # nothing else keeps the bridges awake once its sysfs node is gone
+    for bridge in ("0000:03:01.0", "0000:02:00.0", "0000:00:07.0"):
+        assert f"--device {bridge}" in hold, bridge
+    assert hold.index("--device 0000:03:01.0") < hold.index("if [ -e /sys/bus/pci/devices/0000:04:00.0 ]")
+    # a bridge hold failure fails the step rather than falling through
+    assert "&&" in hold
     assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
     assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
     assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent
@@ -1712,7 +1721,7 @@ def test_sram_program_plan_prefixes_only_the_privileged_steps() -> None:
     config = _bench_config(work_root=Path("/tmp/w"), bitstream_path=Path("/tmp/design.bit"), privilege_prefix=("sudo",))
     by_name = {step.name: step for step in SramProgramPlan().compose(config)}
 
-    for privileged in ("pm-hold-device", "remove-endpoint", "secondary-bus-reset", "pci-global-rescan-settle"):
+    for privileged in ("pm-hold-path", "remove-endpoint", "secondary-bus-reset", "pci-global-rescan-settle"):
         assert by_name[privileged].argv[:3] == ("sudo", "sh", "-c"), privileged
     # the redirect runs under sudo (sudo fronts the whole sh -c)
     assert "echo 1 > /sys/bus/pci/rescan" in by_name["pci-global-rescan-settle"].command_line
@@ -1825,7 +1834,7 @@ def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_
 
     message = str(exc_info.value)
     assert executable in message
-    assert "pm-hold-device" in message
+    assert "pm-hold-path" in message
     assert "model.runtime_pm_executable" in message
 
 

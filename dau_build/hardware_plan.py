@@ -656,18 +656,42 @@ def pci_rescan_step(config: HardwareToolchainConfig) -> ToolStep:
     return _privileged_sh(config, "pci-rescan", _pci_rescan_script(config.required_host_access("rescan_bdfs")))
 
 
-def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
-    """Device-scoped runtime-PM hold as safe prep — tolerant when the
-    endpoint is absent (recovering a wedged device must not abort here)."""
+def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
+    """Runtime-PM hold over the endpoint AND every bridge above it, as safe
+    prep — tolerant when the endpoint is absent (recovering a wedged device
+    must not abort here).
+
+    Holding the endpoint alone is not enough, and the reason is the next
+    step: the ladder REMOVES the endpoint, which takes its sysfs node with
+    it and therefore the only thing holding it awake. On a hot-plug path
+    (Thunderbolt) the bridges above then suspend and cut power to the card,
+    the FPGA loses its configuration, and the programmer fails with `TDO is
+    stuck at 0` — measured on a NUC-attached dpv1, 2026-08-06. The bridges
+    must be held BEFORE the endpoint goes away and must stay held across the
+    reprogram, so they are held here rather than per-device.
+
+    The bridge holds are unconditional (a bridge on the path to a device
+    that enumerated is present) while the endpoint stays conditional, since
+    the runtime-PM tool exits non-zero when asked for a device that is not
+    there.
+    """
     bdf = config.required_host_access("endpoint_bdf")
-    hold = shlex.join((config.runtime_pm_executable, "hold", "--device", bdf))
+    bridges = tuple(config.required_host_access("rescan_bdfs"))
     quoted_bdf = shlex.quote(str(bdf))
+    hold_endpoint = shlex.join((config.runtime_pm_executable, "hold", "--device", str(bdf)))
     # tolerate ONLY an absent endpoint (recovering a wedged device); a hold
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
-    script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold}; else echo 'pm hold skipped (device absent)'; fi"
+    endpoint_script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold_endpoint}; else echo 'pm hold skipped (device absent)'; fi"
+    if not bridges:
+        script = endpoint_script
+    else:
+        bridge_args: list[str] = [config.runtime_pm_executable, "hold"]
+        for bridge in bridges:
+            bridge_args.extend(("--device", str(bridge)))
+        script = f"{shlex.join(bridge_args)} && {{ {endpoint_script}; }}"
     return ToolStep(
-        "pm-hold-device",
+        "pm-hold-path",
         (*config.privilege_prefix, "sh", "-c", script),
         required_executable=config.runtime_pm_executable,
         executable_override="model.runtime_pm_executable",
@@ -925,7 +949,7 @@ def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int
     deadman disarm. Every step exists for a bench-discovered reason; the
     disarm runs only when everything before it succeeded."""
     steps = [
-        pm_hold_device_step(config),
+        pm_hold_path_step(config),
         deadman_arm_step(config, timeout_s=deadman_timeout_s),
         remove_endpoint_step(config),
         program_volatile_step(config),
