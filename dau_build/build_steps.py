@@ -768,7 +768,9 @@ class VivadoOverlayStageTask(OverlayStageTask):
     backend_platform: str = "vivado-xdma"
     backend_shell: str = "xdma-shell"
     operator: str | None = None
-    register_map_version: str = "0.1"
+    # the current wire contract; a shell that stamps an older version makes
+    # its capability words undecodable by consumers that read them
+    register_map_version: str = "0.2"
     stream_protocol_version: str = "0.1"
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
