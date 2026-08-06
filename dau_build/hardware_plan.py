@@ -114,8 +114,10 @@ class HardwareToolchainConfig(BaseModel):
         ``program_method``. Explicit keyword overrides win; with neither, the
         host-access facts stay unset and any step that needs them fails with
         guidance. An explicit ``programmer`` model overrides the
-        ``program_method``-selected default."""
-        access = getattr(platform, "host_access", None)
+        ``program_method``-selected default. ``platform`` may be ``None``
+        (a platform-less compose), in which case every board fact stays
+        unset and only the explicit overrides apply."""
+        access = platform.host_access if platform is not None else None
         values: dict = {}
         if access is not None:
             values = {
@@ -130,10 +132,9 @@ class HardwareToolchainConfig(BaseModel):
                 "reset_bridge_bdf": access.reset_bridge_bdf,
                 "privilege_prefix": access.privilege_prefix,
             }
-        method = getattr(platform, "program_method", None)
-        if method is not None:
-            values["program_method"] = method
-        values["spi_boot_buswidth"] = getattr(platform, "spi_boot_buswidth", None)
+        if platform is not None:
+            values["program_method"] = platform.program_method
+            values["spi_boot_buswidth"] = platform.spi_boot_buswidth
         if programmer is not None:
             values["programmer"] = programmer
         values.update({key: value for key, value in overrides.items() if value is not None})

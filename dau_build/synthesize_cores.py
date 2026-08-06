@@ -157,7 +157,7 @@ class SynthesizeCoresTask(BuildCallableModel):
     def _part(self) -> str:
         if self.part is not None:
             return self.part
-        part = getattr(self.platform, "part", None)
+        part = self.platform.part if self.platform is not None else None
         if part:
             return part
         raise BuildStepError("no part selected; pass model.part=... or compose a platform= group")

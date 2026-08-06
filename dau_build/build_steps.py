@@ -1063,7 +1063,7 @@ class HardwarePlanTask(BuildCallableModel):
             from dau_build.platforms import require_measured
 
             require_measured(self.platform)
-            if getattr(self.platform, "host_access", None) is None:
+            if self.platform.host_access is None:
                 raise BuildStepError(
                     f"platform {self.platform.name!r} declares no host_access; add the board's measured "
                     "access facts to its platform config (or run without platform=) before executing hardware plans"
@@ -1091,7 +1091,7 @@ class HardwarePlanTask(BuildCallableModel):
         if self.execute:
             # serialize the device: the executor holds a host lock on the
             # endpoint BDF (a board is one exclusive resource)
-            return_code = execute_plan_steps(plan_result, endpoint_bdf=getattr(config, "endpoint_bdf", None))
+            return_code = execute_plan_steps(plan_result, endpoint_bdf=config.endpoint_bdf)
             if return_code != 0:
                 raise BuildStepError(f"hardware plan {plan.name!r} failed with exit code {return_code}")
             return BuildStepResult(
