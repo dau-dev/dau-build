@@ -114,8 +114,10 @@ class HardwareToolchainConfig(BaseModel):
         ``program_method``. Explicit keyword overrides win; with neither, the
         host-access facts stay unset and any step that needs them fails with
         guidance. An explicit ``programmer`` model overrides the
-        ``program_method``-selected default."""
-        access = getattr(platform, "host_access", None)
+        ``program_method``-selected default. ``platform`` may be ``None``
+        (a platform-less compose), in which case every board fact stays
+        unset and only the explicit overrides apply."""
+        access = platform.host_access if platform is not None else None
         values: dict = {}
         if access is not None:
             values = {
@@ -130,10 +132,9 @@ class HardwareToolchainConfig(BaseModel):
                 "reset_bridge_bdf": access.reset_bridge_bdf,
                 "privilege_prefix": access.privilege_prefix,
             }
-        method = getattr(platform, "program_method", None)
-        if method is not None:
-            values["program_method"] = method
-        values["spi_boot_buswidth"] = getattr(platform, "spi_boot_buswidth", None)
+        if platform is not None:
+            values["program_method"] = platform.program_method
+            values["spi_boot_buswidth"] = platform.spi_boot_buswidth
         if programmer is not None:
             values["programmer"] = programmer
         values.update({key: value for key, value in overrides.items() if value is not None})
@@ -655,18 +656,45 @@ def pci_rescan_step(config: HardwareToolchainConfig) -> ToolStep:
     return _privileged_sh(config, "pci-rescan", _pci_rescan_script(config.required_host_access("rescan_bdfs")))
 
 
-def pm_hold_device_step(config: HardwareToolchainConfig) -> ToolStep:
-    """Device-scoped runtime-PM hold as safe prep — tolerant when the
-    endpoint is absent (recovering a wedged device must not abort here)."""
+def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
+    """Runtime-PM hold over the endpoint AND every bridge above it, as safe
+    prep — tolerant when the endpoint is absent (recovering a wedged device
+    must not abort here).
+
+    Holding the endpoint alone is not enough, and the reason is the next
+    step: the ladder REMOVES the endpoint, which takes its sysfs node with
+    it and therefore the only thing holding it awake. On a hot-plug path
+    (Thunderbolt) the bridges above then suspend and cut power to the card,
+    the FPGA loses its configuration, and the programmer fails with `TDO is
+    stuck at 0` — measured on a NUC-attached dpv1, 2026-08-06. The bridges
+    must be held BEFORE the endpoint goes away and must stay held across the
+    reprogram, so they are held here rather than per-device.
+
+    The path is held BY PATTERN, not by an explicit BDF list, and that
+    choice is load-bearing. The runtime-PM tool exits non-zero when any
+    named device is missing, so naming the bridges would abort this step
+    exactly when the card has lost power and the hot-plug tunnel has
+    collapsed — the wedged board this step's tolerance exists to recover,
+    and one the JTAG programmer could still reach because it runs over USB
+    and needs no PCIe at all. Pattern discovery is tolerant by construction:
+    a device that is gone is never discovered, so it contributes no missing
+    write. A platform that declares no patterns holds nothing extra here,
+    which is the behaviour it had before.
+    """
     bdf = config.required_host_access("endpoint_bdf")
-    hold = shlex.join((config.runtime_pm_executable, "hold", "--device", bdf))
+    patterns = tuple(config.required_host_access("runtime_pm_patterns"))
     quoted_bdf = shlex.quote(str(bdf))
+    hold_endpoint = shlex.join((config.runtime_pm_executable, "hold", "--device", str(bdf)))
     # tolerate ONLY an absent endpoint (recovering a wedged device); a hold
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
-    script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold}; else echo 'pm hold skipped (device absent)'; fi"
+    endpoint_script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold_endpoint}; else echo 'pm hold skipped (device absent)'; fi"
+    if not patterns:
+        script = endpoint_script
+    else:
+        script = f"{shlex.join(_runtime_pm_argv(config, 'hold'))} && {{ {endpoint_script}; }}"
     return ToolStep(
-        "pm-hold-device",
+        "pm-hold-path",
         (*config.privilege_prefix, "sh", "-c", script),
         required_executable=config.runtime_pm_executable,
         executable_override="model.runtime_pm_executable",
@@ -924,7 +952,7 @@ def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int
     deadman disarm. Every step exists for a bench-discovered reason; the
     disarm runs only when everything before it succeeded."""
     steps = [
-        pm_hold_device_step(config),
+        pm_hold_path_step(config),
         deadman_arm_step(config, timeout_s=deadman_timeout_s),
         remove_endpoint_step(config),
         program_volatile_step(config),

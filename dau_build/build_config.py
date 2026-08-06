@@ -113,5 +113,5 @@ def _backend_label(backend, backend_name: str | None, spec: DauBuildSpec) -> Bac
     if isinstance(backend, BackendConfig):
         return backend
     if backend is not None:
-        return BackendConfig(name=backend.name, invocation=getattr(backend, "invocation", "standard"))
+        return BackendConfig(name=backend.name, invocation=backend.invocation)
     return BackendConfig(name=backend_name or spec.backend, invocation="dry-run")

@@ -41,6 +41,34 @@ def _parse(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
     return args, list(args.overrides)
 
 
+# selecting any of these composes the callable under `model`
+_CALLABLE_GROUPS = ("task", "step", "plan")
+
+
+def _require_selection_resolved(overrides: list[str], cfg) -> None:
+    """Refuse a task/step/plan selection that composed to nothing.
+
+    These groups are declared ``optional`` so the CLI runs without them,
+    which also means hydra DROPS a value it cannot find instead of
+    failing. A mistyped ``task=`` then reads as success — worst under
+    ``--explain``, whose whole job is to show what a command will do
+    before it runs. Selecting any of them composes a callable under
+    ``model``, so its absence after an explicit selection means the value
+    did not resolve, and the error can name it.
+    """
+    if "model" in cfg:
+        return
+    for override in overrides:
+        group, separator, value = override.partition("=")
+        group = group.lstrip("+~")
+        if separator and group in _CALLABLE_GROUPS and value not in ("null", ""):
+            raise BuildStepError(
+                f"{group}={value!r} did not resolve: no such option in the {group!r} config group. "
+                "The group is optional, so an unmatched value is dropped rather than failing — "
+                "check the name, or pass --config-dir for an overlay that provides it."
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
     from ccflow.utils.hydra import cfg_run
 
@@ -48,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args, overrides = _parse(argv)
     result = compose_config(overrides, config_dir=args.config_dir)
+    _require_selection_resolved(overrides, result.cfg)
     if args.explain:
         print(OmegaConf.to_yaml(result.cfg, resolve=True))
         return 0

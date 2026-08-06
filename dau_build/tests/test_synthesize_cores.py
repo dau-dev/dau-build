@@ -89,14 +89,38 @@ def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
     (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
-    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    # this core carries a measurement SURFACE: several points share the part
+    # and clock, so the comparison is only meaningful with the params too
+    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8}}
+    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
     assert report.wns_ns == 4.350 and report.met
-    assert report.registered_matches is True  # the registered envelope came from this shape
+    assert report.registered_matches is True  # the registered point came from this shape
 
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "999"))
-    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert drifted.registered_matches is False
+
+
+def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_path: Path) -> None:
+    """A point is keyed by (part, clock, params). Drop any axis and there is
+    no way to tell which point of a surface the build corresponds to, so the
+    comparison is skipped rather than made against whichever point happens
+    to be first — including the clock, which matters the moment a tile
+    carries the same part and params at two clocks."""
+    from dau_core.cores import core
+
+    definition = core("int32-streaming-top-k")
+    assert isinstance(definition.resources, (list, tuple)) and len(definition.resources) > 1
+    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+
+    full = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8}}
+    assert SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **full).registered_matches is True
+    for dropped in ("clock_period_ns", "params"):
+        coordinate = {**full, dropped: None}
+        report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **coordinate)
+        assert report.registered_matches is None, f"dropping {dropped} still selected a point"
 
 
 def test_parse_reports_negative_slack_is_violated(tmp_path: Path) -> None:
@@ -107,6 +131,19 @@ def test_parse_reports_negative_slack_is_violated(tmp_path: Path) -> None:
     (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text("Slack (VIOLATED) :        -0.898ns  (required time - arrival time)\n")
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path)
     assert not report.met and report.wns_ns == -0.898
+
+
+def test_resolving_cores_leaves_the_root_registry_alone() -> None:
+    """The fallback composition must not register the core group on the root
+    registry: a later full compose by the core package would collide on a
+    name this task put there, so whether an application's own composition
+    works would depend on whether it ran a build task first."""
+    from ccflow import ModelRegistry
+
+    before = set(ModelRegistry.root().models)
+    task = SynthesizeCoresTask(cores=("/dau-core/int32-streaming-top-k",), output_root=Path("/unused"), part="xc7a200tfbg484-2")
+    assert len(task._core_registry().models) > 0
+    assert set(ModelRegistry.root().models) == before
 
 
 def test_task_composes_from_the_config_group(tmp_path: Path) -> None:
@@ -177,3 +214,31 @@ def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
 def test_package_entries_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="not a synthesizable top"):
         _task(tmp_path, cores=("/dau-core/aggregation-pkg",))(NullContext())
+
+
+def test_dau_build_never_imports_a_private_core_package() -> None:
+    """dau-build is PUBLIC and ships to PyPI; a private package is not a
+    declared dependency, so importing one is a runtime landmine for any
+    public install. Cores resolve through the ccflow ModelRegistry that a
+    provider composes onto the shared hydra searchpath."""
+    import ast
+    from pathlib import Path
+
+    package_root = Path(__file__).resolve().parent.parent
+    offenders: list[str] = []
+    for path in package_root.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                root = name.split(".")[0]
+                if root in {"dau_core", "dau_driver", "dau_polars", "dau"}:
+                    offenders.append(f"{path.relative_to(package_root)}:{node.lineno} imports {name}")
+    assert not offenders, "public package imports a private one:\n" + "\n".join(offenders)
