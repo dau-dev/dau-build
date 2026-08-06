@@ -29,6 +29,7 @@ from dau_build.build_steps import BuildCallableModel, BuildStepError, BuildStepR
 __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
 _REGISTRY_PREFIX = "/dau-core/"
+_REGISTRY_GROUP = "dau-core"
 
 
 class CoreEnvelopeReport(BaseModel):
@@ -100,21 +101,53 @@ class SynthesizeCoresTask(BuildCallableModel):
             ),
         )
 
+    def _core_registry(self):
+        """The composed ``/dau-core`` subregistry.
+
+        Resolved through the ccflow ``ModelRegistry``, never by importing
+        the core package: dau-build is public and must not depend on a
+        private one. A core provider registers its config tree on the
+        shared hydra searchpath (``hydra.lernaplugins``), and this task
+        reads whatever the application composed — including overrides.
+
+        When the subregistry is absent the group is composed by name off
+        that searchpath. If no provider is installed, that composition
+        fails and the task refuses; it never falls back to a direct import.
+        """
+        from ccflow import ModelRegistry
+
+        registry = ModelRegistry.root()
+        subregistry = registry.models.get(_REGISTRY_GROUP)
+        if subregistry is not None:
+            return subregistry
+        from .config import compose_config
+
+        try:
+            composed = compose_config([f"+{_REGISTRY_GROUP}=cores"])
+            # register ONLY the registry subtree: the composed config also
+            # carries this task's own groups, and loading those into a
+            # registry that already holds them collides
+            from omegaconf import OmegaConf
+
+            registry.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
+        except Exception as exc:
+            raise BuildStepError(
+                f"no {_REGISTRY_PREFIX} registry is composed and the {_REGISTRY_GROUP!r} config group "
+                f"could not be composed off the hydra searchpath ({type(exc).__name__}: {exc}); "
+                "install a core provider or compose its group"
+            ) from exc
+        subregistry = registry.models.get(_REGISTRY_GROUP)
+        if subregistry is None:
+            raise BuildStepError(f"the {_REGISTRY_GROUP!r} config group composed but registered no cores")
+        return subregistry
+
     def _resolve_core(self, entry: str):
         name = entry.removeprefix(_REGISTRY_PREFIX)
         if "/" in name:
             raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> registry path")
-        try:
-            from dau_core.cores import UnknownCoreError, loaded_cores
-        except ImportError as exc:
-            raise BuildStepError("dau-core is not installed; the core registry is unavailable") from exc
-        try:
-            definitions = loaded_cores()
-            if name not in definitions:
-                raise UnknownCoreError(name)
-            definition = definitions[name]
-        except UnknownCoreError as exc:
-            raise BuildStepError(f"unknown core {entry!r}") from exc
+        definition = self._core_registry().models.get(name)
+        if definition is None:
+            raise BuildStepError(f"unknown core {entry!r}")
         if definition.kind.value == "package":
             # a SystemVerilog package is not a synthesizable top; it rides
             # along as a dependency of the tiles that import it
@@ -140,10 +173,30 @@ class SynthesizeCoresTask(BuildCallableModel):
         values.update(overrides)
         return values
 
-    def _stage_core(self, definition, *, part: str, root: Path) -> Path:
-        from dau_core.cores import sources_for
+    def _sources_for(self, definition) -> tuple[Path, ...]:
+        """Dependency-closed source paths for one core, in registry order.
 
-        sources = sources_for(definition.name)
+        Walks the model's own ``depends`` and ``source_path()`` surface
+        rather than calling into the provider package, for the same reason
+        :meth:`_core_registry` does.
+        """
+        subregistry = self._core_registry()
+        selected: dict[str, object] = {}
+
+        def visit(name: str) -> None:
+            model = subregistry.models.get(name)
+            if model is None:
+                raise BuildStepError(f"core {name!r} is a declared dependency but is not in the registry")
+            for dependency in model.depends:
+                visit(dependency)
+            selected.setdefault(name, model)
+
+        visit(definition.name)
+        ordered = [model for name, model in subregistry.models.items() if name in selected]
+        return tuple(model.source_path() for model in ordered)
+
+    def _stage_core(self, definition, *, part: str, root: Path) -> Path:
+        sources = self._sources_for(definition)
         generics = self._generics(definition)
         generic_args = "".join(f" -generic {name}={value}" for name, value in generics.items())
         reads = "\n".join(f"read_verilog -sv {_tcl_path(path)}" for path in sources)
@@ -207,11 +260,10 @@ class SynthesizeCoresTask(BuildCallableModel):
             definition,
             output_root=root,
             clocked=bool(self.clock_ports.get(definition.name, "clk")),
-            # an envelope is registered for the DEFAULT parameters; an
-            # overridden build is a different shape, not drift
-            compare=definition.name not in self.parameters,
+            compare=True,
             part=self._part(),
             clock_period_ns=self.clock_period_ns,
+            params=self._generics(definition),
         )
 
     @staticmethod
@@ -223,10 +275,18 @@ class SynthesizeCoresTask(BuildCallableModel):
         compare: bool = True,
         part: str | None = None,
         clock_period_ns: float | None = None,
+        params: Mapping[str, int] | None = None,
     ) -> CoreEnvelopeReport:
         """Parse a core's utilization (and, when clocked, timing) reports into
-        an envelope report, comparing against the registered envelope only
-        when the build used the registered (default) parameters."""
+        an envelope report and compare it against the registered one.
+
+        ``params`` are the module parameters the build actually used. A core
+        carrying MEASUREMENT POINTS is keyed by (part, clock, params), so the
+        comparison must match all three — a surface with several points at one
+        part and clock would otherwise compare against whichever happened to
+        be first, and report drift against a different parameter's numbers.
+        Without ``params`` such a core is not compared at all, because there
+        is no way to tell which point the build corresponds to."""
         util = (output_root / f"{definition.module}.util.rpt").read_text()
         lut = _util_value(util, r"Slice LUTs\*?")
         ff = _util_value(util, r"Slice Registers")
@@ -250,12 +310,22 @@ class SynthesizeCoresTask(BuildCallableModel):
         matches = None
         if compare and registered is not None:
             if isinstance(registered, (list, tuple)):
-                point = next(
-                    (m for m in registered if m.part == part and (clock_period_ns is None or m.clock_ns == clock_period_ns)),
-                    None,
+                point = (
+                    None
+                    if params is None
+                    else next(
+                        (
+                            m
+                            for m in registered
+                            if m.part == part and (clock_period_ns is None or m.clock_ns == clock_period_ns) and dict(m.params) == dict(params)
+                        ),
+                        None,
+                    )
                 )
             else:
-                point = registered
+                # a scalar envelope declares one shape: it is comparable only
+                # against a build that used the declared defaults
+                point = registered if params is None or dict(params) == {name: spec.default for name, spec in definition.parameters.items()} else None
             if point is not None:
                 matches = (point.lut, point.ff, point.bram36, point.dsp) == (lut, ff, bram, dsp)
         return CoreEnvelopeReport(

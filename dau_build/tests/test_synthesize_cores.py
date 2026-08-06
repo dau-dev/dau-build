@@ -89,14 +89,29 @@ def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
     (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
-    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    # this core carries a measurement SURFACE: several points share the part
+    # and clock, so the comparison is only meaningful with the params too
+    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8}}
+    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
     assert report.wns_ns == 4.350 and report.met
-    assert report.registered_matches is True  # the registered envelope came from this shape
+    assert report.registered_matches is True  # the registered point came from this shape
 
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "999"))
-    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert drifted.registered_matches is False
+
+
+def test_parse_reports_needs_params_to_compare_a_measurement_surface() -> None:
+    """Without params there is no way to tell which point of a surface the
+    build corresponds to, so the comparison is skipped rather than made
+    against whichever point happens to be first."""
+    from dau_core.cores import core
+
+    definition = core("int32-streaming-top-k")
+    assert isinstance(definition.resources, (list, tuple)) and len(definition.resources) > 1
+    points_at_that_coordinate = [m for m in definition.resources if m.part == "xc7a200tfbg484-2" and m.clock_ns == 8.0]
+    assert len(points_at_that_coordinate) > 1, "the guard only matters for a surface"
 
 
 def test_parse_reports_negative_slack_is_violated(tmp_path: Path) -> None:
@@ -177,3 +192,31 @@ def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
 def test_package_entries_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="not a synthesizable top"):
         _task(tmp_path, cores=("/dau-core/aggregation-pkg",))(NullContext())
+
+
+def test_dau_build_never_imports_a_private_core_package() -> None:
+    """dau-build is PUBLIC and ships to PyPI; a private package is not a
+    declared dependency, so importing one is a runtime landmine for any
+    public install. Cores resolve through the ccflow ModelRegistry that a
+    provider composes onto the shared hydra searchpath."""
+    import ast
+    from pathlib import Path
+
+    package_root = Path(__file__).resolve().parent.parent
+    offenders: list[str] = []
+    for path in package_root.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                root = name.split(".")[0]
+                if root in {"dau_core", "dau_driver", "dau_polars", "dau"}:
+                    offenders.append(f"{path.relative_to(package_root)}:{node.lineno} imports {name}")
+    assert not offenders, "public package imports a private one:\n" + "\n".join(offenders)
