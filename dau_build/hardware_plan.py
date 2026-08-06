@@ -670,26 +670,29 @@ def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
     must be held BEFORE the endpoint goes away and must stay held across the
     reprogram, so they are held here rather than per-device.
 
-    The bridge holds are unconditional (a bridge on the path to a device
-    that enumerated is present) while the endpoint stays conditional, since
-    the runtime-PM tool exits non-zero when asked for a device that is not
-    there.
+    The path is held BY PATTERN, not by an explicit BDF list, and that
+    choice is load-bearing. The runtime-PM tool exits non-zero when any
+    named device is missing, so naming the bridges would abort this step
+    exactly when the card has lost power and the hot-plug tunnel has
+    collapsed — the wedged board this step's tolerance exists to recover,
+    and one the JTAG programmer could still reach because it runs over USB
+    and needs no PCIe at all. Pattern discovery is tolerant by construction:
+    a device that is gone is never discovered, so it contributes no missing
+    write. A platform that declares no patterns holds nothing extra here,
+    which is the behaviour it had before.
     """
     bdf = config.required_host_access("endpoint_bdf")
-    bridges = tuple(config.required_host_access("rescan_bdfs"))
+    patterns = tuple(config.required_host_access("runtime_pm_patterns"))
     quoted_bdf = shlex.quote(str(bdf))
     hold_endpoint = shlex.join((config.runtime_pm_executable, "hold", "--device", str(bdf)))
     # tolerate ONLY an absent endpoint (recovering a wedged device); a hold
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
     endpoint_script = f"if [ -e /sys/bus/pci/devices/{quoted_bdf} ]; then {hold_endpoint}; else echo 'pm hold skipped (device absent)'; fi"
-    if not bridges:
+    if not patterns:
         script = endpoint_script
     else:
-        bridge_args: list[str] = [config.runtime_pm_executable, "hold"]
-        for bridge in bridges:
-            bridge_args.extend(("--device", str(bridge)))
-        script = f"{shlex.join(bridge_args)} && {{ {endpoint_script}; }}"
+        script = f"{shlex.join(_runtime_pm_argv(config, 'hold'))} && {{ {endpoint_script}; }}"
     return ToolStep(
         "pm-hold-path",
         (*config.privilege_prefix, "sh", "-c", script),

@@ -1689,14 +1689,26 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     # device present must fail the step
     assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in hold
     assert "pm hold skipped (device absent)" in hold
-    # the BRIDGES above the endpoint are held too, unconditionally and
-    # BEFORE it: the next step removes the endpoint, and on a hot-plug path
-    # nothing else keeps the bridges awake once its sysfs node is gone
-    for bridge in ("0000:03:01.0", "0000:02:00.0", "0000:00:07.0"):
-        assert f"--device {bridge}" in hold, bridge
-    assert hold.index("--device 0000:03:01.0") < hold.index("if [ -e /sys/bus/pci/devices/0000:04:00.0 ]")
-    # a bridge hold failure fails the step rather than falling through
-    assert "&&" in hold
+    # the PATH above the endpoint is held too, and BEFORE it: the next step
+    # removes the endpoint, and on a hot-plug path nothing else keeps the
+    # bridges awake once its sysfs node is gone
+    for pattern in ("Thunderbolt", "JHL", "Xilinx"):
+        assert f"--pattern {pattern}" in hold, pattern
+    assert hold.index("--pattern Thunderbolt") < hold.index("if [ -e /sys/bus/pci/devices/0000:04:00.0 ]")
+    # BY PATTERN, never by an explicit BDF list: naming devices makes the
+    # runtime-PM tool exit non-zero for any that is missing, which would
+    # abort recovery of a board whose hot-plug tunnel collapsed -- precisely
+    # when the USB JTAG programmer could still reach it
+    assert "--device 0000:03:01.0" not in hold
+    # the path hold still gates the endpoint hold rather than falling through
+    assert "&& {" in hold
+
+    # a platform declaring no patterns holds nothing extra -- the behaviour
+    # it had before the path hold existed, not a new failure
+    bare = SramProgramPlan().compose(_bench_config(work_root=Path("/tmp/w"), runtime_pm_patterns=()))
+    bare_hold = {step.name: step.command_line for step in bare}["pm-hold-path"]
+    assert "--pattern" not in bare_hold
+    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in bare_hold
     assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
     assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
     assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent
