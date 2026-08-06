@@ -968,17 +968,6 @@ def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int
         # necessary but not sufficient
         steps.append(ToolStep("verify-device", ("sh", "-c", verify_command)))
     steps.append(deadman_disarm_step(config))
-    # Give the path back to runtime PM. Without this the hold leaks: every
-    # device it touched stays pinned at power/control=on, d3cold_allowed=0
-    # until the host reboots, which on a laptop-class bench box is a
-    # standing power and thermal cost for a flash that finished minutes ago.
-    #
-    # LAST, and after the disarm, for two reasons. The executor runs later
-    # steps whose name ends in "release" as cleanup when an earlier step
-    # fails, so a failed ladder releases too; and the disarm does not end in
-    # "release", so a failure still leaves the deadman armed and the board
-    # self-recovering, which is the property the ladder is built around.
-    steps.append(thunderbolt_release_step(config))
     return tuple(steps)
 
 
