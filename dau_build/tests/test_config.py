@@ -264,3 +264,26 @@ def test_driver_and_memory_config_groups_compose_and_override() -> None:
     )
     assert "driver\tos=host transport=xdma" in result.message
     assert "memory\thost_staging_bytes=4096 device_staging_bytes=0" in result.message
+
+
+def test_an_unresolvable_task_is_refused_including_under_explain() -> None:
+    """The task group is `optional`, so hydra drops a value it cannot find
+    instead of failing. Without a guard a mistyped task reads as success
+    under --explain, which is the one command whose job is to show what
+    will happen before it happens."""
+    import pytest
+
+    from dau_build.build_steps import BuildStepError
+    from dau_build.cli import main
+
+    with pytest.raises(BuildStepError, match="did not resolve"):
+        main(["task=tasks/does/not/exist", "--explain"])
+    with pytest.raises(BuildStepError, match="did not resolve"):
+        main(["task=tasks/does/not/exist"])
+
+
+def test_a_valid_task_and_a_bare_invocation_still_explain() -> None:
+    from dau_build.cli import main
+
+    assert main(["task=tasks/build/synthesize-cores", "--explain"]) == 0
+    assert main(["--explain"]) == 0
