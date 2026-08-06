@@ -9,7 +9,8 @@ module dau_mm_bar_noc_job #(
     parameter [31:0] OPERATOR_BITMAP = 32'h00000000,
     parameter [31:0] LANE_COUNT = 32'd4,
     parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000000,
-    parameter [31:0] SORT_CAPACITY = 32'd0
+    parameter [31:0] SORT_CAPACITY = 32'd0,
+    parameter [63:0] BUILD_ID = 64'h0000000000000000
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 s_axi_aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF S_AXI:M_AXI, ASSOCIATED_RESET s_axi_aresetn" *)
@@ -375,7 +376,8 @@ module dau_mm_bar_noc_job #(
         .OPERATOR_BITMAP(OPERATOR_BITMAP),
         .LANE_COUNT(LANE_COUNT),
         .HOST_OPCODE_BITMAP(HOST_OPCODE_BITMAP),
-        .SORT_CAPACITY(SORT_CAPACITY)
+        .SORT_CAPACITY(SORT_CAPACITY),
+        .BUILD_ID(BUILD_ID)
     ) identity_registers (
         .addr({4'h0, selected_addr[11:0]}),
         .wen(1'b0),

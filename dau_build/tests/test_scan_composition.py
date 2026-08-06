@@ -87,14 +87,18 @@ def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
     assert "    parameter [31:0] OPERATOR_BITMAP = 32'h00000000,\n" in default
     assert "    parameter [31:0] LANE_COUNT = 32'd4,\n" in default
     assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000000,\n" in default
-    assert "    parameter [31:0] SORT_CAPACITY = 32'd0\n" in default
+    assert "    parameter [31:0] SORT_CAPACITY = 32'd0,\n" in default
+    # unstamped by default: a composition only advertises an identity when
+    # its composer computed one, exactly like the bitmaps
+    assert "    parameter [63:0] BUILD_ID = 64'h0000000000000000\n" in default
 
     composed = generate_scan_composition_top_sv(
-        _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16})
+        _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16, "build_id": 0xDEADBEEF})
     )
     assert "    parameter [31:0] OPERATOR_BITMAP = 32'h0000001E,\n" in composed
     assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000020,\n" in composed
-    assert "    parameter [31:0] SORT_CAPACITY = 32'd16\n" in composed
+    assert "    parameter [31:0] SORT_CAPACITY = 32'd16,\n" in composed
+    assert "    parameter [63:0] BUILD_ID = 64'h00000000DEADBEEF\n" in composed
     for parameter in ("OPERATOR_BITMAP", "LANE_COUNT", "HOST_OPCODE_BITMAP", "SORT_CAPACITY"):
         assert f"        .{parameter}({parameter}),\n" in composed or f"        .{parameter}({parameter})\n" in composed
 

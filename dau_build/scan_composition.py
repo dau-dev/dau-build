@@ -169,6 +169,13 @@ class ScanComposition(BaseModel):
     operator_bitmap: int = 0x0000_0000
     host_opcode_bitmap: int = 0x0000_0000
     sort_capacity: int = 0
+    # A 64-bit identity for THIS composition, advertised so a host can ask
+    # "is the device running the design I think it is". The advertised
+    # capability words cannot answer that: distinct designs routinely share
+    # them (q19-scan and q19-packed-wide advertise identically). Caller
+    # computed like the bitmaps -- the walker never guesses it -- and zero
+    # means "not stamped", which is what an unstamped shell reads back as.
+    build_id: int = 0
     registers: RegisterLayout = RegisterLayout()
 
     def model_post_init(self, _context) -> None:
@@ -505,7 +512,8 @@ def _identity_registers_instance_sv() -> str:
         .OPERATOR_BITMAP(OPERATOR_BITMAP),
         .LANE_COUNT(LANE_COUNT),
         .HOST_OPCODE_BITMAP(HOST_OPCODE_BITMAP),
-        .SORT_CAPACITY(SORT_CAPACITY)
+        .SORT_CAPACITY(SORT_CAPACITY),
+        .BUILD_ID(BUILD_ID)
     ) identity_registers (
         .addr({4'h0, selected_addr[11:0]}),
         .wen(1'b0),
@@ -1542,7 +1550,8 @@ module {module_name} #(
     parameter [31:0] OPERATOR_BITMAP = 32'h{composition.operator_bitmap:08X},
     parameter [31:0] LANE_COUNT = 32'd{num_lanes},
     parameter [31:0] HOST_OPCODE_BITMAP = 32'h{composition.host_opcode_bitmap:08X},
-    parameter [31:0] SORT_CAPACITY = 32'd{composition.sort_capacity}
+    parameter [31:0] SORT_CAPACITY = 32'd{composition.sort_capacity},
+    parameter [63:0] BUILD_ID = 64'h{composition.build_id:016X}
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 s_axi_aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF {associated_busif}, ASSOCIATED_RESET s_axi_aresetn" *)
