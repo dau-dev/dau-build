@@ -124,12 +124,16 @@ class SynthesizeCoresTask(BuildCallableModel):
 
         try:
             composed = compose_config([f"+{_REGISTRY_GROUP}=cores"])
-            # register ONLY the registry subtree: the composed config also
-            # carries this task's own groups, and loading those into a
-            # registry that already holds them collides
+            # load into a DETACHED registry, never the root. Registering the
+            # group on the root would make a later full compose by the core
+            # package collide on a name this task put there, so whether an
+            # application's own composition works would depend on whether it
+            # ran a build task first.
             from omegaconf import OmegaConf
 
-            registry.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
+            scratch = ModelRegistry(name=f"{_REGISTRY_GROUP}-synthesize-cores")
+            scratch.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
+            return scratch.models[_REGISTRY_GROUP]
         except Exception as exc:
             raise BuildStepError(
                 f"no {_REGISTRY_PREFIX} registry is composed and the {_REGISTRY_GROUP!r} config group "
@@ -310,15 +314,15 @@ class SynthesizeCoresTask(BuildCallableModel):
         matches = None
         if compare and registered is not None:
             if isinstance(registered, (list, tuple)):
+                # every axis must match. A missing clock is NOT a wildcard:
+                # once a tile carries both an 8 ns and a 10 ns point for the
+                # same part and params, a wildcard silently picks whichever
+                # was written first and reports drift against the wrong one.
                 point = (
                     None
-                    if params is None
+                    if params is None or clock_period_ns is None
                     else next(
-                        (
-                            m
-                            for m in registered
-                            if m.part == part and (clock_period_ns is None or m.clock_ns == clock_period_ns) and dict(m.params) == dict(params)
-                        ),
+                        (m for m in registered if m.part == part and m.clock_ns == clock_period_ns and dict(m.params) == dict(params)),
                         None,
                     )
                 )
