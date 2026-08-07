@@ -161,6 +161,42 @@ class StorageTier(BaseModel):
     constraints_xdc: str = ""
 
 
+class DdrStaging(BaseModel):
+    """Where a host stages job data in a board's DDR: the input regions, the
+    result region, and the alignment those addresses obey.
+
+    These are BOARD facts, and they were previously host-side Python
+    constants with an inline `memory_bytes > 1 << 32` conditional standing
+    in for "this is the bigger board". A conditional is not configuration:
+    it hides one board's layout inside another's code path, and the next
+    board needs a second branch. Declaring them per platform is the same
+    rule host_access already follows.
+
+    Addresses are offsets into the tier this staging describes, so a board
+    whose DDR is not at zero states its own base rather than relying on one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    tier: str = "ddr"
+    input_addresses: tuple[int, ...]
+    input_bytes: int
+    output_address: int
+    output_bytes: int
+    address_align: int
+
+    @field_validator("input_addresses")
+    @classmethod
+    def _at_least_one_input(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if not value:
+            raise ValueError("ddr staging needs at least one input region")
+        return value
+
+    def aligned(self) -> bool:
+        addresses = (*self.input_addresses, self.output_address)
+        return all(address % self.address_align == 0 for address in addresses)
+
+
 class HostAccess(BaseModel):
     """How the bench host reaches the board: the PCI identity/topology the
     hardware plans probe and the programming cable. These are measured
@@ -230,6 +266,9 @@ class PlatformDefinition(BaseModel):
     # controller); None = the first shared tier
     active_memory_tier: str | None = None
     host_access: HostAccess | None = None
+    # where the host stages job data in this board's DDR; unset means the
+    # board has not declared one and a caller must not invent it
+    ddr_staging: DdrStaging | None = None
     constraints: tuple[str, ...] = ()
     constraints_xdc: str = ""
     lane_placements: tuple[tuple[int, str], ...] = ()
