@@ -1340,7 +1340,7 @@ def generate_scan_composition_top_sv(
     *,
     sources: Sequence[Path | str] | None = None,
     generated_by: str = _DEFAULT_GENERATED_BY,
-    platform_id: str = "DPV1",
+    platform_id: str,
 ) -> str:
     """Walk a ``ScanComposition``: one AXI burst reader scans the input
     window once and fans the row stream to the composition's lanes — each

@@ -274,9 +274,10 @@ class PlatformDefinition(BaseModel):
     lane_placements: tuple[tuple[int, str], ...] = ()
     # the platform's on-wire identity word (1–4 ASCII bytes) advertised in the
     # PLATFORM_ID register: the shell generators encode it into the identity
-    # block so first-power reads back the right platform. dpv1 = "DPV1"
-    # (the default), dpv2 overrides with its own.
-    platform_id: str = "DPV1"
+    # block so first-power reads back the right platform. REQUIRED: a board
+    # that forgot to state one used to become dpv1 silently, and the shell
+    # would then stamp that identity into a device which is not that board.
+    platform_id: str
     program_method: str = "jtag"
     # the flash device's boot bus width when the board self-configures from
     # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a

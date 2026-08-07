@@ -224,7 +224,7 @@ def _probe_platform(**overrides):
         "constraints_xdc": "set_property CFGBVS GND [current_design]\n",
     }
     base.update(overrides)
-    return PlatformDefinition(**base)
+    return PlatformDefinition(**base, platform_id="TEST")
 
 
 def _with_xdma_params(platform, **updates):
