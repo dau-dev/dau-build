@@ -17,13 +17,22 @@ from dau_build.dpv1_shell import (
 )
 
 
+
+def _test_platform():
+    """dpv1 as an explicit fixture. The request no longer defaults a board,
+    so a test that wants one says which."""
+    from dau_build.config import resolve_platform
+
+    return resolve_platform("platforms/dau/dpv1")
+
+
 def _request(tmp_path: Path) -> MmJobShellRequest:
     # dau-build is generic: the caller supplies HDL sources and generated
     # binding tops; this test uses its own stand-ins
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
     return MmJobShellRequest(
-        output_root=tmp_path / "shell",
+        platform=_test_platform(),        output_root=tmp_path / "shell",
         hdl_sources=(tile,),
         generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         top_module="my_mm_top",
@@ -45,7 +54,7 @@ def test_generator_refuses_a_copied_request_outside_the_tiers(tmp_path) -> None:
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     request = MmDdrJobShellRequest(
-        output_root=tmp_path,
+        platform=_test_platform(),        output_root=tmp_path,
         hdl_sources=(),
         generated_sources=(("top.v", "module top; endmodule\n"),),
         top_module="top",
@@ -63,7 +72,7 @@ def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     with _pytest.raises(ValidationError, match="not a width tier of platform 'dpv1'"):
         MmDdrJobShellRequest(
-            output_root=tmp_path,
+        platform=_test_platform(),            output_root=tmp_path,
             hdl_sources=(),
             generated_sources=(("top.v", "module top; endmodule\n"),),
             top_module="top",
@@ -134,7 +143,7 @@ def _ddr_request(tmp_path: Path) -> MmDdrJobShellRequest:
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     return MmDdrJobShellRequest(
-        output_root=tmp_path / "shell",
+        platform=_test_platform(),        output_root=tmp_path / "shell",
         hdl_sources=(tile,),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",
@@ -272,16 +281,27 @@ def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         "top_module": "my_mm_top",
     }
-    assert MmJobShellRequest(**common).resolved_part == "xc7a200tfbg484-2"  # dpv1 default
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    # a request without a board is REFUSED rather than resolved to one.
+    # dau-build carries no board defaults: adopting dpv1 here would have
+    # synthesized and priced a dpv2 design for an Artix silently.
+    with _pytest.raises(ValidationError):
+        MmJobShellRequest(**common)
+
+    assert MmJobShellRequest(platform=_test_platform(), **common).resolved_part == "xc7a200tfbg484-2"
     assert MmJobShellRequest(platform=_probe_platform(), **common).resolved_part == "xc7k325tffg900-2"
     # an explicit part override wins over the platform
     assert MmJobShellRequest(platform=_probe_platform(), part="xc7k325tffg676-1", **common).resolved_part == "xc7k325tffg676-1"
     # resolution is live: swapping the platform never leaves a stale part
-    swapped = MmJobShellRequest(**common).model_copy(update={"platform": _probe_platform()})
+    swapped = MmJobShellRequest(platform=_test_platform(), **common).model_copy(update={"platform": _probe_platform()})
     assert swapped.resolved_part == "xc7k325tffg900-2"
 
 
-def test_default_platform_is_safely_shared(tmp_path: Path) -> None:
+def test_a_shared_platform_cannot_be_tampered_through_one_request(tmp_path: Path) -> None:
+    """Callers name their board, and often hand the SAME resolved object to
+    several requests. Frozen means one request cannot corrupt another's."""
     import pytest as _pytest
 
     tile = tmp_path / "stream_tile.sv"
@@ -292,8 +312,9 @@ def test_default_platform_is_safely_shared(tmp_path: Path) -> None:
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         "top_module": "my_mm_top",
     }
-    first = MmJobShellRequest(**common)
-    second = MmJobShellRequest(**common)
+    platform = _test_platform()
+    first = MmJobShellRequest(platform=platform, **common)
+    second = MmJobShellRequest(platform=platform, **common)
     assert first.platform is second.platform
     with _pytest.raises(TypeError):
         first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # type: ignore[index]
@@ -378,13 +399,13 @@ def test_project_tcl_matches_pre_fragment_goldens() -> None:
     from the pre-refactor monolithic templates."""
     fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
     mm = MmJobShellRequest(
-        output_root=Path("/work/shell"),
+        platform=_test_platform(),        output_root=Path("/work/shell"),
         hdl_sources=(Path("/src/tile.sv"), Path("/src/identity.v")),
         generated_sources=(("my_top.v", "module my_top; endmodule\n"),),
         top_module="my_top",
     )
     ddr = MmDdrJobShellRequest(
-        output_root=Path("/work/shell"),
+        platform=_test_platform(),        output_root=Path("/work/shell"),
         hdl_sources=(Path("/src/tile.sv"),),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",
