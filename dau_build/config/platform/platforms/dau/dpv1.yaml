@@ -91,6 +91,10 @@ budget:
 # `memory_bytes > 1 << 32` conditional standing in for "the bigger board" --
 # a conditional is not configuration, and the next board needs another
 # branch. Same rule host_access already follows: measured board facts, here.
+# the on-wire identity word this board advertises in PLATFORM_ID. Declared,
+# not defaulted: a board that forgot to state one used to become dpv1.
+platform_id: DPV1
+
 ddr_staging:
   _target_: dau_build.platforms.DdrStaging
   tier: ddr

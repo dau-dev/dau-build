@@ -87,7 +87,7 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
         lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
         program_method="flash",
         placeholders=("host_link.xdma_personality",),
-    )
+     platform_id="TEST")
     reloaded = PlatformDefinition.model_validate(platform.model_dump())
     assert reloaded == platform
     assert reloaded.host_link.xdma_personality.params["pl_link_cap_max_link_width"] == "X8"
@@ -261,7 +261,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     overlay = tmp_path / "user-configs"
     (overlay / "platform").mkdir(parents=True)
     (overlay / "platform" / "myboard.yaml").write_text(
-        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
+        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\nplatform_id: MYBD\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
     )
     board = resolve_platform("myboard", config_dir=str(overlay))
     assert board.name == "myboard"
@@ -281,7 +281,7 @@ def _dpv1_with(**overrides: object) -> PlatformDefinition:
         "storage_tiers": (StorageTier(name="ddr", technology="ddr", capacity_bytes=1 << 30, access="shared"),),
     }
     base.update(overrides)
-    return PlatformDefinition(**base)  # type: ignore[arg-type]
+    return PlatformDefinition(**base, platform_id="TEST")  # type: ignore[arg-type]
 
 
 def test_dpv1_host_access_pins_the_proven_bench_facts() -> None:

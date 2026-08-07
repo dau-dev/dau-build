@@ -57,17 +57,17 @@ def _sorted_scan_composition() -> ScanComposition:
 def test_bar_noc_top_matches_golden() -> None:
     """Byte-identity golden: the walker's output is pinned so no refactor
     can change a byte of the generated top unnoticed."""
-    assert generate_scan_composition_top_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4.v").read_text()
+    assert generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1") == (_FIXTURES / "bar_noc_4.v").read_text()
 
 
 def test_sorted_scan_top_matches_golden() -> None:
-    assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+    assert generate_scan_composition_top_sv(_sorted_scan_composition(), platform_id="DPV1") == (_FIXTURES / "sorted_scan.v").read_text()
 
 
 def test_platform_id_threads_into_the_identity_parameter() -> None:
     """The platform's wire id encodes little-endian into the top's PLATFORM_ID
     parameter and overrides the identity block; the default is DPV1."""
-    default = generate_scan_composition_top_sv(_bar_noc_composition())
+    default = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
     assert "parameter [31:0] PLATFORM_ID = 32'h31565044," in default  # "DPV1"
     assert ".PLATFORM_ID(PLATFORM_ID)," in default
 
@@ -83,7 +83,7 @@ def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
     the bitmaps default to zero (never a static advertisement), the lane
     count is always the composed lane count, and non-default words flow
     into the top parameters and the identity instance."""
-    default = generate_scan_composition_top_sv(_bar_noc_composition())
+    default = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
     assert "    parameter [31:0] OPERATOR_BITMAP = 32'h00000000,\n" in default
     assert "    parameter [31:0] LANE_COUNT = 32'd4,\n" in default
     assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000000,\n" in default
@@ -94,7 +94,7 @@ def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
 
     composed = generate_scan_composition_top_sv(
         _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16, "build_id": 0xDEADBEEF})
-    )
+    , platform_id="DPV1")
     assert "    parameter [31:0] OPERATOR_BITMAP = 32'h0000001E,\n" in composed
     assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000020,\n" in composed
     assert "    parameter [31:0] SORT_CAPACITY = 32'd16,\n" in composed
@@ -106,8 +106,8 @@ def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
 def test_generated_by_names_the_banner_only() -> None:
     """``generated_by`` swaps the generator name in the banner and changes
     nothing else — callers re-hosting the walker keep byte-identity."""
-    default = generate_scan_composition_top_sv(_bar_noc_composition())
-    renamed = generate_scan_composition_top_sv(_bar_noc_composition(), generated_by="other.walker")
+    default = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
+    renamed = generate_scan_composition_top_sv(_bar_noc_composition(), generated_by="other.walker", platform_id="DPV1")
     differing = [(a, b) for a, b in zip(default.splitlines(), renamed.splitlines()) if a != b]
     assert differing == [
         (
@@ -167,7 +167,7 @@ def test_register_layout_defaults_place_the_lane_block() -> None:
 
 def test_register_layout_drives_the_emitted_localparams() -> None:
     composition = _bar_noc_composition().model_copy(update={"registers": RegisterLayout(lane_base=0x200, lane_stride=0x40)})
-    text = generate_scan_composition_top_sv(composition)
+    text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
     assert "localparam [11:0] ADDR_LANE0_OUTPUT_ADDRESS = 12'h200;" in text
     assert "localparam [11:0] ADDR_LANE1_OUTPUT_ADDRESS = 12'h240;" in text
 
@@ -217,7 +217,7 @@ def _chained_composition() -> ScanComposition:
 
 
 def test_chain_stages_wire_front_to_terminal_in_order() -> None:
-    text = generate_scan_composition_top_sv(_chained_composition())
+    text = generate_scan_composition_top_sv(_chained_composition(), platform_id="DPV1")
     # stage 0 consumes the lane front, stage 1 consumes stage 0, the
     # terminal tile consumes stage 1
     assert "    dau_stage_filter chain_0_0 (" in text
@@ -237,7 +237,7 @@ def test_chain_stages_wire_front_to_terminal_in_order() -> None:
 
 
 def test_chain_status_mux_is_upstream_first() -> None:
-    text = generate_scan_composition_top_sv(_chained_composition())
+    text = generate_scan_composition_top_sv(_chained_composition(), platform_id="DPV1")
     assert "assign unit_status_valid_0 = tile_status_valid_0 || filt_status_valid_0 || chain0_status_valid_0 || chain1_status_valid_0;" in text
     assert (
         "assign unit_status_error_0 = filt_status_valid_0 ? filt_status_error_0 : "
@@ -264,7 +264,7 @@ def test_filterless_chained_lane_muxes_chain_before_tile() -> None:
             ),
         ),
     )
-    text = generate_scan_composition_top_sv(composition)
+    text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
     assert "assign unit_status_valid_0 = tile_status_valid_0 || chain0_status_valid_0;" in text
     assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in text
     assert "assign tile_status_ready_0 = unit_status_ready_0 && !chain0_status_valid_0;" in text
@@ -284,7 +284,7 @@ def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() 
     before (the byte-identity goldens above pin that)."""
     # the exact "module tile_0 (" substring proves there is no #(...) wedged
     # between the module name and the instance name for a param-less tile
-    param_free = generate_scan_composition_top_sv(_bar_noc_composition())
+    param_free = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
     assert "    dau_int32_bar_aggregation tile_0 (" in param_free
 
     membership = ScanComposition(
@@ -299,7 +299,7 @@ def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() 
             ),
         ),
     )
-    text = generate_scan_composition_top_sv(membership)
+    text = generate_scan_composition_top_sv(membership, platform_id="DPV1")
     assert "    dau_int32_key_membership_filter #(\n        .KEY_SPACE(6000000)\n    ) chain_0_0 (" in text
     # the param-less terminal tile carries no override
     assert "    dau_int32_field_sum_aggregation tile_0 (" in text
@@ -318,20 +318,20 @@ def test_param_override_emits_on_partition_and_terminal_tile_slots() -> None:
             ),
         ),
     )
-    text = generate_scan_composition_top_sv(composition)
+    text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
     assert "    dau_key_filter #(\n        .KEY_SPACE(128)\n    ) partition_0 (" in text
     assert "    dau_terminal_tile #(\n        .KEY_SPACE(2048)\n    ) tile_0 (" in text
 
 
 def test_param_override_emits_on_the_shared_partitioner() -> None:
     # a param-less shared partitioner emits only the derived NUM_PARTITIONS (byte-identical)
-    plain = generate_scan_composition_top_sv(_sorted_scan_composition())
+    plain = generate_scan_composition_top_sv(_sorted_scan_composition(), platform_id="DPV1")
     assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4)\n    ) partitioner (" in plain
     # custom params append after NUM_PARTITIONS
     with_params = _sorted_scan_composition().model_copy(
         update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"KEY_SPACE": 4096})}
     )
-    text = generate_scan_composition_top_sv(with_params)
+    text = generate_scan_composition_top_sv(with_params, platform_id="DPV1")
     assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4),\n        .KEY_SPACE(4096)\n    ) partitioner (" in text
 
 
@@ -340,15 +340,15 @@ def test_shared_partitioner_rejects_a_num_partitions_param_override() -> None:
         update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"NUM_PARTITIONS": 8})}
     )
     with pytest.raises(ScanCompositionError, match="NUM_PARTITIONS is derived"):
-        generate_scan_composition_top_sv(composition)
+        generate_scan_composition_top_sv(composition, platform_id="DPV1")
 
 
 def test_param_less_goldens_are_untouched_by_the_param_channel() -> None:
     """The param channel adds a field that defaults empty: every existing
     golden must still match byte-for-byte (this repeats the golden asserts to
     pin them against the param-channel change explicitly)."""
-    assert generate_scan_composition_top_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4.v").read_text()
-    assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+    assert generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1") == (_FIXTURES / "bar_noc_4.v").read_text()
+    assert generate_scan_composition_top_sv(_sorted_scan_composition(), platform_id="DPV1") == (_FIXTURES / "sorted_scan.v").read_text()
     assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
 
 
@@ -376,7 +376,7 @@ def _front_unpacked_composition() -> ScanComposition:
 
 
 def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
-    text = generate_scan_composition_top_sv(_front_unpacked_composition())
+    text = generate_scan_composition_top_sv(_front_unpacked_composition(), platform_id="DPV1")
     # the reader is unchanged: it still drives the scan_* stream
     assert ".stream_valid(scan_valid)," in text
     # the unpacker consumes the reader's scan_* stream ...
@@ -424,7 +424,7 @@ def _wide_front_composition() -> ScanComposition:
 def test_wide_front_widens_the_feed_and_threads_the_width_params() -> None:
     # the feed stream is declared at the front unpacker's OUT_WIDTH and both
     # width params land on their instances via the module-parameter channel
-    text = generate_scan_composition_top_sv(_wide_front_composition())
+    text = generate_scan_composition_top_sv(_wide_front_composition(), platform_id="DPV1")
     assert "    wire feed_valid;\n    wire feed_ready;\n    wire [127:0] feed_data;\n    wire feed_last;\n" in text
     assert "dau_int32_row_unpack #(\n        .OUT_WIDTH(128)\n    )" in text
     dispatcher_block = text.split("dau_int32_key_mask_dispatcher #(")[1].split(");")[0]
@@ -496,7 +496,7 @@ def _load_phase_composition() -> ScanComposition:
 
 
 def test_load_phase_binding_emits_the_register_and_drives_cfg_load() -> None:
-    text = generate_scan_composition_top_sv(_load_phase_composition())
+    text = generate_scan_composition_top_sv(_load_phase_composition(), platform_id="DPV1")
     # the register: declared, decoded at 0x084, reset to probe, readable
     assert "    reg load_phase;\n" in text
     assert "    localparam [11:0] ADDR_LOAD_PHASE = 12'h084;" in text
@@ -519,7 +519,7 @@ def test_load_phase_sim_harness_surfaces_the_register_as_a_port() -> None:
 def test_load_phase_free_composition_stays_byte_identical() -> None:
     # no load binding -> no register, no decl, no decode (the pinned goldens
     # already prove byte-identity; this pins the register's absence)
-    text = generate_scan_composition_top_sv(_bar_noc_composition())
+    text = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
     assert "load_phase" not in text
     assert "ADDR_LOAD_PHASE" not in text
 
@@ -554,7 +554,7 @@ def test_load_phase_shape_rules_mirror_the_walker() -> None:
         update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
     )
     with pytest.raises(ScanCompositionError, match="front unpacker"):
-        generate_scan_composition_top_sv(broken)
+        generate_scan_composition_top_sv(broken, platform_id="DPV1")
 
 
 def test_generators_revalidate_a_model_copied_composition() -> None:
@@ -564,23 +564,23 @@ def test_generators_revalidate_a_model_copied_composition() -> None:
     wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
     broadcast_mismatch = _bar_noc_composition().model_copy(update={"front_unpack": wide_unpack})
     with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
-        generate_scan_composition_top_sv(broadcast_mismatch)
+        generate_scan_composition_top_sv(broadcast_mismatch, platform_id="DPV1")
     with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
         generate_scan_composition_sim_sv(broadcast_mismatch)
     narrow_fanout = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher")})
     with pytest.raises(ScanCompositionError, match="widths must agree"):
-        generate_scan_composition_top_sv(narrow_fanout)
+        generate_scan_composition_top_sv(narrow_fanout, platform_id="DPV1")
     with pytest.raises(ScanCompositionError, match="widths must agree"):
         generate_scan_composition_sim_sv(narrow_fanout)
     bad_width = _wide_front_composition().model_copy(
         update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 96})}
     )
     with pytest.raises(ScanCompositionError, match="IN_WIDTH must be one of"):
-        generate_scan_composition_top_sv(bad_width)
+        generate_scan_composition_top_sv(bad_width, platform_id="DPV1")
 
 
 def test_front_unpack_status_is_latched_and_folded_into_job_error() -> None:
-    text = generate_scan_composition_top_sv(_front_unpacked_composition())
+    text = generate_scan_composition_top_sv(_front_unpacked_composition(), platform_id="DPV1")
     # the front-stage status close-out is consumed (ready tied high) ...
     assert "assign front_unpack_status_ready = 1'b1;" in text
     # ... latched sticky (the close-out is a one-cycle pulse) ...
@@ -613,7 +613,7 @@ def test_front_unpack_relaxes_the_length_grid_to_eight_bytes() -> None:
     # packed rows are one 8-byte word each, so a front-unpack composition
     # accepts an 8-byte length grid (an odd packed-row count would round to a
     # non-16-multiple length and be rejected on the 16-byte quad grid)
-    packed = generate_scan_composition_top_sv(_front_unpacked_composition())
+    packed = generate_scan_composition_top_sv(_front_unpacked_composition(), platform_id="DPV1")
     assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[2:0] == 3'd0);" in packed
     assert ".LENGTH_ALIGN_BITS(3)" in packed
     assert "// the 8-byte row grid is enforced" in packed
@@ -622,7 +622,7 @@ def test_front_unpack_relaxes_the_length_grid_to_eight_bytes() -> None:
     assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[2:0] == 3'd0);" in packed_sim
     assert ".LENGTH_ALIGN_BITS(3)" in packed_sim
     # a front-unpack-less composition keeps the 16-byte quad grid
-    plain = generate_scan_composition_top_sv(_bar_noc_composition())
+    plain = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
     assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[3:0] == 4'd0);" in plain
     assert ".LENGTH_ALIGN_BITS(4)" in plain
     assert "// the 16-byte row grid is enforced" in plain
@@ -632,7 +632,7 @@ def test_front_unpack_with_a_shared_partitioner_feeds_the_partitioner() -> None:
     composition = _sorted_scan_composition().model_copy(
         update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
     )
-    text = generate_scan_composition_top_sv(composition)
+    text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
     part_block = text.split(") partitioner (")[1].split(");")[0]
     assert ".input_valid(feed_valid)," in part_block
     assert ".input_last(feed_last)," in part_block
@@ -653,8 +653,8 @@ def test_front_unpack_absent_stays_byte_identical() -> None:
     """The front-unpack slot defaults to ``None``; every existing golden must
     still match byte-for-byte (the additive change never touches the
     front-unpack-less emission)."""
-    assert generate_scan_composition_top_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4.v").read_text()
-    assert generate_scan_composition_top_sv(_sorted_scan_composition()) == (_FIXTURES / "sorted_scan.v").read_text()
+    assert generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1") == (_FIXTURES / "bar_noc_4.v").read_text()
+    assert generate_scan_composition_top_sv(_sorted_scan_composition(), platform_id="DPV1") == (_FIXTURES / "sorted_scan.v").read_text()
     assert generate_scan_composition_sim_sv(_bar_noc_composition()) == (_FIXTURES / "bar_noc_4_sim.v").read_text()
 
 
@@ -672,7 +672,7 @@ def _front_gearbox_composition() -> ScanComposition:
 
 
 def test_front_gearbox_wires_wide_reader_to_whole_record_dispatcher() -> None:
-    text = generate_scan_composition_top_sv(_front_gearbox_composition())
+    text = generate_scan_composition_top_sv(_front_gearbox_composition(), platform_id="DPV1")
 
     assert "    wire geared_valid;\n    wire geared_ready;\n    wire [191:0] geared_data;\n    wire geared_last;\n" in text
     gearbox_block = text.split("dau_record_gearbox #(")[1].split(");")[0]
@@ -697,7 +697,7 @@ def test_front_gearbox_wires_wide_reader_to_whole_record_dispatcher() -> None:
 
 
 def test_front_gearbox_status_is_latched_and_folded_into_job_error() -> None:
-    text = generate_scan_composition_top_sv(_front_gearbox_composition())
+    text = generate_scan_composition_top_sv(_front_gearbox_composition(), platform_id="DPV1")
 
     assert "assign front_gearbox_status_ready = 1'b1;" in text
     assert "    reg front_gearbox_error;\n    reg [7:0] front_gearbox_error_code;\n" in text
@@ -790,7 +790,7 @@ def _lane_tile_composition(config: dict[str, str]) -> ScanComposition:
 def test_sources_arm_interface_validation(tmp_path: Path) -> None:
     source = tmp_path / "lane_tile.sv"
     source.write_text(_CONFORMING_TILE)
-    text = generate_scan_composition_top_sv(_lane_tile_composition({"cfg_thing": "32'd7"}), sources=(source,))
+    text = generate_scan_composition_top_sv(_lane_tile_composition({"cfg_thing": "32'd7"}), sources=(source,), platform_id="DPV1")
     assert "lane_tile tile_0 (" in text
     assert ".cfg_thing(32'd7)," in text
 
@@ -799,7 +799,7 @@ def test_sources_reject_a_config_binding_typo(tmp_path: Path) -> None:
     source = tmp_path / "lane_tile.sv"
     source.write_text(_CONFORMING_TILE)
     with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_thingz' is not an input port \(cfg ports: cfg_thing\)"):
-        generate_scan_composition_top_sv(_lane_tile_composition({"cfg_thingz": "32'd7"}), sources=(source,))
+        generate_scan_composition_top_sv(_lane_tile_composition({"cfg_thingz": "32'd7"}), sources=(source,), platform_id="DPV1")
 
 
 def test_sources_reject_a_missing_module(tmp_path: Path) -> None:
@@ -807,7 +807,7 @@ def test_sources_reject_a_missing_module(tmp_path: Path) -> None:
     source.write_text(_CONFORMING_TILE)
     composition = _lane_tile_composition({}).model_copy(update={"partitioner": TileInstance(module="dau_absent_partitioner")})
     with pytest.raises(ScanCompositionError, match="dau_absent_partitioner.*not found"):
-        generate_scan_composition_top_sv(composition, sources=(source,))
+        generate_scan_composition_top_sv(composition, sources=(source,), platform_id="DPV1")
 
 
 def test_sim_generator_arms_the_same_interface_validation(tmp_path: Path) -> None:
@@ -830,7 +830,7 @@ def test_sources_validate_chain_stages(tmp_path: Path) -> None:
             "lanes": (LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="lane_tile", config={"cfg_thing": "32'd1"}),)),)
         }
     )
-    text = generate_scan_composition_top_sv(chained, sources=(source,))
+    text = generate_scan_composition_top_sv(chained, sources=(source,), platform_id="DPV1")
     assert "lane_tile chain_0_0 (" in text
 
     with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_typo' is not an input port"):
@@ -843,7 +843,7 @@ def test_sources_validate_chain_stages(tmp_path: Path) -> None:
                 }
             ),
             sources=(source,),
-        )
+         platform_id="DPV1")
 
     with pytest.raises(ScanCompositionError, match="dau_absent_stage.*not found"):
         generate_scan_composition_top_sv(
@@ -851,7 +851,7 @@ def test_sources_validate_chain_stages(tmp_path: Path) -> None:
                 update={"lanes": (LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="dau_absent_stage"),)),)}
             ),
             sources=(source,),
-        )
+         platform_id="DPV1")
 
 
 def test_sources_reject_a_missing_count_port(tmp_path: Path) -> None:
@@ -859,7 +859,7 @@ def test_sources_reject_a_missing_count_port(tmp_path: Path) -> None:
     source.write_text(_CONFORMING_TILE)
     composition = _lane_tile_composition({}).model_copy(update={"lanes": (LaneTile(module="lane_tile", count_port="bar_count"),)})
     with pytest.raises(ScanCompositionError, match="missing declared count port 'bar_count'"):
-        generate_scan_composition_top_sv(composition, sources=(source,))
+        generate_scan_composition_top_sv(composition, sources=(source,), platform_id="DPV1")
 
 
 def test_sources_validate_the_front_unpacker(tmp_path: Path) -> None:
@@ -869,17 +869,17 @@ def test_sources_validate_the_front_unpacker(tmp_path: Path) -> None:
     source = tmp_path / "lane_tile.sv"
     source.write_text(_CONFORMING_TILE)
     composition = _lane_tile_composition({}).model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_thing": "32'd1"})})
-    text = generate_scan_composition_top_sv(composition, sources=(source,))
+    text = generate_scan_composition_top_sv(composition, sources=(source,), platform_id="DPV1")
     assert "lane_tile front_unpack (" in text
 
     with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_typo' is not an input port"):
         generate_scan_composition_top_sv(
             composition.model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_typo": "32'd1"})}), sources=(source,)
-        )
+        , platform_id="DPV1")
     with pytest.raises(ScanCompositionError, match="dau_absent_unpacker.*not found"):
         generate_scan_composition_top_sv(
             composition.model_copy(update={"front_unpack": TileInstance(module="dau_absent_unpacker")}), sources=(source,)
-        )
+        , platform_id="DPV1")
 
 
 def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> None:
@@ -893,7 +893,7 @@ def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> N
         partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 512}),
         data_width=512,
     )
-    sv = generate_scan_composition_top_sv(comp)
+    sv = generate_scan_composition_top_sv(comp, platform_id="DPV1")
     assert "M_AXI_R ARADDR" in sv and "M_AXI_W AWADDR" in sv
     assert "input wire [511:0] m_axi_r_rdata" in sv  # wide read
     assert "output wire [63:0] m_axi_w_wdata" in sv  # narrow write (records stay 64-bit)
@@ -927,7 +927,7 @@ def _wide_lane_composition() -> ScanComposition:
 def test_wide_lane_taps_the_wide_reader_directly() -> None:
     """A wide lane consumes whole reader beats through every chain stage,
     then emits standard 64-bit records to the unchanged writer."""
-    sv = generate_scan_composition_top_sv(_wide_lane_composition())
+    sv = generate_scan_composition_top_sv(_wide_lane_composition(), platform_id="DPV1")
 
     assert "    assign filt_out_valid_0 = scan_valid;\n" in sv
     assert "    assign scan_ready = filt_out_ready_0;\n" in sv
@@ -1035,7 +1035,7 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
             ),
         ),
     )
-    sv = generate_scan_composition_top_sv(composition)
+    sv = generate_scan_composition_top_sv(composition, platform_id="DPV1")
 
     # the closing stages accept their own status the cycle it appears
     assert "assign chain0_status_ready_0 = 1'b1;" in sv
@@ -1080,7 +1080,7 @@ def test_a_chain_without_closing_stages_is_byte_identical() -> None:
             ),
         ),
     )
-    sv = generate_scan_composition_top_sv(silent)
+    sv = generate_scan_composition_top_sv(silent, platform_id="DPV1")
     assert "fused_err_0" not in sv
     assert "assign chain0_status_ready_0 = unit_status_ready_0 && chain0_status_valid_0;" in sv
 
@@ -1098,7 +1098,7 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
             input_row_bytes=row_bytes,
             lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="aggregated_count"),),
         )
-        sv = generate_scan_composition_top_sv(composition)
+        sv = generate_scan_composition_top_sv(composition, platform_id="DPV1")
         bits = grid.bit_length() - 1
         assert f"input_length_bytes[{bits - 1}:0] == {bits}'d0" in sv, f"{row_bytes}B record wants a {grid}B grid"
 
@@ -1110,7 +1110,7 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
                 input_row_bytes=12,
                 lanes=(LaneTile(module="t", count_port="c"),),
             )
-        )
+        , platform_id="DPV1")
 
 
 def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:
@@ -1120,13 +1120,13 @@ def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:
     composition has to refuse first."""
     base = _front_gearbox_composition()
     with pytest.raises(ScanCompositionError, match="geared record bus"):
-        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 136}))  # 17 words
+        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 136}), platform_id="DPV1")  # 17 words
     # a size that is not whole words is already refused upstream, by the rule
     # that owns the invariant rather than by the record-range check
     with pytest.raises(ScanCompositionError, match="positive multiple of 8"):
-        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 20}))
+        generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 20}), platform_id="DPV1")
     # the legal end of the range still composes
-    generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 128}))
+    generate_scan_composition_top_sv(base.model_copy(update={"input_row_bytes": 128}), platform_id="DPV1")
 
 
 def test_the_build_specs_are_frozen() -> None:
@@ -1162,8 +1162,8 @@ def test_a_wide_job_master_can_actually_reach_its_high_address_bits() -> None:
     narrow = _bar_noc_composition()
     wide = narrow.model_copy(update={"addr_width": 64})
 
-    narrow_sv = generate_scan_composition_top_sv(narrow)
-    wide_sv = generate_scan_composition_top_sv(wide)
+    narrow_sv = generate_scan_composition_top_sv(narrow, platform_id="DPV1")
+    wide_sv = generate_scan_composition_top_sv(wide, platform_id="DPV1")
 
     # the narrow design decodes only the low register, exactly as before
     assert "ADDR_INPUT_ADDRESS_LOW: input_address <= s_axi_wdata[31:0];" in narrow_sv
