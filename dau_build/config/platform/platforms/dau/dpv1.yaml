@@ -86,6 +86,25 @@ budget:
 # how the bench host reaches the board: the proven endpoint identity,
 # the Thunderbolt bridge chain rescanned bottom-up after reprogramming, the
 # runtime-PM device patterns held during hardware sessions, and the JTAG cable
+# Where the host stages job data in this board's 1 GiB DDR. Previously
+# host-side Python constants in dau-driver, with an inline
+# `memory_bytes > 1 << 32` conditional standing in for "the bigger board" --
+# a conditional is not configuration, and the next board needs another
+# branch. Same rule host_access already follows: measured board facts, here.
+# the on-wire identity word this board advertises in PLATFORM_ID. Declared,
+# not defaulted: a board that forgot to state one used to become dpv1.
+platform_id: DPV1
+
+ddr_staging:
+  _target_: dau_build.platforms.DdrStaging
+  tier: ddr
+  # two input regions so a job can stage the next batch while one runs
+  input_addresses: [0x00000000, 0x18000000]
+  input_bytes: 0x18000000
+  output_address: 0x30000000
+  output_bytes: 0x10000000
+  address_align: 0x1000
+
 host_access:
   _target_: dau_build.platforms.HostAccess
   pci_id: "10ee:7011"

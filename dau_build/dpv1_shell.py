@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, model_validator
 
 from dau_build.platforms import PlatformDefinition
 
@@ -59,7 +59,12 @@ class MmJobShellRequest(BaseModel):
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
-    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
+    # REQUIRED, not defaulted. dau-build carries no board defaults: a
+    # request that silently adopted dpv1 would synthesize, constrain and
+    # price a dpv2 design for an Artix, and nothing downstream would say so.
+    # The caller names its board -- dau/dpv1.py names dpv1 because it IS the
+    # dpv1 module, which is honest in a way a library default is not.
+    platform: PlatformDefinition
     part: str | None = None
     input_buffer_address: int = 0x0000_0000
     output_buffer_address: int = 0x0010_0000
@@ -89,7 +94,7 @@ class MmDdrJobShellRequest(BaseModel):
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
     mig_prj: Path
-    platform: PlatformDefinition = Field(default_factory=_dpv1_platform)
+    platform: PlatformDefinition
     part: str | None = None
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000

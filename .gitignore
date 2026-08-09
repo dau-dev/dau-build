@@ -19,7 +19,9 @@ target-capi
 
 # Distribution / packaging
 .Python
-build/
+# anchored: an unanchored build/ also matches nested config directories such
+# as dau_build/config/task/tasks/build/, which silently dropped a task config
+/build/
 develop-eggs/
 dist/
 downloads/

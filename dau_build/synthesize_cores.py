@@ -46,6 +46,70 @@ class CoreEnvelopeReport(BaseModel):
     registered_matches: bool | None = None  # None: no envelope registered, or overrides changed the shape
 
 
+def core_registry():
+    """The composed ``/dau-core`` subregistry.
+
+    Resolved through the ccflow ``ModelRegistry``, never by importing
+    the core package: dau-build is public and must not depend on a
+    private one. A core provider registers its config tree on the
+    shared hydra searchpath (``hydra.lernaplugins``), and this task
+    reads whatever the application composed — including overrides.
+
+    When the subregistry is absent the group is composed by name off
+    that searchpath. If no provider is installed, that composition
+    fails and the task refuses; it never falls back to a direct import.
+    """
+    from ccflow import ModelRegistry
+
+    registry = ModelRegistry.root()
+    subregistry = registry.models.get(_REGISTRY_GROUP)
+    if subregistry is not None:
+        return subregistry
+    from .config import compose_config
+
+    try:
+        composed = compose_config([f"+{_REGISTRY_GROUP}=cores"])
+        # load into a DETACHED registry, never the root. Registering the
+        # group on the root would make a later full compose by the core
+        # package collide on a name this task put there, so whether an
+        # application's own composition works would depend on whether it
+        # ran a build task first.
+        from omegaconf import OmegaConf
+
+        scratch = ModelRegistry(name=f"{_REGISTRY_GROUP}-synthesize-cores")
+        scratch.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
+        return scratch.models[_REGISTRY_GROUP]
+    except Exception as exc:
+        raise BuildStepError(
+            f"no {_REGISTRY_PREFIX} registry is composed and the {_REGISTRY_GROUP!r} config group "
+            f"could not be composed off the hydra searchpath ({type(exc).__name__}: {exc}); "
+            "install a core provider or compose its group"
+        ) from exc
+    subregistry = registry.models.get(_REGISTRY_GROUP)
+    if subregistry is None:
+        raise BuildStepError(f"the {_REGISTRY_GROUP!r} config group composed but registered no cores")
+    return subregistry
+
+
+def resolve_core_definition(entry: str):
+    name = entry.removeprefix(_REGISTRY_PREFIX)
+    if "/" in name:
+        raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> registry path")
+    definition = core_registry().models.get(name)
+    if definition is None:
+        raise BuildStepError(f"unknown core {entry!r}")
+    if definition.kind.value == "package":
+        # a SystemVerilog package is not a synthesizable top; it rides
+        # along as a dependency of the tiles that import it
+        raise BuildStepError(f"core {entry!r} is a package, not a synthesizable top; select the tiles that depend on it")
+    return definition
+
+
+def resolve_core_definitions(entries) -> list:
+    """Registry definitions for a list of `/dau-core/<name>` entries."""
+    return [resolve_core_definition(entry) for entry in entries]
+
+
 class SynthesizeCoresTask(BuildCallableModel):
     # registry paths (`/dau-core/<core-name>`; bare core names accepted)
     cores: tuple[str, ...]
@@ -75,6 +139,13 @@ class SynthesizeCoresTask(BuildCallableModel):
         # would otherwise double the prefix inside vivado
         root = self.output_root.resolve()
         root.mkdir(parents=True, exist_ok=True)
+        # A generated core has no checked-in file and refuses its source path
+        # until rendered. Render here rather than making the caller remember:
+        # synthesizing one from a stale render, or from parameters nobody
+        # recorded, is exactly what the refusal exists to prevent.
+        from .render_cores import render_generated_cores
+
+        render_generated_cores(definitions, root=root)
         scripts = [self._stage_core(definition, part=part, root=root) for definition in definitions]
         plan_path = self._write_plan(scripts, root=root)
         if not self.execute:
@@ -102,61 +173,10 @@ class SynthesizeCoresTask(BuildCallableModel):
         )
 
     def _core_registry(self):
-        """The composed ``/dau-core`` subregistry.
-
-        Resolved through the ccflow ``ModelRegistry``, never by importing
-        the core package: dau-build is public and must not depend on a
-        private one. A core provider registers its config tree on the
-        shared hydra searchpath (``hydra.lernaplugins``), and this task
-        reads whatever the application composed — including overrides.
-
-        When the subregistry is absent the group is composed by name off
-        that searchpath. If no provider is installed, that composition
-        fails and the task refuses; it never falls back to a direct import.
-        """
-        from ccflow import ModelRegistry
-
-        registry = ModelRegistry.root()
-        subregistry = registry.models.get(_REGISTRY_GROUP)
-        if subregistry is not None:
-            return subregistry
-        from .config import compose_config
-
-        try:
-            composed = compose_config([f"+{_REGISTRY_GROUP}=cores"])
-            # load into a DETACHED registry, never the root. Registering the
-            # group on the root would make a later full compose by the core
-            # package collide on a name this task put there, so whether an
-            # application's own composition works would depend on whether it
-            # ran a build task first.
-            from omegaconf import OmegaConf
-
-            scratch = ModelRegistry(name=f"{_REGISTRY_GROUP}-synthesize-cores")
-            scratch.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
-            return scratch.models[_REGISTRY_GROUP]
-        except Exception as exc:
-            raise BuildStepError(
-                f"no {_REGISTRY_PREFIX} registry is composed and the {_REGISTRY_GROUP!r} config group "
-                f"could not be composed off the hydra searchpath ({type(exc).__name__}: {exc}); "
-                "install a core provider or compose its group"
-            ) from exc
-        subregistry = registry.models.get(_REGISTRY_GROUP)
-        if subregistry is None:
-            raise BuildStepError(f"the {_REGISTRY_GROUP!r} config group composed but registered no cores")
-        return subregistry
+        return core_registry()
 
     def _resolve_core(self, entry: str):
-        name = entry.removeprefix(_REGISTRY_PREFIX)
-        if "/" in name:
-            raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> registry path")
-        definition = self._core_registry().models.get(name)
-        if definition is None:
-            raise BuildStepError(f"unknown core {entry!r}")
-        if definition.kind.value == "package":
-            # a SystemVerilog package is not a synthesizable top; it rides
-            # along as a dependency of the tiles that import it
-            raise BuildStepError(f"core {entry!r} is a package, not a synthesizable top; select the tiles that depend on it")
-        return definition
+        return resolve_core_definition(entry)
 
     def _part(self) -> str:
         if self.part is not None:

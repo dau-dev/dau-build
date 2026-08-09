@@ -36,6 +36,7 @@ def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
         "tasks/build/build-shell-project",
         "tasks/build/build-vivado-artifacts",
         "tasks/build/overlay-build",
+        "tasks/build/render-cores",
         "tasks/build/synthesize",
         "tasks/build/synthesize-cores",
         "tasks/flash/flash",

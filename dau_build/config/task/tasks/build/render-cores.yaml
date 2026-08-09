@@ -1,0 +1,12 @@
+# @package model
+
+# Materialize cores whose HDL is RENDERED rather than checked in: the
+# registry entry names a generator and its operating point, and this writes
+# the SystemVerilog that follows from them. `synthesize-cores` renders on its
+# own before staging, so this task is for inspecting or staging the sources
+# on their own.
+#   dau-build task=tasks/build/render-cores \
+#     'model.cores=[/dau-core/int32-fixed-point-exp]' model.output_root=./build
+_target_: dau_build.render_cores.RenderCoresTask
+cores: ???
+output_root: ???
