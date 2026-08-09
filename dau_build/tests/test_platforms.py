@@ -87,7 +87,8 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
         lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
         program_method="flash",
         placeholders=("host_link.xdma_personality",),
-     platform_id="TEST")
+        platform_id="TEST",
+    )
     reloaded = PlatformDefinition.model_validate(platform.model_dump())
     assert reloaded == platform
     assert reloaded.host_link.xdma_personality.params["pl_link_cap_max_link_width"] == "X8"

@@ -93,8 +93,9 @@ def test_capability_words_are_caller_data_and_default_to_unadvertised() -> None:
     assert "    parameter [63:0] BUILD_ID = 64'h0000000000000000\n" in default
 
     composed = generate_scan_composition_top_sv(
-        _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16, "build_id": 0xDEADBEEF})
-    , platform_id="DPV1")
+        _bar_noc_composition().model_copy(update={"operator_bitmap": 0x1E, "host_opcode_bitmap": 0x20, "sort_capacity": 16, "build_id": 0xDEADBEEF}),
+        platform_id="DPV1",
+    )
     assert "    parameter [31:0] OPERATOR_BITMAP = 32'h0000001E,\n" in composed
     assert "    parameter [31:0] HOST_OPCODE_BITMAP = 32'h00000020,\n" in composed
     assert "    parameter [31:0] SORT_CAPACITY = 32'd16,\n" in composed
@@ -843,7 +844,8 @@ def test_sources_validate_chain_stages(tmp_path: Path) -> None:
                 }
             ),
             sources=(source,),
-         platform_id="DPV1")
+            platform_id="DPV1",
+        )
 
     with pytest.raises(ScanCompositionError, match="dau_absent_stage.*not found"):
         generate_scan_composition_top_sv(
@@ -851,7 +853,8 @@ def test_sources_validate_chain_stages(tmp_path: Path) -> None:
                 update={"lanes": (LaneTile(module="lane_tile", count_port="row_count", chain=(TileInstance(module="dau_absent_stage"),)),)}
             ),
             sources=(source,),
-         platform_id="DPV1")
+            platform_id="DPV1",
+        )
 
 
 def test_sources_reject_a_missing_count_port(tmp_path: Path) -> None:
@@ -874,12 +877,14 @@ def test_sources_validate_the_front_unpacker(tmp_path: Path) -> None:
 
     with pytest.raises(ScanCompositionError, match=r"config binding 'cfg_typo' is not an input port"):
         generate_scan_composition_top_sv(
-            composition.model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_typo": "32'd1"})}), sources=(source,)
-        , platform_id="DPV1")
+            composition.model_copy(update={"front_unpack": TileInstance(module="lane_tile", config={"cfg_typo": "32'd1"})}),
+            sources=(source,),
+            platform_id="DPV1",
+        )
     with pytest.raises(ScanCompositionError, match="dau_absent_unpacker.*not found"):
         generate_scan_composition_top_sv(
-            composition.model_copy(update={"front_unpack": TileInstance(module="dau_absent_unpacker")}), sources=(source,)
-        , platform_id="DPV1")
+            composition.model_copy(update={"front_unpack": TileInstance(module="dau_absent_unpacker")}), sources=(source,), platform_id="DPV1"
+        )
 
 
 def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> None:
@@ -1109,8 +1114,9 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
                 module_name="m",
                 input_row_bytes=12,
                 lanes=(LaneTile(module="t", count_port="c"),),
-            )
-        , platform_id="DPV1")
+            ),
+            platform_id="DPV1",
+        )
 
 
 def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:

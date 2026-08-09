@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, model_validator
 
 from dau_build.platforms import PlatformDefinition
 

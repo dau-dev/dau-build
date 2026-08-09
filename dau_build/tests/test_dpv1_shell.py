@@ -17,7 +17,6 @@ from dau_build.dpv1_shell import (
 )
 
 
-
 def _test_platform():
     """dpv1 as an explicit fixture. The request no longer defaults a board,
     so a test that wants one says which."""
@@ -32,7 +31,8 @@ def _request(tmp_path: Path) -> MmJobShellRequest:
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
     return MmJobShellRequest(
-        platform=_test_platform(),        output_root=tmp_path / "shell",
+        platform=_test_platform(),
+        output_root=tmp_path / "shell",
         hdl_sources=(tile,),
         generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         top_module="my_mm_top",
@@ -54,7 +54,8 @@ def test_generator_refuses_a_copied_request_outside_the_tiers(tmp_path) -> None:
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     request = MmDdrJobShellRequest(
-        platform=_test_platform(),        output_root=tmp_path,
+        platform=_test_platform(),
+        output_root=tmp_path,
         hdl_sources=(),
         generated_sources=(("top.v", "module top; endmodule\n"),),
         top_module="top",
@@ -72,7 +73,8 @@ def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     with _pytest.raises(ValidationError, match="not a width tier of platform 'dpv1'"):
         MmDdrJobShellRequest(
-        platform=_test_platform(),            output_root=tmp_path,
+            platform=_test_platform(),
+            output_root=tmp_path,
             hdl_sources=(),
             generated_sources=(("top.v", "module top; endmodule\n"),),
             top_module="top",
@@ -143,7 +145,8 @@ def _ddr_request(tmp_path: Path) -> MmDdrJobShellRequest:
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     return MmDdrJobShellRequest(
-        platform=_test_platform(),        output_root=tmp_path / "shell",
+        platform=_test_platform(),
+        output_root=tmp_path / "shell",
         hdl_sources=(tile,),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",
@@ -399,13 +402,15 @@ def test_project_tcl_matches_pre_fragment_goldens() -> None:
     from the pre-refactor monolithic templates."""
     fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
     mm = MmJobShellRequest(
-        platform=_test_platform(),        output_root=Path("/work/shell"),
+        platform=_test_platform(),
+        output_root=Path("/work/shell"),
         hdl_sources=(Path("/src/tile.sv"), Path("/src/identity.v")),
         generated_sources=(("my_top.v", "module my_top; endmodule\n"),),
         top_module="my_top",
     )
     ddr = MmDdrJobShellRequest(
-        platform=_test_platform(),        output_root=Path("/work/shell"),
+        platform=_test_platform(),
+        output_root=Path("/work/shell"),
         hdl_sources=(Path("/src/tile.sv"),),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",

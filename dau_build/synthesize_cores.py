@@ -90,6 +90,7 @@ def core_registry():
         raise BuildStepError(f"the {_REGISTRY_GROUP!r} config group composed but registered no cores")
     return subregistry
 
+
 def resolve_core_definition(entry: str):
     name = entry.removeprefix(_REGISTRY_PREFIX)
     if "/" in name:
