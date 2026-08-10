@@ -1,7 +1,7 @@
 """Shell project build execution and artifact packaging.
 
 Runs a generated shell project script (the output of a shell artifact
-writer such as ``dpv1_shell.write_mm_job_shell_artifacts``) through Vivado
+writer such as ``mm_shell.write_mm_job_shell_artifacts``) through Vivado
 and packages every build output — bitstream, reports, log, and the
 generated/contributing sources — as one artlink manifest with content
 digests and build metadata. The manifest is the provenance record: a

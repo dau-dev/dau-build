@@ -1,23 +1,27 @@
-"""DAU platform variant 1 (dpv1) MM job shell project generation.
+"""Memory-mapped job shell project generation, for whatever board is composed.
 
-Productization of the proven bring-up flow: emits the
-Vivado project Tcl, constraints, and the lane-swizzle implementation hook for
-the memory-mapped DAU job shell on the DAU platform variant 1 (dpv1) (XC7A200T over Thunderbolt
-XDMA). Hardware rules baked in (see dau-docs GUIDELINES):
+Emits the Vivado project Tcl, pin constraints, and the lane-swizzle
+implementation hook for an XDMA memory-mapped job shell. Every board fact --
+part, XDMA personality, pin constraints, lane-to-GT-channel mapping, memory
+system -- arrives as the caller's ``PlatformDefinition``; this module holds
+none and defaults to none. A board here would be one this library silently
+built for.
 
-- the PCIe personality must mirror the proven shell exactly: 64-bit
-  prefetchable BARs (the Thunderbolt bridge only forwards the 64-bit
-  prefetchable window; 32-bit non-prefetch BARs enumerate but all memory
-  reads return all-ones), 128 KB AXI-Lite BAR, QPLL1 GTP clocking;
-- the reversed lane-to-GT-channel mapping is applied as a pre-opt_design
-  implementation hook (XDC-time LOCs conflict with the IP's internal BEL/LOC
-  constraints) and verified post-route;
+The rules that ARE general, learned on hardware and paid for in bring-up:
+
+- the PCIe personality must mirror a board's proven shell exactly. Where a
+  bridge forwards only the 64-bit prefetchable window, 32-bit non-prefetch
+  BARs still enumerate but every memory read returns all-ones -- a shell that
+  looks alive and is memory-dead, so personalities are carried verbatim
+  rather than reduced to the parameters that seem load-bearing;
+- the lane-to-GT-channel mapping is applied as a pre-opt_design
+  implementation hook and verified post-route, never as XDC: XDC-time LOCs
+  conflict with the XDMA IP's internal BEL/LOC constraints;
 - BRAM staging addresses follow DEFAULT_STREAM_JOB_REGISTER_CONTRACT.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
 
 from ccflow import BaseModel
@@ -26,28 +30,12 @@ from pydantic import ConfigDict, model_validator
 from dau_build.platforms import PlatformDefinition
 
 
-# The platform (part, the 47 value_src=user XCI personality parameters
-# applied verbatim — a hand-picked subset is memory-dead on hardware —
-# pin constraints, lane swizzle) lives in config/platform/platforms/dau/dpv1.yaml,
-# the single source. Resolve it once per process.
-@lru_cache(maxsize=1)
-def _dpv1_platform() -> PlatformDefinition:
-    from dau_build.config import resolve_platform
-
-    return resolve_platform("platforms/dau/dpv1")
-
-
-def dpv1_xdma_personality():
-    """The dpv1 XDMA personality, resolved from the platform config."""
-    return _dpv1_platform().host_link.xdma_personality
-
-
 class MmJobShellRequest(BaseModel):
     """Inputs for generating the MM job shell project. The caller supplies
     the generated binding sources as (filename, text) pairs — dau-build is
     generic platform integration and generates the *project*, never the
     domain HDL. The target board is the composed ``platform``
-    (``PlatformDefinition``, default dpv1): part, XDMA personality, pin
+    (``PlatformDefinition``, required): part, XDMA personality, pin
     constraints, and lane swizzle all come from it (``part`` is an explicit
     override; ``resolved_part`` is what the project builds with). Staging
     addresses are plain values; DAU flows pass their register-contract
@@ -59,11 +47,12 @@ class MmJobShellRequest(BaseModel):
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
     top_module: str
-    # REQUIRED, not defaulted. dau-build carries no board defaults: a
-    # request that silently adopted dpv1 would synthesize, constrain and
-    # price a dpv2 design for an Artix, and nothing downstream would say so.
-    # The caller names its board -- dau/dpv1.py names dpv1 because it IS the
-    # dpv1 module, which is honest in a way a library default is not.
+    # REQUIRED, not defaulted. dau-build carries no board at all: a request
+    # that silently adopted one board would synthesize, constrain and price
+    # another board's design for the wrong part, and nothing downstream would
+    # say so. The caller names its board, and a caller may name it in its own
+    # defaults -- a module that IS one board's may honestly assume it, which
+    # a general-purpose library never can.
     platform: PlatformDefinition
     part: str | None = None
     input_buffer_address: int = 0x0000_0000
@@ -85,7 +74,7 @@ class MmDdrJobShellRequest(BaseModel):
     job shell with the block RAM staging replaced by the memory controller
     (MIG, configured from a caller-supplied .prj) shared between the XDMA
     memory path and the job top's AXI4 master. The target board is the
-    composed ``platform`` (default dpv1). The register aperture is
+    composed ``platform`` (required). The register aperture is
     unchanged; the XADC feeds the controller's temperature compensation and
     is host-readable in the upper half of the AXI-Lite BAR."""
 
@@ -132,25 +121,27 @@ class MmDdrJobShellRequest(BaseModel):
 
 def _gt_channel_ref_name(lane_placements: tuple[tuple[int, str], ...]) -> str:
     """The GT channel cell REF_NAME the swizzle targets, derived from the
-    placement site names (``GTPE2_CHANNEL_X0Y7`` -> ``GTPE2_CHANNEL`` on the
-    dpv1 GTP part, ``GTXE2_CHANNEL_X0Y7`` -> ``GTXE2_CHANNEL`` on Kintex-7
+    placement site names (``GTPE2_CHANNEL_X0Y7`` -> ``GTPE2_CHANNEL`` on an
+    Artix GTP part, ``GTXE2_CHANNEL_X0Y7`` -> ``GTXE2_CHANNEL`` on Kintex-7
     GTX boards) — one source, so the hook follows the platform's transceiver
     family without a code path per board."""
     return lane_placements[0][1].rsplit("_X", 1)[0]
 
 
-def gt_lane_swizzle_hook_tcl(
-    lane_placements: tuple[tuple[int, str], ...] = _dpv1_platform().lane_placements,
-) -> str:
-    """Pre-opt_design hook applying the platform's lane swizzle (default: the
-    DAU platform variant 1 (dpv1) mapping), version-robust across XDMA
-    internal hierarchy renames. The GT channel family (GTP/GTX) is derived
-    from the placement site names."""
+def gt_lane_swizzle_hook_tcl(lane_placements: tuple[tuple[int, str], ...]) -> str:
+    """Pre-opt_design hook applying the platform's lane swizzle, version-robust
+    across XDMA internal hierarchy renames. The GT channel family (GTP/GTX) is
+    derived from the placement site names.
+
+    The mapping is the caller's. It used to default to one board's, which made
+    every board that forgot to pass its own silently inherit a lane order that
+    is wrong everywhere else — and a mis-swizzled link trains at a reduced
+    width rather than failing, so nothing downstream would have said so."""
     swizzle_pairs = " ".join(f"{lane} {channel}" for lane, channel in lane_placements)
     lane_count = len(lane_placements)
     channel_ref = _gt_channel_ref_name(lane_placements)
-    return f"""# GENERATED by dau_build.dpv1_shell — do not edit.
-# Pre-opt_design implementation hook: apply the DAU platform variant 1 (dpv1) PCIe lane swizzle
+    return f"""# GENERATED by dau_build.mm_shell — do not edit.
+# Pre-opt_design implementation hook: apply the board's PCIe lane swizzle
 # after the IP's own XDC constraints, per CRITICAL WARNING 18-4427 guidance.
 set swizzle {{{swizzle_pairs}}}
 set lane_cells [dict create]
@@ -182,7 +173,7 @@ foreach {{lane channel}} $swizzle {{
 """
 
 
-_CONSTRAINTS_BANNER = "# GENERATED by dau_build.dpv1_shell — do not edit.\n"
+_CONSTRAINTS_BANNER = "# GENERATED by dau_build.mm_shell — do not edit.\n"
 
 
 def shell_constraints_xdc(platform: PlatformDefinition) -> str:
@@ -200,13 +191,6 @@ def ddr_shell_constraints_xdc(platform: PlatformDefinition) -> str:
     if not platform.memory.constraints_xdc:
         return base
     return base + "\n" + platform.memory.constraints_xdc
-
-
-def dpv1_constraints_xdc() -> str:
-    """Pin constraints for the dpv1 MM job shell, resolved from the platform
-    config (the single source; no GT LOCs here — the swizzle is applied by
-    the implementation hook)."""
-    return shell_constraints_xdc(_dpv1_platform())
 
 
 def _placeholder_guard_tcl(platform: PlatformDefinition) -> str:
@@ -228,15 +212,16 @@ def _placeholder_guard_tcl(platform: PlatformDefinition) -> str:
 
 def _project_preamble_tcl(request, *, banner: str) -> str:
     """Shared create_project/add_files/constraints/XDMA-BD preamble: every
-    shell starts from the platform's PCIe front end (its complete XDMA
-    personality — dpv1's proven 47 parameters by default)."""
+    shell starts from the platform's PCIe front end, carrying its COMPLETE
+    XDMA personality: a board's proven parameter set goes in verbatim, never
+    reduced to the subset that looks load-bearing."""
     xdma_config = request.platform.host_link.xdma_personality.to_tcl_config()
     generated_paths = tuple(request.output_root / name for name, _ in request.generated_sources)
     sources = " \\\n".join(f'    "{path.as_posix()}"' for path in (*request.hdl_sources, *generated_paths))
     sv_typing = "\n".join(
         f'set_property file_type SystemVerilog [get_files "{path.as_posix()}"]' for path in request.hdl_sources if path.suffix == ".sv"
     )
-    return f"""# GENERATED by dau_build.dpv1_shell — do not edit.
+    return f"""# GENERATED by dau_build.mm_shell — do not edit.
 {banner}
 {_placeholder_guard_tcl(request.platform)}set origin_dir [file dirname [file normalize [info script]]]
 
@@ -285,8 +270,8 @@ def _job_clock_domain_tcl(request) -> str:
     an MMCM (clk_wiz) derives the job clock from the XDMA's ``axi_aclk`` (7-series
     has no BUFGCE_DIV and the XDMA offers no divided user clock), and
     proc_sys_reset synchronizes ``axi_aresetn`` into the job domain. The AXI
-    clock conversion itself happens inside the smartconnects (the structure the
-    dpv1 DDR shell already proves against the memory controller's ui_clk)."""
+    clock conversion itself happens inside the smartconnects (the structure a
+    DDR shell already proves against the memory controller's ui_clk)."""
     platform = request.platform
     job_mhz = platform.job_clock_mhz
     axi_mhz = platform.host_link.xdma_personality.axi_clock_mhz()
@@ -400,15 +385,6 @@ exit 0
 """
 
 
-def dpv1_ddr_constraints_xdc() -> str:
-    """dpv1 MM shell pin constraints extended for the DDR shell, resolved
-    from the platform config: the memory controller's 200 MHz reference
-    enters on J19/H19 (bank 15, LVDS_25 — pin placement lives in the MIG
-    .prj, only the IOSTANDARD belongs here) and calibration-complete drives
-    LED_A4."""
-    return ddr_shell_constraints_xdc(_dpv1_platform())
-
-
 def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     """Full batch-mode project script for the DDR-staged job shell: the MM
     shell's XDMA personality with the staging BRAMs replaced by the memory
@@ -425,14 +401,13 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     preamble = _project_preamble_tcl(
         request,
         banner=(
-            "# DAU MM DDR job shell: XDMA (memory-mapped, proven DAU platform variant 1\n"
-            "# (dpv1) PCIe personality) with DDR staging behind the memory controller."
+            "# DAU MM DDR job shell: XDMA (memory-mapped, the board's proven PCIe\n# personality) with DDR staging behind the memory controller."
         ),
     )
     convert = request.platform.job_clock_mhz is not None
     job_domain = _job_clock_domain_tcl(request) if convert else ""
     # the XADC rides axi_aclk; its DCLK setting follows the personality
-    # (125 on dpv1, 250 on a Gen2 x8 personality)
+    # (125 on a Gen1 x4 personality, 250 on a Gen2 x8 one)
     xadc_dclk_mhz = request.platform.host_link.xdma_personality.axi_clock_mhz()
     smc_clocks = "3" if convert else "2"
     # the job master(s): one shared M_AXI at 64, split read/write at wider tiers
@@ -572,8 +547,7 @@ def mm_job_shell_project_tcl(request: MmJobShellRequest) -> str:
     preamble = _project_preamble_tcl(
         request,
         banner=(
-            "# DAU MM job shell: XDMA (memory-mapped, proven DAU platform variant 1 (dpv1) PCIe personality)\n"
-            "# with BRAM staging at the stream-job contract addresses."
+            "# DAU MM job shell: XDMA (memory-mapped, the board's proven PCIe personality)\n# with BRAM staging at the stream-job contract addresses."
         ),
     )
     convert = request.platform.job_clock_mhz is not None

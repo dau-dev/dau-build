@@ -287,13 +287,13 @@ def test_hardware_plan_task_via_plan_group() -> None:
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/thunderbolt-release", "platform=platforms/dau/dpv1"],
+        overrides=["plan=plans/thunderbolt-release", "platform=platforms/example/probe"],
         model_values={"work_root": "/repo/projects/vivado-shell"},
     )
 
     assert result == BuildStepResult(
         step="hardware-plan",
-        message="thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx",
+        message="thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Xilinx --pattern 10ee:9034",
     )
 
 
@@ -467,15 +467,13 @@ def test_dau_build_cfg_dispatches_hardware_plan_via_group(capsys) -> None:
         [
             "task=tasks/hardware/hardware-plan",
             "plan=plans/thunderbolt-release",
-            "platform=platforms/dau/dpv1",
+            "platform=platforms/example/probe",
             "model.work_root=/repo/projects/vivado-shell",
         ]
     )
 
     assert exit_code == 0
-    assert capsys.readouterr().out.splitlines() == [
-        "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
-    ]
+    assert capsys.readouterr().out.splitlines() == ["thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Xilinx --pattern 10ee:9034"]
 
 
 def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
@@ -591,20 +589,28 @@ def _write_backend_artifacts(artifacts) -> None:
 def test_hardware_plan_task_composes_platform_host_access() -> None:
     from dau_build.build_steps import HardwarePlanTask
     from dau_build.hardware_plan import RecoveryPlan
-    from dau_build.platforms import PlaceholderPlatformError, dpv1_platform
+    from dau_build.platforms import PlaceholderPlatformError
+    from dau_build.tests.platform_fixtures import probe_platform
 
     explicit = HardwarePlanTask(
         plan=RecoveryPlan(),
         work_root=Path("/repo/projects/vivado-shell"),
         jtag_cable="digilent_hs2",
-        endpoint_bdf="0000:04:00.0",
-        expected_endpoint_id="10ee:7011",
-        runtime_pm_patterns=("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
-        rescan_bdfs=("0000:03:01.0", "0000:02:00.0", "0000:00:0d.3", "0000:00:0d.2", "0000:00:0d.0", "0000:00:07.2", "0000:00:07.0"),
+        endpoint_bdf="0000:01:00.0",
+        # the endpoint's upstream bridge: the diagnostic dmesg filter names
+        # both slots, so an explicit task that omitted it would no longer
+        # reproduce the composed board's plan text
+        reset_bridge_bdf="0000:00:1c.4",
+        expected_endpoint_id="10ee:9034",
+        runtime_pm_patterns=("Xilinx", "10ee:9034"),
+        rescan_bdfs=(
+            "0000:00:1c.4",
+            "0000:00:1c.0",
+        ),
         privilege_prefix=("sudo",),
     )(None)
-    composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=dpv1_platform())(None)
-    # dpv1's host_access reproduces the explicit bench-fact plan text
+    composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=probe_platform())(None)
+    # the board's host_access reproduces the explicit bench-fact plan text
     # byte-identically; without either, hardware steps refuse to render
     assert composed == explicit
     with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
@@ -614,13 +620,13 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
     overridden = HardwarePlanTask(
         plan=RecoveryPlan(),
         work_root=Path("/repo/projects/vivado-shell"),
-        platform=dpv1_platform(),
+        platform=probe_platform(),
         jtag_cable="ft4232",
     )(None)
     assert "-c ft4232" in overridden.message
 
     # a placeholder board is refused for hardware-affecting execution
-    placeholder = dpv1_platform().model_copy(update={"name": "probe", "placeholders": ("host_access",)})
+    placeholder = probe_platform().model_copy(update={"name": "probe", "placeholders": ("host_access",)})
     with pytest.raises(PlaceholderPlatformError, match="host_access"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=placeholder, execute=True)(None)
 
@@ -677,11 +683,11 @@ def test_host_group_supplies_checkout_roots(tmp_path: Path) -> None:
 def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
     from dau_build.build_steps import HardwarePlanTask
     from dau_build.hardware_plan import RecoveryPlan
-    from dau_build.platforms import dpv1_platform
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    # a selected platform must state how the host reaches it; the dpv1
+    # a selected platform must state how the host reaches it; the example
     # defaults are never silently applied to another board
-    accessless = dpv1_platform().model_copy(update={"name": "probe", "host_access": None})
+    accessless = probe_platform().model_copy(update={"name": "probe", "host_access": None})
     with pytest.raises(BuildStepError, match="declares no host_access"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
     # plan-only composition also needs the facts to render hardware steps

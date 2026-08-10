@@ -41,19 +41,14 @@ def _run_plan(plan: str, *, plan_fields=(), **model_values):
     return run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=[f"plan=plans/{plan}", "platform=platforms/dau/dpv1", *plan_fields],
+        overrides=[f"plan=plans/{plan}", "platform=platforms/example/probe", *plan_fields],
         model_values=model_values,
     )
 
 
 EXPECTED_PCI_RESCAN_BDFS = (
-    "0000:03:01.0",
-    "0000:02:00.0",
-    "0000:00:0d.3",
-    "0000:00:0d.2",
-    "0000:00:0d.0",
-    "0000:00:07.2",
-    "0000:00:07.0",
+    "0000:00:1c.4",
+    "0000:00:1c.0",
 )
 EXPECTED_PCI_RESCAN_SCRIPT = (
     f"for bdf in {' '.join(EXPECTED_PCI_RESCAN_BDFS)}; "
@@ -61,7 +56,7 @@ EXPECTED_PCI_RESCAN_SCRIPT = (
     "echo 1 > /sys/bus/pci/devices/$bdf/rescan; "
     "done && echo 1 > /sys/bus/pci/rescan"
 )
-EXPECTED_LSPCI_ENDPOINT_SNIPPET = "endpoint_output=$(lspci -Dnn -d 10ee:7011 || true)"
+EXPECTED_LSPCI_ENDPOINT_SNIPPET = "endpoint_output=$(lspci -Dnn -d 10ee:9034 || true)"
 EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI_RESCAN_SCRIPT};"
 
 
@@ -69,11 +64,11 @@ EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI
 # defaults, so tests exercising hardware steps supply their host access
 # (values identical to the retired code defaults — plan texts unchanged)
 DPV1_HOST_ACCESS = {
-    "expected_endpoint_id": "10ee:7011",
-    "endpoint_bdf": "0000:04:00.0",
-    "reset_bridge_bdf": "0000:03:01.0",
+    "expected_endpoint_id": "10ee:9034",
+    "endpoint_bdf": "0000:01:00.0",
+    "reset_bridge_bdf": "0000:00:1c.4",
     "jtag_cable": "digilent_hs2",
-    "runtime_pm_patterns": ("Thunderbolt", "JHL", "10ee:7011", "Xilinx"),
+    "runtime_pm_patterns": ("Xilinx", "10ee:9034"),
     "rescan_bdfs": EXPECTED_PCI_RESCAN_BDFS,
 }
 
@@ -711,14 +706,14 @@ def test_recovery_plan_keeps_reprogramming_and_pcie_rescan_as_separate_steps() -
     assert steps[1].argv == (
         "sh",
         "-c",
-        "test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove",
+        "test ! -e /sys/bus/pci/devices/0000:01:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:01:00.0/remove",
     )
     assert steps[2].argv == ("openFPGALoader", "-c", "digilent_hs2", "/repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit")
     assert steps[3].argv == ("sh", "-c", EXPECTED_PCI_RESCAN_SCRIPT)
     assert steps[4].argv[0:2] == ("sh", "-c")
     assert EXPECTED_LSPCI_ENDPOINT_SNIPPET in steps[4].argv[2]
     assert EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET in steps[4].argv[2]
-    assert "expected PCI endpoint 10ee:7011 after rescan" in steps[4].argv[2]
+    assert "expected PCI endpoint 10ee:9034 after rescan" in steps[4].argv[2]
 
 
 def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
@@ -738,13 +733,9 @@ def test_build_and_program_plan_names_vivado_jtag_and_pcie_steps() -> None:
         "dau-utils-pci-runtime-pm",
         "hold",
         "--pattern",
-        "Thunderbolt",
-        "--pattern",
-        "JHL",
-        "--pattern",
-        "10ee:7011",
-        "--pattern",
         "Xilinx",
+        "--pattern",
+        "10ee:9034",
     )
     assert steps[1].argv == ("vivado2025.1", "-mode", "batch", "-source", "/repo/projects/vivado-shell/project.tcl")
     assert steps[2].argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
@@ -762,26 +753,18 @@ def test_thunderbolt_power_plans_hold_and_release_runtime_pm() -> None:
         "dau-utils-pci-runtime-pm",
         "hold",
         "--pattern",
-        "Thunderbolt",
-        "--pattern",
-        "JHL",
-        "--pattern",
-        "10ee:7011",
-        "--pattern",
         "Xilinx",
+        "--pattern",
+        "10ee:9034",
     )
     assert release_step.name == "thunderbolt-release"
     assert release_step.argv == (
         "dau-utils-pci-runtime-pm",
         "release",
         "--pattern",
-        "Thunderbolt",
-        "--pattern",
-        "JHL",
-        "--pattern",
-        "10ee:7011",
-        "--pattern",
         "Xilinx",
+        "--pattern",
+        "10ee:9034",
     )
 
 
@@ -789,10 +772,10 @@ def test_task_prints_recovery_plan_without_running_privileged_commands() -> None
     result = _run_plan("recovery", work_root="/repo/projects/vivado-shell")
 
     lines = result.message.splitlines()
-    assert lines[0] == "thunderbolt-hold\tdau-utils-pci-runtime-pm hold --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
+    assert lines[0] == "thunderbolt-hold\tdau-utils-pci-runtime-pm hold --pattern Xilinx --pattern 10ee:9034"
     assert lines[1:4] == [
         # dpv1 fronts the privileged sysfs steps with sudo; the JTAG program runs as the user
-        "remove-endpoint\tsudo sh -c 'test ! -e /sys/bus/pci/devices/0000:04:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:04:00.0/remove'",
+        "remove-endpoint\tsudo sh -c 'test ! -e /sys/bus/pci/devices/0000:01:00.0/remove || echo 1 > /sys/bus/pci/devices/0000:01:00.0/remove'",
         "program-volatile\topenFPGALoader -c digilent_hs2 /repo/projects/vivado-shell/project.runs/impl_1/Top_wrapper.bit",
         f"pci-rescan\tsudo sh -c '{EXPECTED_PCI_RESCAN_SCRIPT}'",
     ]
@@ -805,9 +788,7 @@ def test_task_prints_thunderbolt_release_plan() -> None:
 
     lines = result.message.splitlines()
     assert len(lines) == 1
-    assert (
-        lines[0] == "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Thunderbolt --pattern JHL --pattern 10ee:7011 --pattern Xilinx"
-    )
+    assert lines[0] == "thunderbolt-release\tdau-utils-pci-runtime-pm release --pattern Xilinx --pattern 10ee:9034"
 
 
 def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_smoke() -> None:
@@ -1173,13 +1154,9 @@ def test_task_execute_runs_plan_steps_in_order(monkeypatch) -> None:
             "dau-utils-pci-runtime-pm",
             "release",
             "--pattern",
-            "Thunderbolt",
-            "--pattern",
-            "JHL",
-            "--pattern",
-            "10ee:7011",
-            "--pattern",
             "Xilinx",
+            "--pattern",
+            "10ee:9034",
         )
     ]
 
@@ -1483,17 +1460,17 @@ def test_project_command_validation_requires_the_injected_definition_marker(tmp_
 
 
 def test_toolchain_config_composes_from_platform_host_access() -> None:
-    from dau_build.platforms import dpv1_platform
+    from dau_build.tests.platform_fixtures import probe_platform
 
     # dpv1's host_access config reproduces the proven bench facts exactly
     # (spi_boot_buswidth rides the platform, not host_access — supplied here;
     # dpv1 also fronts its privileged PCIe steps with sudo)
-    assert HardwareToolchainConfig.for_platform(dpv1_platform(), work_root=Path("/w")) == _bench_config(
+    assert HardwareToolchainConfig.for_platform(probe_platform(), work_root=Path("/w")) == _bench_config(
         work_root=Path("/w"), spi_boot_buswidth=4, privilege_prefix=("sudo",)
     )
 
     # a board with different access data changes the plans through config alone
-    other = dpv1_platform()
+    other = probe_platform()
     assert other.host_access is not None
     other = other.model_copy(
         update={
@@ -1516,7 +1493,7 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     assert "0000:65:00.0/remove" in by_name["remove-endpoint"].command_line
     assert by_name["program-volatile"].argv[1:3] == ("-c", "ft4232")
     assert "0000:64:00.0" in by_name["pci-rescan"].command_line
-    assert "0000:03:01.0" not in by_name["pci-rescan"].command_line
+    assert "0000:00:1c.4" not in by_name["pci-rescan"].command_line
     assert "lspci -Dnn -d 10ee:9038" in by_name["lspci-endpoint"].argv[2]
     assert "0000:64:00.0" in by_name["lspci-endpoint"].argv[2]
 
@@ -1542,10 +1519,10 @@ def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
 
 
 def test_program_method_flash_selects_the_vivado_programmer() -> None:
-    from dau_build.platforms import dpv1_platform
     from dau_build.programmers import VivadoHwServerProgrammer
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    flash_board = dpv1_platform().model_copy(update={"program_method": "flash"})
+    flash_board = probe_platform().model_copy(update={"program_method": "flash"})
     config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
     programmer = config.resolve_programmer()
     assert isinstance(programmer, VivadoHwServerProgrammer)
@@ -1628,7 +1605,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path) -> None:
 def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
     from pydantic import ValidationError
 
-    from dau_build.platforms import HostAccess, dpv1_platform
+    from dau_build.platforms import HostAccess
+    from dau_build.tests.platform_fixtures import probe_platform
 
     # rescan_bdfs / runtime_pm_patterns are required: a board must state its
     # own values (empty is meaningful, silence is not)
@@ -1636,7 +1614,7 @@ def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
         HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")
 
     # empty tuples are authoritative — never silently the dpv1 defaults
-    bare = dpv1_platform()
+    bare = probe_platform()
     assert bare.host_access is not None
     bare = bare.model_copy(update={"host_access": bare.host_access.model_copy(update={"rescan_bdfs": (), "runtime_pm_patterns": ()})})
     config = HardwareToolchainConfig.for_platform(bare, work_root=Path("/w"))
@@ -1668,7 +1646,7 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     config = _bench_config(
         work_root=Path("/tmp/w"),
         bitstream_path=Path("/tmp/design.bit"),
-        reset_bridge_bdf="0000:03:01.0",
+        reset_bridge_bdf="0000:00:1c.4",
     )
     steps = SramProgramPlan(verify_command="sudo probe-magic").compose(config)
     assert [step.name for step in steps] == [
@@ -1684,22 +1662,22 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     ]
     by_name = {step.name: step.command_line for step in steps}
     hold = by_name["pm-hold-path"]
-    assert "dau-utils-pci-runtime-pm hold --device 0000:04:00.0" in hold
+    assert "dau-utils-pci-runtime-pm hold --device 0000:01:00.0" in hold
     # tolerant ONLY when the endpoint is absent; a hold failure with the
     # device present must fail the step
-    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in hold
+    assert "if [ -e /sys/bus/pci/devices/0000:01:00.0 ]" in hold
     assert "pm hold skipped (device absent)" in hold
     # the PATH above the endpoint is held too, and BEFORE it: the next step
     # removes the endpoint, and on a hot-plug path nothing else keeps the
     # bridges awake once its sysfs node is gone
-    for pattern in ("Thunderbolt", "JHL", "Xilinx"):
+    for pattern in ("Xilinx", "10ee:9034"):
         assert f"--pattern {pattern}" in hold, pattern
-    assert hold.index("--pattern Thunderbolt") < hold.index("if [ -e /sys/bus/pci/devices/0000:04:00.0 ]")
+    assert hold.index("--pattern Xilinx") < hold.index("if [ -e /sys/bus/pci/devices/0000:01:00.0 ]")
     # BY PATTERN, never by an explicit BDF list: naming devices makes the
     # runtime-PM tool exit non-zero for any that is missing, which would
     # abort recovery of a board whose hot-plug tunnel collapsed -- precisely
     # when the USB JTAG programmer could still reach it
-    assert "--device 0000:03:01.0" not in hold
+    assert "--device 0000:00:1c.4" not in hold
     # the path hold still gates the endpoint hold rather than falling through
     assert "&& {" in hold
 
@@ -1708,11 +1686,11 @@ def test_sram_program_plan_is_the_proven_ladder() -> None:
     bare = SramProgramPlan().compose(_bench_config(work_root=Path("/tmp/w"), runtime_pm_patterns=()))
     bare_hold = {step.name: step.command_line for step in bare}["pm-hold-path"]
     assert "--pattern" not in bare_hold
-    assert "if [ -e /sys/bus/pci/devices/0000:04:00.0 ]" in bare_hold
+    assert "if [ -e /sys/bus/pci/devices/0000:01:00.0 ]" in bare_hold
     assert by_name["deadman-arm"] == "dau-utils-deadman arm --timeout 180"
     assert by_name["program-volatile"] == "openFPGALoader -c digilent_hs2 /tmp/design.bit"
     assert "-f" not in by_name["program-volatile"].split()  # VOLATILE, never raw persistent
-    assert "setpci -s 0000:03:01.0 BRIDGE_CONTROL=40:40 && sleep 0.6" in by_name["secondary-bus-reset"]
+    assert "setpci -s 0000:00:1c.4 BRIDGE_CONTROL=40:40 && sleep 0.6" in by_name["secondary-bus-reset"]
     assert "BRIDGE_CONTROL=00:40 && sleep 1.5" in by_name["secondary-bus-reset"]  # && so a setpci failure fails the step
     assert "echo 1 > /sys/bus/pci/rescan && sleep 4" in by_name["pci-global-rescan-settle"]
     assert by_name["verify-device"].endswith("'sudo probe-magic'")
@@ -1780,12 +1758,12 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
         model_values={
             "work_root": str(tmp_path),
             "bitstream": "/tmp/design.bit",
-            "endpoint_bdf": "0000:04:00.0",
-            "reset_bridge_bdf": "0000:03:01.0",
-            "expected_endpoint_id": "10ee:7011",
+            "endpoint_bdf": "0000:01:00.0",
+            "reset_bridge_bdf": "0000:00:1c.4",
+            "expected_endpoint_id": "10ee:9034",
             "jtag_cable": "digilent_hs2",
             "runtime_pm_patterns": (),
-            "rescan_bdfs": ("0000:03:01.0",),
+            "rescan_bdfs": ("0000:00:1c.4",),
         },
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
@@ -1795,7 +1773,7 @@ def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/sram-program", "platform=platforms/dau/dpv1", "model.deadman_executable=/opt/dau/bin/deadman"],
+        overrides=["plan=plans/sram-program", "platform=platforms/example/probe", "model.deadman_executable=/opt/dau/bin/deadman"],
         model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
     )
     assert "deadman-arm\t/opt/dau/bin/deadman arm --timeout 180" in result.message
@@ -1856,7 +1834,7 @@ def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) 
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/sram-program", "platform=platforms/dau/dpv1", "model.privilege_prefix=[]"],
+        overrides=["plan=plans/sram-program", "platform=platforms/example/probe", "model.privilege_prefix=[]"],
         model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
     )
     # dpv1 defaults to sudo; the override clears it (already-root invocation)
@@ -1893,10 +1871,10 @@ def test_openfpgaloader_refuses_persistent_on_spi_boot() -> None:
     assert "-f" in persistent.argv
 
 
-def test_dpv1_platform_carries_the_spi_boot_fact() -> None:
-    from dau_build.platforms import dpv1_platform
+def test_platform_carries_the_spi_boot_fact() -> None:
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    platform = dpv1_platform()
+    platform = probe_platform()
     assert platform.spi_boot_buswidth == 4
     config = HardwareToolchainConfig.for_platform(platform, work_root=Path("/w"))
     assert config.spi_boot_buswidth == 4
@@ -1936,13 +1914,13 @@ def test_device_lock_path_is_user_private_and_tmpdir_independent(monkeypatch) ->
     # the per-user runtime dir, never world-writable /tmp; TMPDIR must not move it
     monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     monkeypatch.setenv("TMPDIR", "/some/other/tmp")
-    a = device_lock_path("0000:04:00.0")
+    a = device_lock_path("0000:01:00.0")
     monkeypatch.setenv("TMPDIR", "/yet/another")
-    b = device_lock_path("0000:04:00.0")
-    assert a == b == Path("/run/user/1000/dau/dau-hw-0000-04-00-0.lock")
+    b = device_lock_path("0000:01:00.0")
+    assert a == b == Path("/run/user/1000/dau/dau-hw-0000-01-00-0.lock")
     assert "/tmp/" not in str(a)
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
-    assert device_lock_path("0000:04:00.0") == Path.home() / ".dau" / "locks" / "dau-hw-0000-04-00-0.lock"
+    assert device_lock_path("0000:01:00.0") == Path.home() / ".dau" / "locks" / "dau-hw-0000-01-00-0.lock"
 
 
 def test_device_lock_path_canonicalizes_bdf_case() -> None:
@@ -1969,7 +1947,7 @@ def test_execute_serializes_on_the_device_lock(tmp_path, monkeypatch) -> None:
     step = ToolStep("work", ("sh", "-c", f"echo enter >> {log}; sleep 0.4; echo exit >> {log}"))
 
     def run():
-        execute_plan_steps((step,), endpoint_bdf="0000:04:00.0")
+        execute_plan_steps((step,), endpoint_bdf="0000:01:00.0")
 
     threads = [threading.Thread(target=run) for _ in range(2)]
     threads[0].start()

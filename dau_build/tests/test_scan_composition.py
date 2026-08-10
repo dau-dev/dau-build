@@ -1143,12 +1143,12 @@ def test_the_build_specs_are_frozen() -> None:
     from pydantic import ValidationError as _ValidationError
 
     from dau_build.build_spec import DauBuildSpec
-    from dau_build.platforms import dpv1_platform
+    from dau_build.tests.platform_fixtures import probe_platform
 
     frozen = (
         TileInstance(module="dau_tile"),
         _bar_noc_composition(),
-        dpv1_platform(),
+        probe_platform(),
     )
     for model in frozen:
         field = next(iter(type(model).model_fields))

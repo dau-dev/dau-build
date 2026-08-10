@@ -183,7 +183,7 @@ def _write_spec(tmp_path: Path) -> Path:
 
 
 def test_nested_board_and_backend_config_groups_compose() -> None:
-    # path-style group selection: board=boards/dau/dpv1 backend=backends/vivado.
+    # path-style group selection: board=boards/example/probe backend=backends/vivado.
     # the backend group composes a synthesis engine model.
     from hydra import compose, initialize_config_module
     from hydra.utils import instantiate
@@ -192,10 +192,10 @@ def test_nested_board_and_backend_config_groups_compose() -> None:
     from dau_build.build_steps import VivadoEngine
 
     with initialize_config_module(config_module="dau_build.config", version_base=None):
-        cfg = compose(config_name="base", overrides=["board=boards/dau/dpv1", "backend=backends/vivado"])
+        cfg = compose(config_name="base", overrides=["board=boards/example/probe", "backend=backends/vivado"])
     board = instantiate(cfg.board)
     backend = instantiate(cfg.backend)
-    assert isinstance(board, BoardConfig) and board.name == "dpv1" and board.platform == "vivado-xdma"
+    assert isinstance(board, BoardConfig) and board.name == "probe" and board.platform == "vivado-xdma"
     assert isinstance(backend, VivadoEngine) and backend.name == "vivado"
 
 
@@ -235,13 +235,13 @@ def test_board_and_backend_groups_override_spec_derived_resolved_config() -> Non
         base_load_config(
             root_config_dir=str(_CONFIG_DIR),
             root_config_name="base",
-            overrides=[*base, "board=boards/dau/dpv1", "backend=backends/vivado"],
+            overrides=[*base, "board=boards/example/probe", "backend=backends/vivado"],
             basepath=str(_CONFIG_DIR),
             debug=False,
         ).cfg
     )
     assert "board\tname=vivado-xdma" in derived.message  # spec-derived: board name = platform
-    assert "board\tname=dpv1" in composed.message  # composed board wins
+    assert "board\tname=probe" in composed.message  # composed board wins
     assert "backend\tname=vivado invocation=standard" in composed.message  # composed backend wins
 
 

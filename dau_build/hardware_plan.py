@@ -755,6 +755,19 @@ def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequenc
     expected_id = shlex.quote(config.required_host_access("expected_endpoint_id").lower())
     expected_slot = shlex.quote(config.lspci_slot)
     retry_rescan = _pci_rescan_script(bridge_bdfs)
+
+    # the diagnostic dmesg filter follows THIS board's slots. It used to name
+    # one board's endpoint and bridge literally, so every other board's
+    # failure dump silently filtered out the lines about itself.
+    def _bus_device(bdf: str) -> str:
+        # 0000:04:00.0 -> 04:00, the form dmesg lines carry for both
+        return bdf.removeprefix("0000:").rsplit(".", 1)[0]
+
+    slot_patterns = [_bus_device(config.required_host_access("endpoint_bdf"))]
+    reset_bridge = config.reset_bridge_bdf
+    if reset_bridge:
+        slot_patterns.append(_bus_device(reset_bridge))
+    dmesg_filter = shlex.quote("|".join(("pci", "pcie", "xdma", "10ee", "xilinx", *dict.fromkeys(slot_patterns))))
     return " ".join(
         (
             f"endpoint_output=$(lspci -Dnn -d {expected_id} || true);",
@@ -769,7 +782,7 @@ def _lspci_endpoint_script(config: HardwareToolchainConfig, bridge_bdfs: Sequenc
             f"echo expected PCI endpoint {expected_id} after rescan, but none was found >&2;",
             f"echo expected slot: {expected_slot} >&2;",
             "lspci -tv >&2 || true;",
-            "dmesg -T 2>/dev/null | tail -80 | grep -Ei 'pci|pcie|xdma|10ee|xilinx|04:00|03:01' >&2 || true;",
+            f"dmesg -T 2>/dev/null | tail -80 | grep -Ei {dmesg_filter} >&2 || true;",
             "exit 1",
         )
     )

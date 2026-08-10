@@ -100,12 +100,14 @@ only when run from the dau-build repository root.
 
 ## `board`
 
-`board=boards/dau/dpv1` composes `BoardConfig` into the `board` key. Options live
-under `boards/<vendor>/<board>`. The packaged `boards/dau/dpv1` option:
+`board=boards/example/probe` composes `BoardConfig` into the `board` key. Options
+live under `boards/<vendor>/<board>`. dau-build packages no real board — drop
+yours in through a search-path package — so the only packaged option is the
+fictional example, `boards/example/probe`:
 
 ```yaml
 _target_: dau_build.build_config.BoardConfig
-name: dpv1
+name: probe
 platform: vivado-xdma
 shell: xdma-ddr
 ```
@@ -158,12 +160,20 @@ Like the engines, simulators are polymorphic and fully hydra-configurable — e.
 
 ## `platform`
 
-`platform=platforms/dau/dpv1` composes `dau_build.platforms.PlatformDefinition`
-into the `platform` key. Options live under `platforms/<vendor>/<board>`. The
-packaged `platforms/dau/dpv1` option is the authoritative dpv1 definition: part
+`platform=platforms/example/probe` composes
+`dau_build.platforms.PlatformDefinition` into the `platform` key. Options live
+under `platforms/<vendor>/<board>`.
+
+dau-build ships exactly one, `platforms/example/probe`, and it is a **fiction**:
+internally consistent, plausible for a Kintex-7 x8 XDMA card, measured on
+nothing. It is the template you copy and the board dau-build's own tests build
+against — never build a real design with it. Your board is your package's, added
+through the hydra search path with no dau-build source change.
+
+A real board's option is the authoritative definition of that board: part
 number, program method, `ResourceBudget`, `storage_tiers`, and a `HostLink`
-whose `XdmaPersonality.params` are the 47 proven bring-up XCI parameters,
-quoted verbatim and order-preserved so the generated Vivado `CONFIG.*` block is
+whose `XdmaPersonality.params` are its proven bring-up XCI parameters, quoted
+verbatim and order-preserved so the generated Vivado `CONFIG.*` block is
 byte-for-byte identical to the known-good core.
 
 `PlatformDefinition` is composed of `ResourceBudget` (`lut`, `ff`, `bram36`,
