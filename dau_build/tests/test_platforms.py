@@ -12,12 +12,12 @@ from dau_build.platforms import (
     ResourceBudget,
     StorageTier,
     XdmaPersonality,
-    dpv1_platform,
     fits,
     max_lanes,
     min_lanes_for_full_rate,
     require_measured,
 )
+from dau_build.tests.platform_fixtures import probe_platform
 
 
 @dataclass(frozen=True)
@@ -31,13 +31,8 @@ class _Use:
     dsp: int
 
 
-def test_dpv1_round_trips_through_model_serialization() -> None:
-    platform = dpv1_platform()
-    assert PlatformDefinition.model_validate(platform.model_dump()) == platform
-
-
 def test_composed_platform_nested_config_is_frozen() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     original_lut = platform.budget.lut
     with pytest.raises(ValidationError, match="frozen"):
         platform.budget.lut = original_lut + 1
@@ -115,25 +110,25 @@ def test_validation_rejects_bad_values() -> None:
     with pytest.raises(ValidationError, match="capacity_bytes"):
         StorageTier(name="ddr", technology="ddr", capacity_bytes=0, access="shared")
     with pytest.raises(ValidationError, match="program_method"):
-        _dpv1_with(program_method="usb")
+        _probe_with(program_method="usb")
     with pytest.raises(ValidationError, match="part must be non-empty"):
-        _dpv1_with(part="")
+        _probe_with(part="")
 
 
 def test_placeholder_platform_is_refused_for_real_builds() -> None:
-    placeholder = _dpv1_with(name="probe", placeholders=("host_link.xdma_personality", "budget"))
+    placeholder = _probe_with(name="probe", placeholders=("host_link.xdma_personality", "budget"))
     with pytest.raises(PlaceholderPlatformError, match="xdma_personality"):
         require_measured(placeholder)
     # a measured board (no placeholders) passes
-    require_measured(dpv1_platform())
+    require_measured(probe_platform())
 
 
 def test_fits_under_and_over_budget() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     report = fits(_Use(lut=2000, ff=1500, bram36=4.0, dsp=8), platform)
     assert report.fits
-    assert report.headroom["lut"] == 108800 - 2000
-    assert report.utilization["dsp"] == pytest.approx(8 / 740)
+    assert report.headroom["lut"] == platform.budget.lut - 2000
+    assert report.utilization["dsp"] == pytest.approx(8 / platform.budget.dsp)
 
     over = fits(_Use(lut=200000, ff=1500, bram36=4.0, dsp=8), platform)
     assert not over.fits
@@ -143,7 +138,7 @@ def test_fits_under_and_over_budget() -> None:
 
 
 def test_fits_exactly_at_budget_is_ok() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     budget = platform.budget
     report = fits(_Use(lut=budget.lut, ff=budget.ff, bram36=budget.bram36, dsp=budget.dsp), platform)
     assert report.fits
@@ -151,21 +146,21 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
 
 
-def test_width_tiers_default_and_dpv1_config() -> None:
-    # the model default is the universal 64-bit tier; dpv1's config names
-    # the two tiers its 128-bit MIG UI supports
+def test_width_tiers_default_and_composed_config() -> None:
+    # the model default is the universal 64-bit tier; a board's config names
+    # the tiers its memory system actually supports
     assert PlatformDefinition.model_fields["width_tiers"].default == (64,)
-    assert dpv1_platform().width_tiers == (64, 128)
+    assert probe_platform().width_tiers == (64, 128, 256)
 
 
 def test_width_tiers_validation() -> None:
     with pytest.raises(ValidationError, match="at least one tier"):
-        _dpv1_with(width_tiers=())
+        _probe_with(width_tiers=())
     with pytest.raises(ValidationError, match="64/128/256/512"):
-        _dpv1_with(width_tiers=(64, 96))
+        _probe_with(width_tiers=(64, 96))
     with pytest.raises(ValidationError, match="duplicates"):
-        _dpv1_with(width_tiers=(64, 64))
-    assert _dpv1_with(width_tiers=(64, 128, 256, 512)).width_tiers == (64, 128, 256, 512)
+        _probe_with(width_tiers=(64, 64))
+    assert _probe_with(width_tiers=(64, 128, 256, 512)).width_tiers == (64, 128, 256, 512)
 
 
 def test_min_lanes_for_full_rate_follows_the_sizing_law() -> None:
@@ -178,7 +173,7 @@ def test_min_lanes_for_full_rate_follows_the_sizing_law() -> None:
 
 
 def test_max_lanes_is_the_budget_ceiling() -> None:
-    platform = dpv1_platform()  # budget lut=108800
+    platform = probe_platform()
     lane = _Use(lut=1000, ff=800, bram36=0.5, dsp=1)
     # no overhead: lut allows 108, ff allows more, dsp allows 740 -> min governs
     assert max_lanes(lane, platform) == min(
@@ -205,45 +200,14 @@ def test_max_lanes_is_the_budget_ceiling() -> None:
 
 
 def test_max_lanes_bram_arithmetic_is_exact() -> None:
-    # half-BRAM units, not float floor division: 365 BRAM36 holds exactly
-    # 730 half-BRAM lanes (335 // 0.1 == 3349.0 is the float trap)
-    platform = dpv1_platform()
+    # half-BRAM units, not float floor division: N BRAM36 holds exactly
+    # 2N half-BRAM lanes (415 // 0.1 == 4149.0 is the float trap)
+    platform = probe_platform()
     lane = _Use(lut=1, ff=1, bram36=0.5, dsp=0)
     assert max_lanes(lane, platform) == min(platform.budget.lut, platform.budget.ff, round(platform.budget.bram36 * 2))
     # non-half-granular BRAM is not a real placement
     with pytest.raises(ValueError, match="half-BRAM granular"):
         max_lanes(_Use(lut=1, ff=1, bram36=0.3, dsp=0), platform)
-
-
-def test_dpv1_platform_is_the_single_source_for_the_shell() -> None:
-    from dau_build.dpv1_shell import dpv1_constraints_xdc, dpv1_ddr_constraints_xdc, dpv1_xdma_personality, gt_lane_swizzle_hook_tcl
-
-    platform = dpv1_platform()
-    assert len(platform.host_link.xdma_personality.params) == 47
-    # lane count is consistent with the personality's link width
-    assert platform.host_link.pcie_lanes == platform.host_link.xdma_personality.link_width() == 4
-    # the proven host trains x2 at 5.0 GT/s over Thunderbolt
-    assert platform.host_link.expected_link_width == 2
-    assert platform.host_link.expected_link_speed_gts == 5.0
-    assert platform.memory.mig_prj == "dpv1_mig.prj"
-    # the shell's personality accessor resolves the same config
-    assert dpv1_xdma_personality() == platform.host_link.xdma_personality
-    # the default hook reads the lane swizzle from the platform
-    assert gt_lane_swizzle_hook_tcl() == gt_lane_swizzle_hook_tcl(platform.lane_placements)
-    assert dpv1_constraints_xdc().endswith(platform.constraints_xdc)
-    assert dpv1_ddr_constraints_xdc().endswith(platform.memory.constraints_xdc)
-    # dpv1 is hardware-proven: no placeholder values
-    assert platform.placeholders == ()
-    # coerce-sensitive values survive yaml load intact
-    params = platform.host_link.xdma_personality.params
-    assert params["pf1_msix_cap_table_size"] == "000"
-    assert params["pf1_msix_cap_table_offset"] == "00000000"
-
-
-def test_platform_group_resolves_dpv1_through_hydra() -> None:
-    from dau_build.config import resolve_platform
-
-    assert resolve_platform("platforms/dau/dpv1") == dpv1_platform()
 
 
 def test_resolve_platform_rejects_unknown() -> None:
@@ -269,49 +233,24 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     assert board.part == "xc7k70tfbg484-2"
     assert board.budget.lut == 41000
     assert board.host_link.pcie_lanes == 1
-    # the packaged dpv1 board still resolves alongside the overlay
-    assert resolve_platform("platforms/dau/dpv1", config_dir=str(overlay)) == dpv1_platform()
+    # the packaged example board still resolves alongside the overlay
+    assert resolve_platform("platforms/example/probe", config_dir=str(overlay)) == probe_platform()
 
 
-def _dpv1_with(**overrides: object) -> PlatformDefinition:
-    base = {
-        "name": "dpv1",
-        "part": "xc7a200tfbg484-2",
-        "budget": ResourceBudget(lut=134600, ff=269200, bram36=365, dsp=740),
-        "host_link": HostLink(interface="pcie-xdma", pcie_lanes=4),
-        "storage_tiers": (StorageTier(name="ddr", technology="ddr", capacity_bytes=1 << 30, access="shared"),),
-    }
-    base.update(overrides)
-    return PlatformDefinition(**base, platform_id="TEST")  # type: ignore[arg-type]
+def _probe_with(**overrides: object) -> PlatformDefinition:
+    """The example board with fields replaced, RE-VALIDATED.
 
-
-def test_dpv1_host_access_pins_the_proven_bench_facts() -> None:
-    # the platform config is the only source (the code fallbacks are
-    # retired); these literals pin the proven bench facts
-    access = dpv1_platform().host_access
-    assert access is not None
-    assert access.pci_id == "10ee:7011"
-    assert access.endpoint_bdf == "0000:04:00.0"
-    assert access.rescan_bdfs == (
-        "0000:03:01.0",
-        "0000:02:00.0",
-        "0000:00:0d.3",
-        "0000:00:0d.2",
-        "0000:00:0d.0",
-        "0000:00:07.2",
-        "0000:00:07.0",
-    )
-    assert access.runtime_pm_patterns == ("Thunderbolt", "JHL", "10ee:7011", "Xilinx")
-    assert access.runtime_pm_executable == "dau-utils-pci-runtime-pm"
-    assert access.jtag_cable == "digilent_hs2"
+    Not ``model_copy(update=...)``: that skips validation on frozen models,
+    and every caller here is testing a validator."""
+    return PlatformDefinition.model_validate({**probe_platform().model_dump(), **overrides})
 
 
 def test_effective_job_clock_distinguishes_conversion_from_frequency() -> None:
     # job_clock_mhz's PRESENCE requests a clock converter; its ABSENCE means
-    # the job inherits axi_aclk, not that the frequency is unknown. dpv1
-    # leaves it None deliberately and still runs at 125 MHz.
-    platform = dpv1_platform()
-    assert platform.job_clock_mhz is None  # no converter on dpv1
+    # the job inherits axi_aclk, not that the frequency is unknown. The
+    # example board leaves it None deliberately and still runs at 125 MHz.
+    platform = probe_platform()
+    assert platform.job_clock_mhz is None  # no converter
     assert platform.effective_job_clock_mhz() == 125  # but the frequency is known
 
     converted = platform.model_copy(update={"job_clock_mhz": 150})
@@ -319,15 +258,15 @@ def test_effective_job_clock_distinguishes_conversion_from_frequency() -> None:
 
 
 def test_storage_tiers_declare_the_full_inventory() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     names = [tier.name for tier in platform.storage_tiers]
     assert names == ["bram", "ddr"]
     bram, ddr = platform.storage_tiers
-    assert bram.access == "owned" and bram.capacity_bytes == 335 * 4608
-    assert ddr.access == "shared" and ddr.mig_prj == "dpv1_mig.prj"
+    assert bram.access == "owned" and bram.capacity_bytes == 415 * 4608
+    assert ddr.access == "shared" and ddr.mig_prj == "probe_mig.prj"
     # the active memory system a build instantiates is the shared tier
     assert platform.memory is ddr
-    assert platform.memory.capacity_bytes == 1073741824
+    assert platform.memory.capacity_bytes == 2147483648
 
 
 def _revalidated(platform, **updates):
@@ -337,7 +276,7 @@ def _revalidated(platform, **updates):
 
 
 def test_storage_tier_validators_refuse_bad_declarations() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     tier = {"name": "ddr", "technology": "ddr", "capacity_bytes": 1 << 30, "access": "shared"}
     with pytest.raises(ValidationError, match="duplicate"):
         _revalidated(platform, storage_tiers=(tier, tier))
@@ -350,6 +289,6 @@ def test_storage_tier_validators_refuse_bad_declarations() -> None:
 
 
 def test_bram_tier_capacity_coheres_with_the_budget() -> None:
-    platform = dpv1_platform()
+    platform = probe_platform()
     bram = next(t for t in platform.storage_tiers if t.technology == "bram")
     assert bram.capacity_bytes <= platform.budget.bram36 * 4608

@@ -1,0 +1,10 @@
+# @package board
+
+# board=boards/example/probe — the example board's build-config view, paired
+# with platform=platforms/example/probe. Boards live under
+# boards/<vendor>/<board>; drop your own in via a search-path package rather
+# than adding it here. Fictional, like the platform it names.
+_target_: dau_build.build_config.BoardConfig
+name: probe
+platform: vivado-xdma
+shell: xdma-ddr

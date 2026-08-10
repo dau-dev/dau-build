@@ -2,27 +2,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dau_build.dpv1_shell import (
+from dau_build.mm_shell import (
     MmDdrJobShellRequest,
     MmJobShellRequest,
     _lane_swizzle_verify_tcl,
-    dpv1_constraints_xdc,
-    dpv1_ddr_constraints_xdc,
-    dpv1_xdma_personality,
+    ddr_shell_constraints_xdc,
     gt_lane_swizzle_hook_tcl,
     mm_ddr_job_shell_project_tcl,
     mm_job_shell_project_tcl,
+    shell_constraints_xdc,
     write_mm_ddr_job_shell_artifacts,
     write_mm_job_shell_artifacts,
 )
 
 
 def _test_platform():
-    """dpv1 as an explicit fixture. The request no longer defaults a board,
-    so a test that wants one says which."""
-    from dau_build.config import resolve_platform
+    """The example board as an explicit fixture. The request never defaults a
+    board, so a test that wants one says which."""
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    return resolve_platform("platforms/dau/dpv1")
+    return probe_platform()
 
 
 def _request(tmp_path: Path) -> MmJobShellRequest:
@@ -40,10 +39,10 @@ def _request(tmp_path: Path) -> MmJobShellRequest:
 
 
 def _wide_tier_platform():
-    from dau_build.platforms import dpv1_platform
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    # a wide-tier board stand-in: dpv1 facts with the full catalog unlocked
-    return dpv1_platform().model_copy(update={"width_tiers": (64, 128, 256, 512)})
+    # a wide-tier board stand-in: the example board with the full catalog unlocked
+    return probe_platform().model_copy(update={"width_tiers": (64, 128, 256, 512)})
 
 
 def test_generator_refuses_a_copied_request_outside_the_tiers(tmp_path) -> None:
@@ -71,7 +70,7 @@ def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
 
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
-    with _pytest.raises(ValidationError, match="not a width tier of platform 'dpv1'"):
+    with _pytest.raises(ValidationError, match="not a width tier of platform 'probe'"):
         MmDdrJobShellRequest(
             platform=_test_platform(),
             output_root=tmp_path,
@@ -85,18 +84,18 @@ def test_request_refuses_a_width_outside_the_platform_tiers(tmp_path) -> None:
 
 def test_personality_mirrors_the_proven_shell() -> None:
     # the hardware rules: 64-bit prefetchable BARs, 128K KB-scale AXI-Lite, QPLL1
-    assert dpv1_xdma_personality().params["axil_master_64bit_en"] == "true"
-    assert dpv1_xdma_personality().params["axil_master_prefetchable"] == "true"
-    assert dpv1_xdma_personality().params["xdma_pcie_prefetchable"] == "true"
-    assert dpv1_xdma_personality().params["axilite_master_scale"] == "Kilobytes"
-    assert dpv1_xdma_personality().params["axilite_master_size"] == "128"
-    assert dpv1_xdma_personality().params["plltype"] == "QPLL1"
-    assert dpv1_xdma_personality().params["pf0_device_id"] == "7011"
+    assert _test_platform().host_link.xdma_personality.params["axil_master_64bit_en"] == "true"
+    assert _test_platform().host_link.xdma_personality.params["axil_master_prefetchable"] == "true"
+    assert _test_platform().host_link.xdma_personality.params["xdma_pcie_prefetchable"] == "true"
+    assert _test_platform().host_link.xdma_personality.params["axilite_master_scale"] == "Kilobytes"
+    assert _test_platform().host_link.xdma_personality.params["axilite_master_size"] == "128"
+    assert _test_platform().host_link.xdma_personality.params["plltype"] == "QPLL1"
+    assert _test_platform().host_link.xdma_personality.params["pf0_device_id"] == "9034"
 
 
 def test_project_tcl_embeds_personality_staging_and_hook(tmp_path: Path) -> None:
     text = mm_job_shell_project_tcl(_request(tmp_path))
-    for key, value in dpv1_xdma_personality().params.items():
+    for key, value in _test_platform().host_link.xdma_personality.params.items():
         assert f"CONFIG.{key} {{{value}}}" in text
     # staging layout from the register contract
     assert "-offset 0x00000000 -range 0x00020000" in text  # input BRAM
@@ -109,12 +108,12 @@ def test_project_tcl_embeds_personality_staging_and_hook(tmp_path: Path) -> None
 
 
 def test_swizzle_hook_covers_all_lanes() -> None:
-    from dau_build.platforms import dpv1_platform
-
-    text = gt_lane_swizzle_hook_tcl()
-    for lane, channel in dpv1_platform().lane_placements:
+    placements = _test_platform().lane_placements
+    text = gt_lane_swizzle_hook_tcl(placements)
+    for _lane, channel in placements:
         assert channel in text
-    assert "expected 4 GTPE2_CHANNEL lane cells" in text
+    # the cell-count guard is the platform's lane count, not a constant
+    assert f"expected {len(placements)} GTXE2_CHANNEL lane cells" in text
     assert "reset_property" in text
 
 
@@ -132,9 +131,9 @@ def test_swizzle_hook_follows_the_placement_gt_family() -> None:
 
 
 def test_constraints_have_no_gt_locs() -> None:
-    text = dpv1_constraints_xdc()
-    assert "GTPE2_CHANNEL" not in text  # swizzle lives in the hook
-    assert "PACKAGE_PIN A10" in text
+    text = shell_constraints_xdc(_test_platform())
+    assert "GTXE2_CHANNEL" not in text  # swizzle lives in the hook
+    assert "PACKAGE_PIN F6" in text
     assert "CFGBVS VCCO" in text
     assert "BITSTREAM.GENERAL.COMPRESS TRUE" in text
 
@@ -156,11 +155,11 @@ def _ddr_request(tmp_path: Path) -> MmDdrJobShellRequest:
 
 def test_ddr_project_tcl_embeds_mig_and_shared_memory_path(tmp_path: Path) -> None:
     text = mm_ddr_job_shell_project_tcl(_ddr_request(tmp_path))
-    for key, value in dpv1_xdma_personality().params.items():
+    for key, value in _test_platform().host_link.xdma_personality.params.items():
         assert f"CONFIG.{key} {{{value}}}" in text
     # the memory controller comes from the vendored proven configuration
     assert "xilinx.com:ip:mig_7series" in text
-    assert 'CONFIG.XML_INPUT_FILE "$origin_dir/dpv1_mig.prj"' in text
+    assert 'CONFIG.XML_INPUT_FILE "$origin_dir/probe_mig.prj"' in text
     assert "CONFIG.MIG_DONT_TOUCH_PARAM {Custom}" in text
     # proven wiring: tied-high resets, calibration LED, XADC temperature
     assert "[get_bd_pins mig_0/sys_rst] [get_bd_pins mig_0/aresetn]" in text
@@ -180,8 +179,8 @@ def test_ddr_project_tcl_embeds_mig_and_shared_memory_path(tmp_path: Path) -> No
 
 
 def test_ddr_constraints_add_sys_clk_and_calib_led_only() -> None:
-    base = dpv1_constraints_xdc()
-    text = dpv1_ddr_constraints_xdc()
+    base = shell_constraints_xdc(_test_platform())
+    text = ddr_shell_constraints_xdc(_test_platform())
     assert text.startswith(base)
     assert "LVDS_25" in text and "sys_clk_clk_p" in text
     assert "PACKAGE_PIN H4" in text and "LED_A4" in text
@@ -193,8 +192,8 @@ def test_write_ddr_artifacts_vendor_the_mig_prj(tmp_path: Path) -> None:
     request = _ddr_request(tmp_path)
     written = write_mm_ddr_job_shell_artifacts(request)
     names = sorted(path.name for path in written)
-    assert names == ["build_mm_job.tcl", "constraints.xdc", "dpv1_mig.prj", "gt_lane_swizzle.tcl", "my_ddr_top.v"]
-    assert (request.output_root / "dpv1_mig.prj").read_text() == request.mig_prj.read_text()
+    assert names == ["build_mm_job.tcl", "constraints.xdc", "gt_lane_swizzle.tcl", "my_ddr_top.v", "probe_mig.prj"]
+    assert (request.output_root / "probe_mig.prj").read_text() == request.mig_prj.read_text()
     tcl = (request.output_root / "build_mm_job.tcl").read_text()
     assert "my_ddr_top.v" in tcl
     assert "stream_tile.sv" in tcl
@@ -239,22 +238,23 @@ def _with_xdma_params(platform, **updates):
 
 
 def test_constraints_match_committed_goldens() -> None:
-    """Moving the pin constraints from code into the dpv1 platform config
-    must not change a byte of the emitted XDC."""
-    fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
-    assert dpv1_constraints_xdc() == (fixtures / "constraints.xdc").read_text()
-    assert dpv1_ddr_constraints_xdc() == (fixtures / "constraints_ddr.xdc").read_text()
+    """The emitted XDC is the platform's constraints under the generator's
+    banner, byte for byte. These goldens pin the GENERATOR against the
+    example board; a real board's proven XDC is pinned beside that board."""
+    fixtures = Path(__file__).parent / "fixtures" / "mm_shell"
+    assert shell_constraints_xdc(_test_platform()) == (fixtures / "constraints.xdc").read_text()
+    assert ddr_shell_constraints_xdc(_test_platform()) == (fixtures / "constraints_ddr.xdc").read_text()
 
 
 def test_swizzle_hook_matches_committed_golden() -> None:
-    """The dpv1 swizzle hook is a hardware-proven text: deriving the GT
-    channel family from the placement sites must not change a byte of it."""
-    fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
-    assert gt_lane_swizzle_hook_tcl() == (fixtures / "gt_lane_swizzle.tcl").read_text()
+    """The swizzle hook is a hardware-proven shape: deriving the GT channel
+    family from the placement sites must not change a byte of it."""
+    fixtures = Path(__file__).parent / "fixtures" / "mm_shell"
+    assert gt_lane_swizzle_hook_tcl(_test_platform().lane_placements) == (fixtures / "gt_lane_swizzle.tcl").read_text()
 
 
 def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
-    """A registered non-dpv1 board changes the generated project through
+    """A second registered board changes the generated project through
     config data alone: part, personality, constraints, and (no) swizzle all
     come from the platform."""
     platform = _probe_platform()
@@ -262,7 +262,7 @@ def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
     text = mm_ddr_job_shell_project_tcl(request)
     assert "-part xc7k325tffg900-2" in text
     assert "CONFIG.pl_link_cap_max_link_width {X8}" in text
-    assert "CONFIG.plltype" not in text  # the dpv1 personality is not inherited
+    assert "CONFIG.plltype" not in text  # the other board's personality is not inherited
     # no lane placements: no swizzle hook, no post-route verification
     assert "gt_lane_swizzle" not in text
     assert "lane swizzle verified" not in text
@@ -272,7 +272,7 @@ def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
     names = sorted(path.name for path in written)
     assert names == ["build_mm_job.tcl", "constraints.xdc", "mig.prj", "my_ddr_top.v"]
     constraints = (request.output_root / "constraints.xdc").read_text()
-    assert constraints == "# GENERATED by dau_build.dpv1_shell — do not edit.\n" + platform.constraints_xdc
+    assert constraints == "# GENERATED by dau_build.mm_shell — do not edit.\n" + platform.constraints_xdc
 
 
 def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
@@ -288,12 +288,12 @@ def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
     from pydantic import ValidationError
 
     # a request without a board is REFUSED rather than resolved to one.
-    # dau-build carries no board defaults: adopting dpv1 here would have
+    # dau-build carries no board defaults: adopting one here would have
     # synthesized and priced a dpv2 design for an Artix silently.
     with _pytest.raises(ValidationError):
         MmJobShellRequest(**common)
 
-    assert MmJobShellRequest(platform=_test_platform(), **common).resolved_part == "xc7a200tfbg484-2"
+    assert MmJobShellRequest(platform=_test_platform(), **common).resolved_part == "xc7k325tffg676-2"
     assert MmJobShellRequest(platform=_probe_platform(), **common).resolved_part == "xc7k325tffg900-2"
     # an explicit part override wins over the platform
     assert MmJobShellRequest(platform=_probe_platform(), part="xc7k325tffg676-1", **common).resolved_part == "xc7k325tffg676-1"
@@ -376,7 +376,7 @@ def test_job_clock_convert_wraps_the_ddr_shell(tmp_path: Path) -> None:
 
 
 def test_no_job_clock_means_no_conversion(tmp_path: Path) -> None:
-    """``job_clock_mhz`` unset (the dpv1 default) emits no clock-domain
+    """``job_clock_mhz`` unset (the example board's default) emits no clock-domain
     machinery at all — the byte-identity goldens above pin the exact text."""
     for text in (mm_job_shell_project_tcl(_request(tmp_path)), mm_ddr_job_shell_project_tcl(_ddr_request(tmp_path))):
         assert "job_clk" not in text
@@ -390,7 +390,7 @@ def test_personality_axi_clock_parses_axisten_freq() -> None:
 
     from dau_build.platforms import XdmaPersonality
 
-    assert dpv1_xdma_personality().axi_clock_mhz() == 125
+    assert _test_platform().host_link.xdma_personality.axi_clock_mhz() == 125
     assert XdmaPersonality(params={"axisten_freq": "250"}).axi_clock_mhz() == 250
     with pytest.raises(ValueError, match="axisten_freq"):
         XdmaPersonality(params={}).axi_clock_mhz()
@@ -400,7 +400,7 @@ def test_project_tcl_matches_pre_fragment_goldens() -> None:
     """The fragment refactor (shared preamble/postamble emitters) must not
     change a byte of the generated scripts — these fixtures were captured
     from the pre-refactor monolithic templates."""
-    fixtures = Path(__file__).parent / "fixtures" / "dpv1_shell"
+    fixtures = Path(__file__).parent / "fixtures" / "mm_shell"
     mm = MmJobShellRequest(
         platform=_test_platform(),
         output_root=Path("/work/shell"),
@@ -424,7 +424,7 @@ def test_wide_data_width_ddr_tcl_wires_split_masters(tmp_path) -> None:
     """A data_width>64 DDR shell request emits the dual-master BD wiring:
     three smartconnect slaves (XDMA + wide M_AXI_R + narrow M_AXI_W) and an
     address-map assignment per job master space."""
-    from dau_build.dpv1_shell import MmDdrJobShellRequest, mm_ddr_job_shell_project_tcl
+    from dau_build.mm_shell import MmDdrJobShellRequest, mm_ddr_job_shell_project_tcl
 
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
@@ -453,10 +453,10 @@ def test_a_flash_booting_platform_emits_its_spi_mcs() -> None:
     """dpv2's resident path IS SPI flash: it never enumerates from a raw JTAG
     bitstream write. A shell build that emits only a .bit therefore produces
     nothing that board can boot, so the mcs must come out of the same build."""
-    from dau_build.dpv1_shell import _spi_cfgmem_tcl
-    from dau_build.platforms import dpv1_platform
+    from dau_build.mm_shell import _spi_cfgmem_tcl
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    spi = dpv1_platform().model_copy(update={"spi_boot_buswidth": 4, "spi_boot_configrate": 33})
+    spi = probe_platform().model_copy(update={"spi_boot_buswidth": 4, "spi_boot_configrate": 33})
     tcl = _spi_cfgmem_tcl(spi)
     assert "BITSTREAM.CONFIG.SPI_BUSWIDTH 4" in tcl
     assert "BITSTREAM.CONFIG.CONFIGRATE 33" in tcl
@@ -466,10 +466,10 @@ def test_a_flash_booting_platform_emits_its_spi_mcs() -> None:
     assert tcl.index("SPI_BUSWIDTH") < tcl.index("write_bitstream") < tcl.index("write_cfgmem")
     assert "-interface SPIx4" in tcl
 
-    # dpv1 declares SPIx4 too but pins no rate, so it gets the width and the
+    # the example board declares SPIx4 too but pins no rate, so it gets the width and the
     # mcs without a CONFIGRATE line
-    assert "CONFIGRATE" not in _spi_cfgmem_tcl(dpv1_platform())
+    assert "CONFIGRATE" not in _spi_cfgmem_tcl(probe_platform())
 
     # a board that does NOT self-configure from flash gains nothing, and its
     # build must stay byte-identical to what it emitted before
-    assert _spi_cfgmem_tcl(dpv1_platform().model_copy(update={"spi_boot_buswidth": None})) == ""
+    assert _spi_cfgmem_tcl(probe_platform().model_copy(update={"spi_boot_buswidth": None})) == ""

@@ -122,12 +122,13 @@ def test_task_execute_builds_and_writes_manifest(tmp_path: Path) -> None:
 def test_task_execute_refuses_a_placeholder_platform(tmp_path: Path) -> None:
     """A board whose hardware-derived values are placeholders may generate
     and plan, never build."""
-    from dau_build.platforms import PlaceholderPlatformError, dpv1_platform
+    from dau_build.platforms import PlaceholderPlatformError
+    from dau_build.tests.platform_fixtures import probe_platform
 
     output_root = tmp_path / "shell"
     output_root.mkdir()
     (output_root / "build_mm_job.tcl").write_text("# generated\n")
-    placeholder = dpv1_platform().model_copy(update={"name": "probe", "placeholders": ("host_link.xdma_personality",)})
+    placeholder = probe_platform().model_copy(update={"name": "probe", "placeholders": ("host_link.xdma_personality",)})
     task = BuildShellProjectTask(output_root=output_root, vivado=str(_fake_vivado(tmp_path)), platform=placeholder, execute=True)
     with pytest.raises(PlaceholderPlatformError, match="xdma_personality"):
         task(None)
@@ -135,7 +136,7 @@ def test_task_execute_refuses_a_placeholder_platform(tmp_path: Path) -> None:
     # planning stays open, and a measured platform builds
     planned = BuildShellProjectTask(output_root=output_root, vivado="definitely-not-vivado", platform=placeholder)(None)
     assert "status=planned" in planned.message
-    built = BuildShellProjectTask(output_root=output_root, vivado=str(_fake_vivado(tmp_path)), platform=dpv1_platform(), execute=True)(None)
+    built = BuildShellProjectTask(output_root=output_root, vivado=str(_fake_vivado(tmp_path)), platform=probe_platform(), execute=True)(None)
     assert "status=built" in built.message
 
 

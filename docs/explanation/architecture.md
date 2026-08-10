@@ -55,7 +55,7 @@ second place to register it.
 `dau-build` composes the config tree and runs the result, so a single command
 carries three kinds of override. `task=<path>` (or `step=<path>`) selects the
 runnable and composes it *into* the `model` key. `<group>=<option>` selects a
-config group — `spec=specs/identity`, `board=boards/dau/dpv1`,
+config group — `spec=specs/identity`, `board=boards/example/probe`,
 `backend=backends/vivado`. And `model.<field>=value` sets a field on the selected
 model. The `model.` prefix is not decoration: because the task is composed into
 the `model` key, its fields are addressed under `model.`.

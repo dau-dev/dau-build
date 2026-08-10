@@ -14,8 +14,9 @@ __all__ = ("compose_config", "load_config", "request_config", "resolve_platform"
 def resolve_platform(name: str, *, config_dir: str | None = None, version_base: str | None = None):
     """Resolve a platform from the ``platform`` hydra config group to a
     ``dau_build.platforms.PlatformDefinition`` (user ``--config-dir``
-    overlays may add boards). ``resolve_platform("platforms/dau/dpv1")`` returns the
-    reconciled dpv1 platform."""
+    overlays may add boards -- dau-build packages only the fictional
+    ``platforms/example/probe``). ``resolve_platform("platforms/example/probe")``
+    returns the reconciled example platform."""
     from hydra.utils import instantiate
 
     result = _load_base_config((f"platform={name}",), config_dir=config_dir, version_base=version_base)

@@ -31,7 +31,7 @@ dau-build task=tasks/build/synthesize \
 
 If you keep your spec in a file rather than a config group, drop `spec=` and pass
 `model.spec_path=<file>` instead. To attach a specific board and backend to the
-resolved config, add `board=boards/dau/dpv1 backend=backends/vivado`.
+resolved config, add `board=boards/example/probe backend=backends/vivado`.
 
 ## Stage the Vivado work directory
 
