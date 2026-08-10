@@ -1,6 +1,6 @@
 from importlib import import_module
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 
 _SVPARSER_EXPORTS = frozenset(
     {
