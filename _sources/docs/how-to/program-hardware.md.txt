@@ -37,7 +37,7 @@ The plan is a config group (`plan=plans/<name>`); its own fields are
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/dau/dpv1 \
+  platform=platforms/example/probe \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -55,7 +55,7 @@ programs and verifies the device. Add `execute=true` to run it on the host:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/dau/dpv1 \
+  platform=platforms/example/probe \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -91,7 +91,7 @@ command the plan ends at the endpoint check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/dau/dpv1 \
+  platform=platforms/example/probe \
   plan=plans/validate-bitstream \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
@@ -111,7 +111,7 @@ known-good volatile bitstream, then rescan and re-check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/dau/dpv1 \
+  platform=platforms/example/probe \
   plan=plans/recovery \
   model.work_root=outputs/vivado \
   model.execute=true

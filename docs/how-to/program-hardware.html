@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to extend dau-build" href="extend-dau-build.html"><link rel="prev" title="How to run a build end to end" href="run-a-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>How to program a bitstream on dpv1 - dau-build v0.13.0</title>
+        <title>How to program a bitstream on dpv1 - dau-build v0.14.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.13.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.14.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.13.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.14.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -276,7 +276,7 @@ ordered steps without touching the board:</p>
 <p>The plan is a config group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>); its own fields are
 <code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -292,7 +292,7 @@ ordered steps without touching the board:</p>
 <p><code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code> stages the shell, runs the Vivado overlay build, then
 programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the host:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -324,7 +324,7 @@ pass <code class="docutils literal notranslate"><span class="pre">plan.smoke_com
 one, e.g. the private dau package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>); with no
 command the plan ends at the endpoint check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
@@ -342,7 +342,7 @@ against a resident dead image is what hangs. The <code class="docutils literal n
 the safe order: hold power management, remove the endpoint via sysfs, program a
 known-good volatile bitstream, then rescan and re-check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/dau/dpv1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/recovery<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
@@ -438,7 +438,7 @@ unless run against real hardware. The smoke <code class="docutils literal notran
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=1019fba8"></script>
+</div><script src="../../_static/documentation_options.js?v=9e420a66"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>

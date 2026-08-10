@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Task and step catalog" href="tasks-and-steps.html"><link rel="prev" title="Command reference" href="commands.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Config group reference - dau-build v0.13.0</title>
+        <title>Config group reference - dau-build v0.14.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -167,7 +167,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.13.0</code></div></a>
+      <a href="../../index.html"><div class="brand">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.14.0</code></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -188,7 +188,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
   
-  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.13.0</code></span>
+  <span class="sidebar-brand-text">dau-build <code style='font-size: var(--font-size--small--4);color: var(--sd-color-primary);'>v0.14.0</code></span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -398,10 +398,12 @@ only when run from the dau-build repository root.</p>
 </section>
 <section id="board">
 <h2><code class="docutils literal notranslate"><span class="pre">board</span></code><a class="headerlink" href="#board" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">board=boards/dau/dpv1</span></code> composes <code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code> into the <code class="docutils literal notranslate"><span class="pre">board</span></code> key. Options live
-under <code class="docutils literal notranslate"><span class="pre">boards/&lt;vendor&gt;/&lt;board&gt;</span></code>. The packaged <code class="docutils literal notranslate"><span class="pre">boards/dau/dpv1</span></code> option:</p>
+<p><code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code> composes <code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code> into the <code class="docutils literal notranslate"><span class="pre">board</span></code> key. Options
+live under <code class="docutils literal notranslate"><span class="pre">boards/&lt;vendor&gt;/&lt;board&gt;</span></code>. dau-build packages no real board — drop
+yours in through a search-path package — so the only packaged option is the
+fictional example, <code class="docutils literal notranslate"><span class="pre">boards/example/probe</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dau_build.build_config.BoardConfig</span>
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dpv1</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">probe</span>
 <span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vivado-xdma</span>
 <span class="nt">shell</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xdma-ddr</span>
 </pre></div>
@@ -492,12 +494,18 @@ key; <code class="docutils literal notranslate"><span class="pre">SimulateTask</
 </section>
 <section id="platform">
 <h2><code class="docutils literal notranslate"><span class="pre">platform</span></code><a class="headerlink" href="#platform" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">platform=platforms/dau/dpv1</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>
-into the <code class="docutils literal notranslate"><span class="pre">platform</span></code> key. Options live under <code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>. The
-packaged <code class="docutils literal notranslate"><span class="pre">platforms/dau/dpv1</span></code> option is the authoritative dpv1 definition: part
+<p><code class="docutils literal notranslate"><span class="pre">platform=platforms/example/probe</span></code> composes
+<code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code> into the <code class="docutils literal notranslate"><span class="pre">platform</span></code> key. Options live
+under <code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
+<p>dau-build ships exactly one, <code class="docutils literal notranslate"><span class="pre">platforms/example/probe</span></code>, and it is a <strong>fiction</strong>:
+internally consistent, plausible for a Kintex-7 x8 XDMA card, measured on
+nothing. It is the template you copy and the board dau-build’s own tests build
+against — never build a real design with it. Your board is your package’s, added
+through the hydra search path with no dau-build source change.</p>
+<p>A real board’s option is the authoritative definition of that board: part
 number, program method, <code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code>, <code class="docutils literal notranslate"><span class="pre">storage_tiers</span></code>, and a <code class="docutils literal notranslate"><span class="pre">HostLink</span></code>
-whose <code class="docutils literal notranslate"><span class="pre">XdmaPersonality.params</span></code> are the 47 proven bring-up XCI parameters,
-quoted verbatim and order-preserved so the generated Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block is
+whose <code class="docutils literal notranslate"><span class="pre">XdmaPersonality.params</span></code> are its proven bring-up XCI parameters, quoted
+verbatim and order-preserved so the generated Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block is
 byte-for-byte identical to the known-good core.</p>
 <p><code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code> is composed of <code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code> (<code class="docutils literal notranslate"><span class="pre">lut</span></code>, <code class="docutils literal notranslate"><span class="pre">ff</span></code>, <code class="docutils literal notranslate"><span class="pre">bram36</span></code>,
 <code class="docutils literal notranslate"><span class="pre">dsp</span></code>), <code class="docutils literal notranslate"><span class="pre">storage_tiers</span></code> (each a <code class="docutils literal notranslate"><span class="pre">StorageTier</span></code>: <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">technology</span></code>,
@@ -669,7 +677,7 @@ by default and is not normally overridden.</p>
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=1019fba8"></script>
+</div><script src="../../_static/documentation_options.js?v=9e420a66"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
