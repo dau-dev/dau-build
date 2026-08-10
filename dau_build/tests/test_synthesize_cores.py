@@ -84,7 +84,7 @@ _TIMING_RPT = "Slack (MET) :             4.350ns  (required time - arrival time)
 
 
 def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
-    from dau_core.cores import core
+    from dau_core.registry import core
 
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
@@ -108,7 +108,7 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
     comparison is skipped rather than made against whichever point happens
     to be first — including the clock, which matters the moment a tile
     carries the same part and params at two clocks."""
-    from dau_core.cores import core
+    from dau_core.registry import core
 
     definition = core("int32-streaming-top-k")
     assert isinstance(definition.resources, (list, tuple)) and len(definition.resources) > 1
@@ -124,7 +124,7 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
 
 
 def test_parse_reports_negative_slack_is_violated(tmp_path: Path) -> None:
-    from dau_core.cores import core
+    from dau_core.registry import core
 
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
@@ -201,7 +201,7 @@ def test_clock_port_mapping_and_unclocked_core(tmp_path: Path) -> None:
 
 
 def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
-    from dau_core.cores import core
+    from dau_core.registry import core
 
     definition = core("int32-streaming-top-k")
     (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "5000"))
