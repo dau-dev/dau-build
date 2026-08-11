@@ -206,8 +206,10 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
             raise ScanCompositionError("a wide_lane scan composition needs exactly one lane")
         if composition.partitioner is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a shared partitioner")
-        if composition.front_unpack is not None:
-            raise ScanCompositionError("a wide_lane scan composition cannot carry a front_unpack")
+        # a PACKED wide lane is the point of the wide unpacker: the front
+        # widens SLOTS packed 64-bit rows into the SLOTS quad rows the lane
+        # consumes, so the lane sees the front's OUT_WIDTH while the reader
+        # moves half the bytes. The width coherence is checked below.
         if composition.front_gearbox is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a front_gearbox")
         if composition.lanes[0].partition is not None:
@@ -258,11 +260,22 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     else:
         fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
     if composition.front_unpack is not None:
-        # the packed path: OUT_WIDTH 64/128 is proven; a wider packed reader
-        # (data_width > 64) driving a 256/512 unpacker is a separate follow-up
-        if front_width not in (64, 128):
-            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
-        if data_width != 64:
+        if front_width not in (64, 128, 256, 512, 1024):
+            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64/128/256/512/1024, got {front_width}")
+        if composition.wide_lane:
+            # PACKED WIDE FEED: two different widths, and conflating them is
+            # the hazard. data_width is the READ — SLOTS packed 64-bit rows
+            # per beat — while the lane downstream sees SLOTS whole 128-bit
+            # quad rows, which is the front's OUT_WIDTH.
+            if front_width < 128:
+                raise ScanCompositionError(f"a wide lane consumes whole quad rows; front_unpack OUT_WIDTH={front_width} emits at most one")
+            slots = front_width // 128
+            if data_width != slots * 64:
+                raise ScanCompositionError(
+                    f"a packed wide feed reads SLOTS packed 64-bit rows per beat; at SLOTS={slots} that is {slots * 64} bits, "
+                    f"not data_width={data_width} (set data_width = SLOTS x 64)"
+                )
+        elif data_width != 64:
             raise ScanCompositionError(
                 f"a packed front unpacker reads 64-bit packed rows; data_width={data_width} (wide packed reads) is a follow-up — "
                 "drop the front_unpack to feed quad rows at data_width, or keep data_width=64"
