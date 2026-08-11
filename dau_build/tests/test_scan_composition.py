@@ -1222,3 +1222,35 @@ def test_the_wide_address_registers_sit_where_dau_core_says() -> None:
     assert regs.lane_output_address_high == int(registers.NocLaneRegisterOffset.OUTPUT_ADDRESS_HIGH)
     # and the lane high register stays inside the lane stride
     assert regs.lane_output_address_high < regs.lane_stride
+
+
+def test_a_wide_lane_behind_a_packed_front_reads_the_UNPACKED_stream() -> None:
+    """The lane must consume the unpacker's output, not the reader's.
+
+    Validation allowing the pair is not the same as wiring it. The generator
+    fed every wide lane from ``scan_*`` at ``data_width``, which behind a
+    packed front is the PACKED read -- half the width, and packed rows where
+    the lane expects quad rows. The emitted Verilog looked entirely
+    reasonable; the tiles carried the right SLOTS and the nets were simply
+    the wrong width and the wrong source. The unpacker also drives
+    ``scan_ready``, so the lane driving it as well was a second driver.
+    """
+    base = _wide_lane_composition().model_dump()
+    slots = base["data_width"] // 128
+    composition = ScanComposition.model_validate(
+        dict(
+            base,
+            data_width=slots * 64,
+            front_unpack=TileInstance(
+                module="dau_int32_row_unpack",
+                config=dict(_FRONT_UNPACK_CONFIG),
+                params={"OUT_WIDTH": slots * 128},
+            ),
+        )
+    )
+    sv = generate_scan_composition_top_sv(composition, platform_id="DPV2")
+    assert f"wire [{slots * 128 - 1}:0] feed_data;" in sv
+    assert f"wire [{slots * 128 - 1}:0] filt_out_data_0;" in sv, "the lane net must be the UNPACKED width"
+    assert "assign filt_out_data_0 = feed_data;" in sv, "the lane must read the unpacker, not the reader"
+    assert "assign feed_ready = filt_out_ready_0;" in sv
+    assert "assign scan_ready = filt_out_ready_0;" not in sv, "the unpacker already drives scan_ready"

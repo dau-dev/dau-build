@@ -604,16 +604,32 @@ def _tile_param_override_sv(tile: TileInstance) -> str:
     return f" #(\n{binds}\n    )"
 
 
+def _wide_lane_source(composition: ScanComposition) -> tuple[int, str]:
+    """The stream a WIDE lane actually consumes: width, and the signal prefix.
+
+    Straight off the reader that is ``scan_*`` at ``data_width``. Behind a
+    packed front unpacker it is ``feed_*`` at the unpacker's OUT_WIDTH --
+    data_width there is the PACKED read and is half as wide, so wiring the
+    lane to scan_* would feed it packed rows as though they were quad rows.
+    The unpacker also already drives ``scan_ready``, so a lane driving it too
+    would be a second driver on the same net.
+    """
+    if composition.front_unpack is not None:
+        return _front_stream_width(composition), "feed"
+    return composition.data_width, "scan"
+
+
 def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk") -> str:
     """The lane front for lane ``i``: tap the shared partitioner's per-lane
     stream, tap the broadcast directly (filterless lane), or instantiate the
     lane's partition filter off the broadcast."""
     lane = composition.lanes[i]
     if composition.wide_lane:
-        return f"""    assign filt_out_valid_{i} = scan_valid;
-    assign scan_ready = filt_out_ready_{i};
-    assign filt_out_data_{i} = scan_data;
-    assign filt_out_last_{i} = scan_last;
+        _, src = _wide_lane_source(composition)
+        return f"""    assign filt_out_valid_{i} = {src}_valid;
+    assign {src}_ready = filt_out_ready_{i};
+    assign filt_out_data_{i} = {src}_data;
+    assign filt_out_last_{i} = {src}_last;
     assign filt_status_valid_{i} = 1'b0;
     assign filt_status_ready_{i} = 1'b0;
     assign filt_status_error_{i} = 1'b0;
@@ -824,7 +840,7 @@ def _lane_status_glue_sv(
 def _lane_chain_wire_decls_sv(composition: ScanComposition, i: int) -> str:
     """Per-chain-stage wire declarations for lane ``i`` (empty for a
     chainless lane, keeping the chainless emission byte-identical)."""
-    stream_width = composition.data_width if composition.wide_lane else 64
+    stream_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
     return "".join(
         f"""    wire chain{j}_out_valid_{i};
     wire chain{j}_out_ready_{i};
@@ -843,7 +859,7 @@ def _lane_wire_decls_sv(composition: ScanComposition) -> str:
     """Per-lane internal wire declarations (lane front, chain stages, tile,
     status glue, writer, and the latched count register)."""
     addr_width = composition.addr_width
-    stream_width = composition.data_width if composition.wide_lane else 64
+    stream_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
     return "\n".join(
         f"""    wire filt_out_valid_{i};
     wire filt_out_ready_{i};
