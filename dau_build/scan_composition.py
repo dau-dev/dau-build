@@ -206,8 +206,10 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
             raise ScanCompositionError("a wide_lane scan composition needs exactly one lane")
         if composition.partitioner is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a shared partitioner")
-        if composition.front_unpack is not None:
-            raise ScanCompositionError("a wide_lane scan composition cannot carry a front_unpack")
+        # a PACKED wide lane is the point of the wide unpacker: the front
+        # widens SLOTS packed 64-bit rows into the SLOTS quad rows the lane
+        # consumes, so the lane sees the front's OUT_WIDTH while the reader
+        # moves half the bytes. The width coherence is checked below.
         if composition.front_gearbox is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a front_gearbox")
         if composition.lanes[0].partition is not None:
@@ -258,11 +260,22 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     else:
         fanout_width = composition.partitioner.params.get("IN_WIDTH", 64) if composition.partitioner is not None else 64
     if composition.front_unpack is not None:
-        # the packed path: OUT_WIDTH 64/128 is proven; a wider packed reader
-        # (data_width > 64) driving a 256/512 unpacker is a separate follow-up
-        if front_width not in (64, 128):
-            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64 or 128, got {front_width}")
-        if data_width != 64:
+        if front_width not in (64, 128, 256, 512, 1024):
+            raise ScanCompositionError(f"front_unpack OUT_WIDTH must be 64/128/256/512/1024, got {front_width}")
+        if composition.wide_lane:
+            # PACKED WIDE FEED: two different widths, and conflating them is
+            # the hazard. data_width is the READ — SLOTS packed 64-bit rows
+            # per beat — while the lane downstream sees SLOTS whole 128-bit
+            # quad rows, which is the front's OUT_WIDTH.
+            if front_width < 128:
+                raise ScanCompositionError(f"a wide lane consumes whole quad rows; front_unpack OUT_WIDTH={front_width} emits at most one")
+            slots = front_width // 128
+            if data_width != slots * 64:
+                raise ScanCompositionError(
+                    f"a packed wide feed reads SLOTS packed 64-bit rows per beat; at SLOTS={slots} that is {slots * 64} bits, "
+                    f"not data_width={data_width} (set data_width = SLOTS x 64)"
+                )
+        elif data_width != 64:
             raise ScanCompositionError(
                 f"a packed front unpacker reads 64-bit packed rows; data_width={data_width} (wide packed reads) is a follow-up — "
                 "drop the front_unpack to feed quad rows at data_width, or keep data_width=64"
@@ -591,16 +604,32 @@ def _tile_param_override_sv(tile: TileInstance) -> str:
     return f" #(\n{binds}\n    )"
 
 
+def _wide_lane_source(composition: ScanComposition) -> tuple[int, str]:
+    """The stream a WIDE lane actually consumes: width, and the signal prefix.
+
+    Straight off the reader that is ``scan_*`` at ``data_width``. Behind a
+    packed front unpacker it is ``feed_*`` at the unpacker's OUT_WIDTH --
+    data_width there is the PACKED read and is half as wide, so wiring the
+    lane to scan_* would feed it packed rows as though they were quad rows.
+    The unpacker also already drives ``scan_ready``, so a lane driving it too
+    would be a second driver on the same net.
+    """
+    if composition.front_unpack is not None:
+        return _front_stream_width(composition), "feed"
+    return composition.data_width, "scan"
+
+
 def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk") -> str:
     """The lane front for lane ``i``: tap the shared partitioner's per-lane
     stream, tap the broadcast directly (filterless lane), or instantiate the
     lane's partition filter off the broadcast."""
     lane = composition.lanes[i]
     if composition.wide_lane:
-        return f"""    assign filt_out_valid_{i} = scan_valid;
-    assign scan_ready = filt_out_ready_{i};
-    assign filt_out_data_{i} = scan_data;
-    assign filt_out_last_{i} = scan_last;
+        _, src = _wide_lane_source(composition)
+        return f"""    assign filt_out_valid_{i} = {src}_valid;
+    assign {src}_ready = filt_out_ready_{i};
+    assign filt_out_data_{i} = {src}_data;
+    assign filt_out_last_{i} = {src}_last;
     assign filt_status_valid_{i} = 1'b0;
     assign filt_status_ready_{i} = 1'b0;
     assign filt_status_error_{i} = 1'b0;
@@ -811,7 +840,7 @@ def _lane_status_glue_sv(
 def _lane_chain_wire_decls_sv(composition: ScanComposition, i: int) -> str:
     """Per-chain-stage wire declarations for lane ``i`` (empty for a
     chainless lane, keeping the chainless emission byte-identical)."""
-    stream_width = composition.data_width if composition.wide_lane else 64
+    stream_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
     return "".join(
         f"""    wire chain{j}_out_valid_{i};
     wire chain{j}_out_ready_{i};
@@ -830,7 +859,7 @@ def _lane_wire_decls_sv(composition: ScanComposition) -> str:
     """Per-lane internal wire declarations (lane front, chain stages, tile,
     status glue, writer, and the latched count register)."""
     addr_width = composition.addr_width
-    stream_width = composition.data_width if composition.wide_lane else 64
+    stream_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
     return "\n".join(
         f"""    wire filt_out_valid_{i};
     wire filt_out_ready_{i};
