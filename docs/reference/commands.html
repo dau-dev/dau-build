@@ -339,7 +339,7 @@ Vivado engine:</p>
 <p>The Hydra search path is active, so config groups registered by other installed
 packages (through their own <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point) compose uniformly
 alongside the packaged ones — no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay needed. For example,
-with the private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=dpv1-shell</span> <span class="pre">design=designs/bar-noc</span></code> resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree. A
+with the private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span></code> resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree. A
 <code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code> overlay adds ad-hoc task configs (and new <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models
 from any importable package) the same way. See
 <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>.</p>

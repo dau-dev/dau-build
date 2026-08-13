@@ -325,8 +325,8 @@ without touching dau-build.</p>
 <p>The mechanism is honored by the lerna search-path bridge (<code class="docutils literal notranslate"><span class="pre">lerna</span></code> on PyPI); the
 entry point is inert without it, so a package that relies on cross-package
 composition depends on <code class="docutils literal notranslate"><span class="pre">lerna</span></code> directly. The private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package is the working
-example: it registers <code class="docutils literal notranslate"><span class="pre">pkg:dau.config</span></code>, which adds <code class="docutils literal notranslate"><span class="pre">task=dpv1-shell</span></code>, and with
-<code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=dpv1-shell</span></code> resolves that task with no
+example: it registers <code class="docutils literal notranslate"><span class="pre">pkg:dau.config</span></code>, which adds <code class="docutils literal notranslate"><span class="pre">task=shell</span></code>, and with
+<code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span></code> resolves that task with no
 <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. dau-build never imports <code class="docutils literal notranslate"><span class="pre">dau</span></code> — extension flows one way,
 through the search path, which keeps the public tool free of private
 dependencies. See <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> for how to

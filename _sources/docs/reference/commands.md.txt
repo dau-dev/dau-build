@@ -71,7 +71,7 @@ dau-build step=steps/validate model.spec_path=examples/identity/dau-build.yaml
 The Hydra search path is active, so config groups registered by other installed
 packages (through their own `hydra.lernaplugins` entry point) compose uniformly
 alongside the packaged ones — no `--config-dir` overlay needed. For example,
-with the private `dau` package installed, `dau-build task=dpv1-shell
+with the private `dau` package installed, `dau-build task=shell
 design=designs/bar-noc` resolves a task defined in `dau`'s config tree. A
 `--config-dir DIR` overlay adds ad-hoc task configs (and new `_target_` models
 from any importable package) the same way. See
