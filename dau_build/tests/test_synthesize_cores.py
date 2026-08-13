@@ -242,3 +242,39 @@ def test_dau_build_never_imports_a_private_core_package() -> None:
                 if root in {"dau_core", "dau_driver", "dau_polars", "dau"}:
                     offenders.append(f"{path.relative_to(package_root)}:{node.lineno} imports {name}")
     assert not offenders, "public package imports a private one:\n" + "\n".join(offenders)
+
+
+def test_a_missing_searchpath_plugin_names_itself(monkeypatch) -> None:
+    """`+group=option` does NOT fail when the group is absent -- hydra
+    assigns the literal string "cores" to a new key. The resulting empty
+    registry then failed with a KeyError on the group name, which reads as a
+    composition bug: it sent one investigation into ccflow's release notes
+    when the actual cause was that the 'lerna' searchpath plugin was not
+    installed on that host, so no provider's config tree was ever visible.
+    """
+    from types import SimpleNamespace
+
+    from ccflow import ModelRegistry
+
+    import dau_build.synthesize_cores as module
+
+    monkeypatch.setattr(ModelRegistry, "root", staticmethod(lambda: ModelRegistry(name="empty-root")))
+    monkeypatch.setattr(
+        module,
+        "compose_config",
+        lambda *a, **k: SimpleNamespace(cfg={"dau-core": "cores"}),
+        raising=False,
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "dau_build.config",
+        SimpleNamespace(compose_config=lambda *a, **k: SimpleNamespace(cfg={"dau-core": "cores"})),
+    )
+
+    with pytest.raises(BuildStepError) as caught:
+        module.core_registry()
+    message = str(caught.value)
+    assert "not on the hydra searchpath" in message
+    assert "hydra.lernaplugins" in message
+    assert "hydra_plugins.lerna" in message, "the message must name the plugin whose absence causes this"
+    assert "str" in message, "it should say what it got instead of a group"
