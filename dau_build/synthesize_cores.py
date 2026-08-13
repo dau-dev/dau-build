@@ -69,16 +69,39 @@ def core_registry():
 
     try:
         composed = compose_config([f"+{_REGISTRY_GROUP}=cores"])
+        # `+group=option` does NOT fail when the group is absent from the
+        # searchpath -- hydra simply assigns the literal STRING "cores" to a
+        # new key. Loading that string yields an empty registry and the
+        # failure then surfaces as a KeyError on the group name, which reads
+        # like a composition bug and sent one investigation to the wrong
+        # library entirely. Check the shape and name the real cause.
+        from omegaconf import DictConfig, OmegaConf
+
+        group = composed.cfg.get(_REGISTRY_GROUP)
+        if not isinstance(group, DictConfig):
+            raise BuildStepError(
+                f"the {_REGISTRY_GROUP!r} config group is not on the hydra searchpath: "
+                f"composing it produced {type(group).__name__} {group!r} rather than a group. "
+                "A provider package registers its config tree through the 'hydra.lernaplugins' "
+                "entry point, which is only consumed when the 'lerna' searchpath plugin is "
+                "installed -- check that `import hydra_plugins.lerna` succeeds, then that the "
+                "provider is installed"
+            )
         # load into a DETACHED registry, never the root. Registering the
         # group on the root would make a later full compose by the core
         # package collide on a name this task put there, so whether an
         # application's own composition works would depend on whether it
         # ran a build task first.
-        from omegaconf import OmegaConf
-
         scratch = ModelRegistry(name=f"{_REGISTRY_GROUP}-synthesize-cores")
-        scratch.load_config(OmegaConf.create({_REGISTRY_GROUP: composed.cfg[_REGISTRY_GROUP]}))
-        return scratch.models[_REGISTRY_GROUP]
+        scratch.load_config(OmegaConf.create({_REGISTRY_GROUP: group}))
+        loaded = scratch.models.get(_REGISTRY_GROUP)
+        if loaded is None or not loaded.models:
+            raise BuildStepError(
+                f"the {_REGISTRY_GROUP!r} group composed but loaded no cores; the provider's config tree is present but empty or malformed"
+            )
+        return loaded
+    except BuildStepError:
+        raise
     except Exception as exc:
         raise BuildStepError(
             f"no {_REGISTRY_PREFIX} registry is composed and the {_REGISTRY_GROUP!r} config group "
