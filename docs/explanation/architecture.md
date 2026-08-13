@@ -87,8 +87,8 @@ without touching dau-build.
 The mechanism is honored by the lerna search-path bridge (`lerna` on PyPI); the
 entry point is inert without it, so a package that relies on cross-package
 composition depends on `lerna` directly. The private `dau` package is the working
-example: it registers `pkg:dau.config`, which adds `task=dpv1-shell`, and with
-`dau` installed `dau-build task=dpv1-shell` resolves that task with no
+example: it registers `pkg:dau.config`, which adds `task=shell`, and with
+`dau` installed `dau-build task=shell` resolves that task with no
 `--config-dir` overlay. dau-build never imports `dau` — extension flows one way,
 through the search path, which keeps the public tool free of private
 dependencies. See [Extending dau-build](../how-to/extend-dau-build.md) for how to

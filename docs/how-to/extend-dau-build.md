@@ -66,8 +66,8 @@ A task is a config file plus the `ccflow.CallableModel` it targets.
    dau-build task=tasks/<category>/<name> model.some_field=value
    ```
 
-The private `dau` package does exactly this to add `task=dpv1-shell`: with `dau`
-installed, `dau-build task=dpv1-shell design=designs/bar-noc model.output_root=...`
+The private `dau` package does exactly this to add `task=shell`: with `dau`
+installed, `dau-build task=shell design=designs/bar-noc model.output_root=...`
 resolves a task defined entirely in `dau`, with no `--config-dir` overlay.
 
 ## Add a board or platform
