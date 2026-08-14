@@ -1311,18 +1311,21 @@ def test_a_handle_table_replaces_the_raw_job_address() -> None:
     assert "read_address(input_address)" not in text
 
 
-def test_the_handle_aperture_sits_between_the_job_and_lane_blocks() -> None:
-    """Adding the table must not move an offset a host already decodes, so
-    it lands in the gap the contract leaves between the job registers and
-    the lane block."""
+def test_the_handle_aperture_sits_between_the_capability_and_lane_blocks() -> None:
+    """Adding the table must not move an offset a host already decodes, so it
+    lands above the capability block (which ends at 0x0D0) and below the lane
+    block at 0x100. It stays clear of the 0x090-0x0A0 gap, which a static
+    composed-pipeline shell already spends on its filter/map configuration."""
     text = generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1")
-    assert "localparam [11:0] ADDR_HANDLE_INDEX = 12'h090;" in text
-    assert "localparam [11:0] ADDR_HANDLE_BASE_LOW = 12'h094;" in text
-    assert "localparam [11:0] ADDR_HANDLE_LENGTH = 12'h09C;" in text
-    assert "localparam [11:0] ADDR_HANDLE_GENERATION = 12'h0A0;" in text
-    assert "localparam [11:0] ADDR_HANDLE_CONTROL = 12'h0A4;" in text
-    assert "localparam [11:0] ADDR_JOB_HANDLE_ID = 12'h0A8;" in text
-    assert "localparam [11:0] ADDR_JOB_HANDLE_GENERATION = 12'h0AC;" in text
+    assert "localparam [11:0] ADDR_HANDLE_INDEX = 12'h0D4;" in text
+    assert "localparam [11:0] ADDR_HANDLE_BASE_LOW = 12'h0D8;" in text
+    assert "localparam [11:0] ADDR_HANDLE_LENGTH = 12'h0E0;" in text
+    assert "localparam [11:0] ADDR_HANDLE_GENERATION = 12'h0E4;" in text
+    assert "localparam [11:0] ADDR_HANDLE_CONTROL = 12'h0E8;" in text
+    assert "localparam [11:0] ADDR_JOB_HANDLE_ID = 12'h0EC;" in text
+    assert "localparam [11:0] ADDR_JOB_HANDLE_GENERATION = 12'h0F0;" in text
+    # nothing the pipeline shell decodes is in the aperture
+    assert "12'h090" not in text
     # the job and lane blocks are exactly where they were
     assert "localparam [11:0] ADDR_INPUT_ADDRESS_LOW = 12'h058;" in text
     assert "localparam [11:0] ADDR_LANE0_OUTPUT_ADDRESS = 12'h100;" in text
@@ -1334,7 +1337,7 @@ def test_a_wide_address_reaches_the_handle_table_high_half() -> None:
     4 GiB -- the same trap the job address already had."""
     composition = _handle_table_composition().model_copy(update={"addr_width": 64})
     text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
-    assert "localparam [11:0] ADDR_HANDLE_BASE_HIGH = 12'h098;" in text
+    assert "localparam [11:0] ADDR_HANDLE_BASE_HIGH = 12'h0DC;" in text
     assert "ADDR_HANDLE_BASE_LOW: handle_base[31:0] <= s_axi_wdata;" in text
     assert "ADDR_HANDLE_BASE_HIGH: handle_base[63:32] <= s_axi_wdata[31:0];" in text
     assert "ADDR_HANDLE_BASE_HIGH: s_axi_rdata <= handle_base[63:32];" in text
