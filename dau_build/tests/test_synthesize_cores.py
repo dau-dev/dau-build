@@ -55,6 +55,50 @@ def test_parameter_override_changes_generic(tmp_path: Path) -> None:
     assert "-generic K=32" in tcl
 
 
+def _has_element_types() -> bool:
+    """Whether the installed core registry declares element types anywhere."""
+    from dau_build.synthesize_cores import core_registry
+
+    return any(
+        getattr(spec, "element_type", False) for model in core_registry().models.values() for spec in getattr(model, "parameters", {}).values()
+    )
+
+
+# transition guard: valid once a core registry declaring element types is
+# installed; until then no parameter can carry a spelling and there is
+# nothing to exercise
+requires_element_types = pytest.mark.skipif(
+    not _has_element_types(),
+    reason="installed core registry declares no element-type parameters",
+)
+
+
+@requires_element_types
+def test_a_type_spelling_reaches_the_generic_as_an_integer(tmp_path: Path) -> None:
+    """A spelling is how a type is written; an integer is what vivado
+    elaborates. `-generic FIELD_WIDTH=int32` would fail in synthesis, which
+    is the far end of a 35-minute build."""
+    from dau_build.synthesize_cores import core_registry
+
+    core, parameter = next(
+        (name, parameter)
+        for name, model in core_registry().models.items()
+        for parameter, spec in getattr(model, "parameters", {}).items()
+        if getattr(spec, "element_type", False)
+    )
+    task = _task(tmp_path, cores=(f"/dau-core/{core}",), parameters={core: {parameter: "int32"}})
+    generics = task._generics(task._resolve_core(f"/dau-core/{core}"))
+    assert generics[parameter] == 32, f"a spelling reached the tool unconverted: {generics[parameter]!r}"
+
+
+@requires_element_types
+def test_a_spelling_on_a_plain_size_parameter_is_refused(tmp_path: Path) -> None:
+    """K is a size, not a type. Reading 'int32' as a number there would
+    silently synthesize a 32-deep heap."""
+    with pytest.raises(BuildStepError, match="must be an int"):
+        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": "int32"}})(NullContext())
+
+
 def test_undeclared_parameter_override_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="declares no parameter"):
         _task(tmp_path, parameters={"int32-streaming-top-k": {"DEPTH": 4}})(NullContext())
