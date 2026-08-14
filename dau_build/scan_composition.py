@@ -31,6 +31,8 @@ from ccflow import BaseModel
 from pydantic import ConfigDict
 
 __all__ = (
+    "HANDLE_CONTROL_FREE_BIT",
+    "HANDLE_CONTROL_INSTALL_BIT",
     "HANDLE_FAULT_BAD_ID",
     "HANDLE_FAULT_OUT_OF_BOUNDS",
     "HANDLE_FAULT_STALE",
@@ -52,6 +54,13 @@ __all__ = (
 HANDLE_FAULT_BAD_ID = 0xFD  # the id names no slot of this table
 HANDLE_FAULT_STALE = 0xFC  # the slot is freed, or holds a different generation
 HANDLE_FAULT_OUT_OF_BOUNDS = 0xFB  # the job asks for more bytes than the grant
+
+# Which bit of the HANDLE_CONTROL write commits the staged entry, and which
+# frees the slot. Named because the host writes these from the other side of
+# the aperture, and a bit position that lives only inside a Verilog string
+# literal is a number two codebases have to agree on by memory.
+HANDLE_CONTROL_INSTALL_BIT = 0
+HANDLE_CONTROL_FREE_BIT = 1
 
 # The table is flops (see generate_shell_handle_table_v); past a few hundred
 # entries that stops being the right shape, and a capacity that large is far
@@ -1929,8 +1938,8 @@ def generate_scan_composition_top_sv(
 {handle_base_write}                    ADDR_HANDLE_LENGTH: handle_length <= s_axi_wdata;
                     ADDR_HANDLE_GENERATION: handle_generation <= s_axi_wdata;
                     ADDR_HANDLE_CONTROL: begin
-                        handle_install <= s_axi_wdata[0];
-                        handle_free <= s_axi_wdata[1];
+                        handle_install <= s_axi_wdata[{HANDLE_CONTROL_INSTALL_BIT}];
+                        handle_free <= s_axi_wdata[{HANDLE_CONTROL_FREE_BIT}];
                     end
                     ADDR_JOB_HANDLE_ID: job_handle_id <= s_axi_wdata;
                     ADDR_JOB_HANDLE_GENERATION: job_handle_generation <= s_axi_wdata;
