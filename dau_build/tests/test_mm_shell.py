@@ -473,3 +473,39 @@ def test_a_flash_booting_platform_emits_its_spi_mcs() -> None:
     # a board that does NOT self-configure from flash gains nothing, and its
     # build must stay byte-identical to what it emitted before
     assert _spi_cfgmem_tcl(probe_platform().model_copy(update={"spi_boot_buswidth": None})) == ""
+
+
+def test_a_header_beside_a_source_is_added_to_the_project(tmp_path: Path) -> None:
+    """A tile that includes a header needs that header IN the project.
+
+    Vivado does not accept an include path alone here: it refuses with
+    "Given include File ... needs to be addded to the project in order to
+    use it as an RTL module" and the block design dies at create_bd_cell.
+    That failure only appears in a real Vivado run, which is the far end of
+    a 35-minute build, so it is pinned here instead.
+
+    Headers are not cores and never appear in `hdl_sources`, so they are
+    collected from the directories the sources come from -- the same rule
+    the OOC synthesis and the verilator benches follow.
+    """
+    tile = tmp_path / "stream_tile.sv"
+    tile.write_text('`include "types.svh"\nmodule stream_tile; endmodule\n')
+    header = tmp_path / "types.svh"
+    header.write_text("`define DAU_TYPE_INT32 32\n")
+
+    request = MmJobShellRequest(
+        platform=_test_platform(),
+        output_root=tmp_path / "shell",
+        hdl_sources=(tile,),
+        generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
+        top_module="my_mm_top",
+    )
+    write_mm_job_shell_artifacts(request)
+    tcl = (request.output_root / "build_mm_job.tcl").read_text()
+
+    assert header.as_posix() in tcl, "the header was never added to the project"
+    assert f'set_property file_type "Verilog Header" [get_files "{header.as_posix()}"]' in tcl
+    # global include is what makes it visible to every source in the fileset
+    assert f'set_property is_global_include true [get_files "{header.as_posix()}"]' in tcl
+    # and it must NOT be typed as a SystemVerilog module
+    assert f'set_property file_type SystemVerilog [get_files "{header.as_posix()}"]' not in tcl
