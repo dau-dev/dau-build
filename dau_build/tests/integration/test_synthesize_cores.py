@@ -24,7 +24,12 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     assert "status=handoff-written" in result.message
     tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
     assert "read_verilog -sv" in tcl and tcl.index("read_verilog") < tcl.index("synth_design")
-    assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context -generic K=8" in tcl
+    assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context" in tcl
+    assert "-generic K=8" in tcl
+    # a tile that includes a header beside it must synthesize; the flag is
+    # harmless when there is no include and removes a wall that would only
+    # ever appear on a remote build
+    assert "-include_dirs [list {" in tcl and "dau_core/hdl}]" in tcl
     # the clock constrains SYNTHESIS: the xdc reads before synth_design
     assert "read_xdc -mode out_of_context" in tcl and tcl.index("read_xdc") < tcl.index("synth_design")
     xdc = (tmp_path / "dau_int32_streaming_top_k.ooc.xdc").read_text()
@@ -48,6 +53,50 @@ def test_parameter_override_changes_generic(tmp_path: Path) -> None:
     _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 32}})(NullContext())
     tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
     assert "-generic K=32" in tcl
+
+
+def _has_element_types() -> bool:
+    """Whether the installed core registry declares element types anywhere."""
+    from dau_build.synthesize_cores import core_registry
+
+    return any(
+        getattr(spec, "element_type", False) for model in core_registry().models.values() for spec in getattr(model, "parameters", {}).values()
+    )
+
+
+# transition guard: valid once a core registry declaring element types is
+# installed; until then no parameter can carry a spelling and there is
+# nothing to exercise
+requires_element_types = pytest.mark.skipif(
+    not _has_element_types(),
+    reason="installed core registry declares no element-type parameters",
+)
+
+
+@requires_element_types
+def test_a_type_spelling_reaches_the_generic_as_an_integer(tmp_path: Path) -> None:
+    """A spelling is how a type is written; an integer is what vivado
+    elaborates. `-generic FIELD_WIDTH=int32` would fail in synthesis, which
+    is the far end of a 35-minute build."""
+    from dau_build.synthesize_cores import core_registry
+
+    core, parameter = next(
+        (name, parameter)
+        for name, model in core_registry().models.items()
+        for parameter, spec in getattr(model, "parameters", {}).items()
+        if getattr(spec, "element_type", False)
+    )
+    task = _task(tmp_path, cores=(f"/dau-core/{core}",), parameters={core: {parameter: "int32"}})
+    generics = task._generics(task._resolve_core(f"/dau-core/{core}"))
+    assert generics[parameter] == 32, f"a spelling reached the tool unconverted: {generics[parameter]!r}"
+
+
+@requires_element_types
+def test_a_spelling_on_a_plain_size_parameter_is_refused(tmp_path: Path) -> None:
+    """K is a size, not a type. Reading 'int32' as a number there would
+    silently synthesize a 32-deep heap."""
+    with pytest.raises(BuildStepError, match="must be an int"):
+        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": "int32"}})(NullContext())
 
 
 def test_undeclared_parameter_override_is_rejected(tmp_path: Path) -> None:

@@ -142,8 +142,11 @@ class SynthesizeCoresTask(BuildCallableModel):
     part: str | None = None
     clock_period_ns: float = 8.0
     # per-core `-generic` overrides, keyed by core name then parameter name;
-    # an override of a parameter the core does not declare is rejected
-    parameters: Mapping[str, Mapping[str, int]] = {}
+    # an override of a parameter the core does not declare is rejected.
+    # A value may be an int or a type spelling ("int32", "q16.16") for the
+    # parameters a core declares as element types -- the registry decides
+    # which, so this annotation must not pre-empt it by demanding an int.
+    parameters: Mapping[str, Mapping[str, int | str]] = {}
     # per-core clock port when it is not the tile contract's `clk`
     # (identity-axil's s_axi_aclk); empty string = combinational, no clock
     # constraint and no timing report
@@ -216,8 +219,16 @@ class SynthesizeCoresTask(BuildCallableModel):
         if unknown:
             raise BuildStepError(f"core {definition.name!r} declares no parameter {sorted(unknown)}; declared: {sorted(values) or 'none'}")
         for name, value in overrides.items():
-            _validate_override(definition.name, name, value, definition.parameters[name])
-        values.update(overrides)
+            spec = definition.parameters[name]
+            _validate_override(definition.name, name, value, spec)
+            # a tool takes the integer, never the spelling: `-generic
+            # FIELD_WIDTH=int32` is not something vivado can elaborate.
+            # Transition gate: only a parameter declared an element type can
+            # carry a spelling, and a core registry predating element types
+            # declares none, so this asks the parameter rather than the
+            # package version. It stops being a gate when the field is
+            # everywhere, at which case the getattr can simply go.
+            values[name] = spec.normalize(value) if getattr(spec, "element_type", False) else value
         return values
 
     def _sources_for(self, definition) -> tuple[Path, ...]:
@@ -258,7 +269,13 @@ class SynthesizeCoresTask(BuildCallableModel):
             xdc = root / f"{definition.module}.ooc.xdc"
             xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports {clock_port}]\n")
             lines.append(f"read_xdc -mode out_of_context {_tcl_path(xdc)}")
-        lines.append(f"synth_design -top {definition.module} -part {part} -mode out_of_context{generic_args}")
+        # every source directory is an include path. Vivado is expected to
+        # resolve a header sitting beside its includer, but "expected to" is a
+        # 35-minute remote build away from being found out, and the flag costs
+        # nothing when the include would have resolved anyway. Verilator needs
+        # the same thing said explicitly, so the two toolchains agree here.
+        include_dirs = " ".join(_tcl_path(path) for path in sorted({source.parent for source in sources}))
+        lines.append(f"synth_design -top {definition.module} -part {part} -mode out_of_context -include_dirs [list {include_dirs}]{generic_args}")
         lines.append(f"report_utilization -file {_tcl_path(util_rpt)}")
         if clock_port:
             timing_rpt = root / f"{definition.module}.timing.rpt"
@@ -393,28 +410,22 @@ def _tcl_path(path: Path) -> str:
     return "{" + str(path) + "}"
 
 
-def _validate_override(core_name: str, name: str, value: int, spec) -> None:
-    """Enforce the registry's declared parameter constraints on an override —
-    the same rules dau-core's composition validates (ParameterSpec: choices,
-    positive, minimum/maximum, multiple_of, power_of_two) so an invalid value
-    is rejected here, never as an HDL elaboration failure."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive int, got {value!r}")
-    if spec.choices is not None:
-        if value not in spec.choices:
-            allowed = ", ".join(str(choice) for choice in spec.choices)
-            raise BuildStepError(f"core {core_name!r} parameter {name!r} must be one of {allowed}, got {value!r}")
-        return  # an enumerated choice set is the whole constraint
-    if value <= 0:
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive int, got {value!r}")
-    if value < spec.minimum:
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be >= {spec.minimum}, got {value!r}")
-    if spec.maximum is not None and value > spec.maximum:
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be <= {spec.maximum}, got {value!r}")
-    if value % spec.multiple_of != 0:
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a positive multiple of {spec.multiple_of}, got {value!r}")
-    if spec.power_of_two and value & (value - 1):
-        raise BuildStepError(f"core {core_name!r} parameter {name!r} must be a power of two, got {value!r}")
+def _validate_override(core_name: str, name: str, value, spec) -> None:
+    """Enforce the registry's declared constraints by ASKING the registry.
+
+    This used to restate the rules -- choices, positive, minimum/maximum,
+    multiple_of, power_of_two -- which made dau-build a second, silently
+    diverging authority on what a parameter accepts. It diverged: when
+    parameters gained element types, a spelling like ``int32`` was a valid
+    value everywhere except here, where the copy still demanded an int, so
+    the type vocabulary worked from a config file and not from the CLI.
+
+    ``ParameterSpec.violation`` is the one implementation; a provider that
+    declares parameters exposes it.
+    """
+    violation = spec.violation(value)
+    if violation is not None:
+        raise BuildStepError(f"core {core_name!r} parameter {name!r} {violation}")
 
 
 def _util_value(report: str, label: str) -> int:

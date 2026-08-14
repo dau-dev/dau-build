@@ -95,7 +95,8 @@ replace = 'version = "{new_version}"'
 
 [tool.coverage.run]
 omit = [
-    "dau_build/tests/integration/",
+    # a bare directory path matches no file; coverage omit takes globs
+    "dau_build/tests/integration/*",
 ]
 
 [tool.coverage.report]
