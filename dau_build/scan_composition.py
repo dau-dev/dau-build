@@ -11,6 +11,15 @@ reject SystemVerilog tops), so it carries no registry and no private
 imports: callers describe their composition as a ``ScanComposition`` and
 optionally hand over the tiles' HDL sources for slang-backed interface
 validation (``dau_build.sv_contract``) before emission.
+
+A composition may also declare a ``handle_table_capacity``, which replaces
+the job's raw input address with a generation-checked handle. That is a
+SAFETY layer, not a capability: a resident dataset already runs on raw
+addresses, and the table changes nothing about how fast it runs. What it
+changes is what happens after a free — a raw address still reads, it just
+reads whoever holds that space now, while a handle whose generation has
+moved on is refused with a defined error. The default is no table, and a
+composition without one emits byte-identically to before the table existed.
 """
 
 from __future__ import annotations
@@ -22,6 +31,10 @@ from ccflow import BaseModel
 from pydantic import ConfigDict
 
 __all__ = (
+    "HANDLE_FAULT_BAD_ID",
+    "HANDLE_FAULT_OUT_OF_BOUNDS",
+    "HANDLE_FAULT_STALE",
+    "MAX_HANDLE_TABLE_CAPACITY",
     "LaneTile",
     "RegisterLayout",
     "ScanComposition",
@@ -29,7 +42,21 @@ __all__ = (
     "TileInstance",
     "generate_scan_composition_sim_sv",
     "generate_scan_composition_top_sv",
+    "generate_shell_handle_table_v",
+    "handle_table_index_width",
 )
+
+# Shell-level job error codes for a refused handle. They sit at the top of the
+# 8-bit space beside the shell's own 0xFE (input length off the row grid) so a
+# tile's codes -- allocated from the bottom -- can never collide with them.
+HANDLE_FAULT_BAD_ID = 0xFD  # the id names no slot of this table
+HANDLE_FAULT_STALE = 0xFC  # the slot is freed, or holds a different generation
+HANDLE_FAULT_OUT_OF_BOUNDS = 0xFB  # the job asks for more bytes than the grant
+
+# The table is flops (see generate_shell_handle_table_v); past a few hundred
+# entries that stops being the right shape, and a capacity that large is far
+# more likely a units mistake than an intent.
+MAX_HANDLE_TABLE_CAPACITY = 256
 
 
 class ScanCompositionError(ValueError):
@@ -101,6 +128,17 @@ class RegisterLayout(BaseModel):
     input_address_low: int = 0x058
     input_address_high: int = 0x05C
     input_length_low: int = 0x060
+    # the handle-table aperture, emitted only by a composition that declares a
+    # capacity. It sits between the job block and the lane block, in the gap
+    # the contract already leaves free, so adding it moves no existing offset.
+    handle_index: int = 0x090
+    handle_base_low: int = 0x094
+    handle_base_high: int = 0x098
+    handle_length: int = 0x09C
+    handle_generation: int = 0x0A0
+    handle_control: int = 0x0A4
+    job_handle_id: int = 0x0A8
+    job_handle_generation: int = 0x0AC
     lane_base: int = 0x100
     lane_stride: int = 0x20
     lane_output_address_low: int = 0x00
@@ -176,6 +214,16 @@ class ScanComposition(BaseModel):
     # computed like the bitmaps -- the walker never guesses it -- and zero
     # means "not stamped", which is what an unstamped shell reads back as.
     build_id: int = 0
+    # THE HANDLE TABLE, opt-in. Zero (the default) keeps the job's input
+    # address the raw register a host writes -- the shape residency runs on
+    # today, emitted byte-identically. A positive capacity replaces that raw
+    # address with a generation-checked identity: the host allocator programs
+    # this many slots over the register aperture, a job names one, and the
+    # shell resolves it or refuses the job. The value is the number of
+    # concurrently live allocations the personality must hold, and it is a
+    # PLANNED number (design principle 1: capacity is refused, not discovered)
+    # -- a job naming a slot the table does not have is a fault, not a resize.
+    handle_table_capacity: int = 0
     registers: RegisterLayout = RegisterLayout()
 
     def model_post_init(self, _context) -> None:
@@ -201,6 +249,10 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     widths disagree."""
     if not composition.lanes:
         raise ScanCompositionError("a scan composition needs at least one lane")
+    if not 0 <= composition.handle_table_capacity <= MAX_HANDLE_TABLE_CAPACITY:
+        raise ScanCompositionError(
+            f"handle_table_capacity must be between 0 (no table) and {MAX_HANDLE_TABLE_CAPACITY}, got {composition.handle_table_capacity}"
+        )
     if composition.wide_lane:
         if len(composition.lanes) != 1:
             raise ScanCompositionError("a wide_lane scan composition needs exactly one lane")
@@ -1133,6 +1185,280 @@ def _uses_load_phase(composition: ScanComposition) -> bool:
     return any(value == "load_phase" for tile in tiles for value in tile.config.values())
 
 
+def handle_table_index_width(capacity: int) -> int:
+    """Bits needed to index ``capacity`` handle slots, minimum one — a
+    one-entry table still needs a one-bit index, and a zero-width part select
+    is not representable."""
+    return max(1, (capacity - 1).bit_length())
+
+
+_DEFAULT_HANDLE_TABLE_GENERATED_BY = "dau_build.scan_composition.generate_shell_handle_table_v"
+
+
+def generate_shell_handle_table_v(*, capacity: int, addr_width: int = 32, generated_by: str = _DEFAULT_HANDLE_TABLE_GENERATED_BY) -> str:
+    """The shell's handle table as a standalone plain-Verilog module.
+
+    ``capacity`` generation-checked identities, each naming a granted
+    ``[base, base + length)`` region of a shared storage tier. The host
+    allocator programs entries; a job names a handle instead of an address,
+    and the table answers with the base or with a fault.
+
+    STORAGE IS FLOPS, NOT BRAM, and deliberately. An entry is base + length +
+    generation + a live bit -- about ``addr_width + 65`` bits -- and the
+    useful capacities are single digits to low tens, so a whole table is a
+    few hundred flops. One BRAM36 is spent whole however little of it is
+    used, and its output register would put a second cycle in a path that
+    already resolves in one. The resolve read IS registered, so the port list
+    maps onto a block RAM unchanged if a capacity ever earns one; that is the
+    only thing that would have to change.
+    """
+    if not 0 < capacity <= MAX_HANDLE_TABLE_CAPACITY:
+        raise ScanCompositionError(f"handle table capacity must be between 1 and {MAX_HANDLE_TABLE_CAPACITY}, got {capacity}")
+    if addr_width < 32:
+        raise ScanCompositionError(f"handle table addr_width must be at least 32, got {addr_width}")
+    index_width = handle_table_index_width(capacity)
+    return f"""// GENERATED by {generated_by} — do not edit.
+// The shell handle table: {capacity} generation-checked identities over the
+// platform's shared storage tier. A resident dataset addressed by a RAW
+// address is a silent wrong answer waiting for a free/reallocate -- the old
+// address still reads, it just reads somebody else's bytes now. A handle
+// cannot: the generation moves with the allocation, so the region that used
+// to answer to it faults instead.
+//
+// The host allocator writes this table over the register aperture, and it is
+// the SAME table a future allocator tile would write -- that seam is why the
+// programming port is a port and not a register decode.
+module dau_shell_handle_table #(
+    parameter integer CAPACITY = {capacity},
+    parameter integer INDEX_WIDTH = {index_width},
+    parameter integer ADDR_WIDTH = {addr_width}
+) (
+    input wire clk,
+    input wire rst,
+
+    // programming port: one slot per write, install or free
+    input wire program_install,
+    input wire program_free,
+    input wire [31:0] program_index,
+    input wire [ADDR_WIDTH-1:0] program_base,
+    input wire [31:0] program_length,
+    input wire [31:0] program_generation,
+
+    // resolve port: one request per job start, answered the following cycle
+    input wire resolve_request,
+    input wire [31:0] resolve_id,
+    input wire [31:0] resolve_generation,
+    input wire [31:0] resolve_length,
+    output reg resolve_done,
+    output reg resolve_fault,
+    output reg [7:0] resolve_fault_code,
+    output reg [ADDR_WIDTH-1:0] resolve_base
+);
+    // an integer parameter is SIGNED; comparing a 32-bit id against it
+    // directly makes the comparison's signedness depend on the operands, so
+    // the limit is carried as an explicit unsigned vector instead
+    localparam [31:0] ID_LIMIT = CAPACITY;
+    localparam [7:0] FAULT_BAD_ID = 8'h{HANDLE_FAULT_BAD_ID:02X};
+    localparam [7:0] FAULT_STALE = 8'h{HANDLE_FAULT_STALE:02X};
+    localparam [7:0] FAULT_OUT_OF_BOUNDS = 8'h{HANDLE_FAULT_OUT_OF_BOUNDS:02X};
+
+    reg entry_live [0:CAPACITY-1];
+    reg [ADDR_WIDTH-1:0] entry_base [0:CAPACITY-1];
+    reg [31:0] entry_length [0:CAPACITY-1];
+    reg [31:0] entry_generation [0:CAPACITY-1];
+    integer slot;
+
+    wire program_in_range = program_index < ID_LIMIT;
+    wire resolve_in_range = resolve_id < ID_LIMIT;
+    // MASKED, never raw. At a capacity that is not a power of two an
+    // out-of-range id still fits INDEX_WIDTH and would index past the array;
+    // the range check rejects the request either way, but the mask is what
+    // keeps the array read itself in bounds instead of propagating x through
+    // the resolved base.
+    wire [INDEX_WIDTH-1:0] program_slot = program_in_range ? program_index[INDEX_WIDTH-1:0] : {{INDEX_WIDTH{{1'b0}}}};
+    wire [INDEX_WIDTH-1:0] resolve_slot = resolve_in_range ? resolve_id[INDEX_WIDTH-1:0] : {{INDEX_WIDTH{{1'b0}}}};
+
+    // ONLY the live bits reset. base/length/generation mean nothing until
+    // their slot is live, and resetting them would force the arrays into
+    // flops where the synthesizer would otherwise infer distributed RAM --
+    // the live bit is the one piece of state a refusal depends on.
+    always @(posedge clk) begin
+        if (rst) begin
+            for (slot = 0; slot < CAPACITY; slot = slot + 1) begin
+                entry_live[slot] <= 1'b0;
+            end
+        end else if (program_in_range) begin
+            // FREE OUTRANKS INSTALL. The pair arrives as separate register
+            // writes so a host cannot raise both, but leaving the collision
+            // undefined is exactly how a table starts answering a freed
+            // handle again.
+            if (program_free) begin
+                entry_live[program_slot] <= 1'b0;
+            end else if (program_install) begin
+                entry_live[program_slot] <= 1'b1;
+                entry_base[program_slot] <= program_base;
+                entry_length[program_slot] <= program_length;
+                entry_generation[program_slot] <= program_generation;
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        if (rst) begin
+            resolve_done <= 1'b0;
+            resolve_fault <= 1'b0;
+            resolve_fault_code <= 8'd0;
+            resolve_base <= {{ADDR_WIDTH{{1'b0}}}};
+        end else begin
+            resolve_done <= resolve_request;
+            resolve_base <= entry_base[resolve_slot];
+            if (!resolve_in_range) begin
+                resolve_fault <= 1'b1;
+                resolve_fault_code <= FAULT_BAD_ID;
+            end else if (!entry_live[resolve_slot]) begin
+                // freed, or never allocated. The generation alone cannot say
+                // so, which is why the allocator's liveness is mirrored here
+                // rather than inferred from a counter.
+                resolve_fault <= 1'b1;
+                resolve_fault_code <= FAULT_STALE;
+            end else if (entry_generation[resolve_slot] != resolve_generation) begin
+                // THE POINT OF THE TABLE. The slot was freed and handed out
+                // again, so this caller is naming an allocation that no
+                // longer exists -- and the bytes at that base are somebody
+                // else's.
+                resolve_fault <= 1'b1;
+                resolve_fault_code <= FAULT_STALE;
+            end else if (resolve_length > entry_length[resolve_slot]) begin
+                resolve_fault <= 1'b1;
+                resolve_fault_code <= FAULT_OUT_OF_BOUNDS;
+            end else begin
+                resolve_fault <= 1'b0;
+                resolve_fault_code <= 8'd0;
+            end
+        end
+    end
+endmodule
+"""
+
+
+def _handle_table_state_decls_sv(composition: ScanComposition, *, addr_width: int) -> str:
+    """The top's handle-table state: the programming registers the host
+    writes, the table's resolve outputs, and the per-job resolution result.
+    Empty for a composition with no table, so that emission stays
+    byte-identical."""
+    if not composition.handle_table_capacity:
+        return ""
+    return f"""    reg [31:0] handle_index;
+    reg [{addr_width - 1}:0] handle_base;
+    reg [31:0] handle_length;
+    reg [31:0] handle_generation;
+    reg handle_install;
+    reg handle_free;
+    reg [31:0] job_handle_id;
+    reg [31:0] job_handle_generation;
+    wire handle_resolve_done;
+    wire handle_resolve_fault;
+    wire [7:0] handle_resolve_fault_code;
+    wire [{addr_width - 1}:0] handle_resolve_base;
+    reg handle_pending;
+    reg handle_fail;
+    reg [7:0] handle_fail_code;
+    reg handle_go;
+    reg [{addr_width - 1}:0] handle_resolved_base;
+"""
+
+
+def _handle_table_sim_state_decls_sv(addr_width: int) -> str:
+    """The sim harness's share of the handle-table state: the resolve outputs
+    and the per-job result. The programming registers are PORTS there — the
+    harness has no register aperture to write them from — so only the state
+    the resolution itself owns is declared."""
+    return f"""    wire handle_resolve_done;
+    wire handle_resolve_fault;
+    wire [7:0] handle_resolve_fault_code;
+    wire [{addr_width - 1}:0] handle_resolve_base;
+    reg handle_pending;
+    reg handle_fail;
+    reg [7:0] handle_fail_code;
+    reg handle_go;
+    reg [{addr_width - 1}:0] handle_resolved_base;
+
+"""
+
+
+def _handle_table_block_sv(composition: ScanComposition, *, addr_width: int, clk: str, rst: str, start: str) -> str:
+    """The handle table instance and the job-start resolution handshake.
+
+    The resolve costs one cycle, which is why ``handle_go`` exists: the units
+    start on the cycle the table answers, not on the cycle the host wrote
+    JOB_CONTROL. A fault latches into ``handle_fail`` and the units never
+    start at all — refusing is the whole point, so a refused job must not read
+    a single beat from the address the stale handle used to name."""
+    if not composition.handle_table_capacity:
+        return ""
+    return f"""    dau_shell_handle_table #(
+        .CAPACITY({composition.handle_table_capacity}),
+        .INDEX_WIDTH({handle_table_index_width(composition.handle_table_capacity)}),
+        .ADDR_WIDTH({addr_width})
+    ) handle_table (
+        .clk({clk}),
+        .rst({rst}),
+        .program_install(handle_install),
+        .program_free(handle_free),
+        .program_index(handle_index),
+        .program_base(handle_base),
+        .program_length(handle_length),
+        .program_generation(handle_generation),
+        // an off-grid length already fails as 0xFE, so it never reaches the
+        // table: one job, one refusal reason, decided in one place
+        .resolve_request({start} && length_ok),
+        .resolve_id(job_handle_id),
+        .resolve_generation(job_handle_generation),
+        .resolve_length(input_length_bytes),
+        .resolve_done(handle_resolve_done),
+        .resolve_fault(handle_resolve_fault),
+        .resolve_fault_code(handle_resolve_fault_code),
+        .resolve_base(handle_resolve_base)
+    );
+
+    always @(posedge {clk}) begin
+        if ({rst}) begin
+            handle_pending <= 1'b0;
+            handle_fail <= 1'b0;
+            handle_fail_code <= 8'd0;
+            handle_go <= 1'b0;
+            handle_resolved_base <= {addr_width}'d0;
+        end else begin
+            handle_go <= 1'b0;
+            if ({start}) begin
+                handle_pending <= length_ok;
+                handle_fail <= 1'b0;
+                handle_fail_code <= 8'd0;
+            end else if (handle_pending && handle_resolve_done) begin
+                handle_pending <= 1'b0;
+                handle_fail <= handle_resolve_fault;
+                handle_fail_code <= handle_resolve_fault_code;
+                handle_resolved_base <= handle_resolve_base;
+                handle_go <= !handle_resolve_fault;
+            end
+        end
+    end
+
+"""
+
+
+def _handle_table_error_branch_sv(composition: ScanComposition, *, error: str, error_code: str) -> str:
+    """The refused-handle branch of the job error mux, ranked directly below
+    the length gate: both are pre-start refusals, and neither can coincide
+    with a reader or writer error because the units never ran."""
+    if not composition.handle_table_capacity:
+        return ""
+    return f""" else if (handle_fail) begin
+            {error} = 1'b1;
+            {error_code} = handle_fail_code;
+        end"""
+
+
 def _front_unpack_wire_decls_sv(composition: ScanComposition) -> str:
     """The front unpacker's widened row stream (``feed_*``, driving the
     fan-out input at the composed ``OUT_WIDTH``), its status bundle, and the
@@ -1426,6 +1752,7 @@ def generate_scan_composition_top_sv(
         for i in lanes
     )
     uses_load_phase = _uses_load_phase(composition)
+    handle_table = composition.handle_table_capacity > 0
     lane_reg_decls = "\n".join(f"    reg [{addr_width - 1}:0] lane_output_address_{i};" for i in lanes)
     load_phase_decl = "    reg load_phase;\n" if uses_load_phase else ""
     lane_wire_decls = _lane_wire_decls_sv(composition)
@@ -1464,6 +1791,31 @@ def generate_scan_composition_top_sv(
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
     error_priority = _writer_error_priority_sv(num_lanes, error="job_error", error_code="job_error_code")
+    handle_table_decls = _handle_table_state_decls_sv(composition, addr_width=addr_width)
+    handle_table_block = _handle_table_block_sv(composition, addr_width=addr_width, clk="s_axi_aclk", rst="!s_axi_aresetn", start="job_start")
+    handle_error_branch = _handle_table_error_branch_sv(composition, error="job_error", error_code="job_error_code")
+    handle_table_module = (
+        f"\n{generate_shell_handle_table_v(capacity=composition.handle_table_capacity, addr_width=addr_width)}" if handle_table else ""
+    )
+    # With a table the units start when the RESOLVE answers, not when the host
+    # writes JOB_CONTROL, and the reader's address is the resolved base rather
+    # than a register the host set. Everything else about the job is unchanged;
+    # a table-less composition emits every one of these byte-identically.
+    unit_start_expr = "handle_go" if handle_table else "job_start && length_ok"
+    reader_address = "handle_resolved_base" if handle_table else "input_address"
+    # a resolve in flight is the job being busy — otherwise the one cycle
+    # between JOB_CONTROL and the answer reads back as idle-and-done
+    handle_busy_term = "handle_pending || " if handle_table else ""
+    handle_done_term = "handle_fail || " if handle_table else ""
+    handle_done_gate = "!handle_pending && " if handle_table else ""
+    # the register survives so the map does not shift under a host that decodes
+    # it, but it drives nothing: naming a raw address is the thing the table
+    # exists to take away, so leaving it wired would leave the hole open.
+    input_address_note = (
+        "    // INPUT_ADDRESS is retained for register-map stability and feeds\n    // NOTHING: the job's address is the resolved handle base.\n"
+        if handle_table
+        else ""
+    )
 
     def lane_high_read(i: int) -> str:
         if addr_width <= 32:
@@ -1525,11 +1877,73 @@ def generate_scan_composition_top_sv(
         register_names = register_names + (("INPUT_ADDRESS_HIGH", regs.input_address_high),)
     if uses_load_phase:
         register_names = register_names + (("LOAD_PHASE", regs.load_phase),)
+    if handle_table:
+        register_names = register_names + (
+            ("HANDLE_INDEX", regs.handle_index),
+            ("HANDLE_BASE_LOW", regs.handle_base_low),
+            ("HANDLE_LENGTH", regs.handle_length),
+            ("HANDLE_GENERATION", regs.handle_generation),
+            ("HANDLE_CONTROL", regs.handle_control),
+            ("JOB_HANDLE_ID", regs.job_handle_id),
+            ("JOB_HANDLE_GENERATION", regs.job_handle_generation),
+        )
+        if wide_address:
+            register_names = register_names + (("HANDLE_BASE_HIGH", regs.handle_base_high),)
     localparams = _register_localparams_sv(register_names)
     load_phase_reset = "            load_phase <= 1'b0;\n" if uses_load_phase else ""
     load_phase_write = "                    ADDR_LOAD_PHASE: load_phase <= s_axi_wdata[0];\n" if uses_load_phase else ""
     # leading newline so an unused register leaves the read block byte-identical
     load_phase_read = "\n                    ADDR_LOAD_PHASE: s_axi_rdata <= {31'd0, load_phase};" if uses_load_phase else ""
+    # the handle-table aperture. The programming registers stage one entry and
+    # the CONTROL write commits it (install or free) — a one-cycle pulse, so a
+    # single write can never install twice. JOB_HANDLE_* names the handle the
+    # NEXT job resolves; both reset to zero, and generation zero is one the
+    # allocator never issues (its generations start at one), so a host that
+    # forgets to arm a handle is refused on its first job rather than quietly
+    # reading slot zero.
+    if handle_table:
+        handle_base_write = (
+            f"                    ADDR_HANDLE_BASE_LOW: handle_base[31:0] <= s_axi_wdata;\n"
+            f"                    ADDR_HANDLE_BASE_HIGH: handle_base[{addr_width - 1}:32] <= s_axi_wdata[{addr_width - 33}:0];\n"
+            if wide_address
+            else f"                    ADDR_HANDLE_BASE_LOW: handle_base <= s_axi_wdata[{addr_width - 1}:0];\n"
+        )
+        handle_base_read = f"\n                    ADDR_HANDLE_BASE_HIGH: s_axi_rdata <= handle_base[{addr_width - 1}:32];" if wide_address else ""
+        handle_reset = f"""            handle_index <= 32'd0;
+            handle_base <= {addr_width}'d0;
+            handle_length <= 32'd0;
+            handle_generation <= 32'd0;
+            handle_install <= 1'b0;
+            handle_free <= 1'b0;
+            job_handle_id <= 32'd0;
+            job_handle_generation <= 32'd0;
+"""
+        handle_tick = """            handle_install <= 1'b0;
+            handle_free <= 1'b0;
+"""
+        handle_write_cases = f"""                    ADDR_HANDLE_INDEX: handle_index <= s_axi_wdata;
+{handle_base_write}                    ADDR_HANDLE_LENGTH: handle_length <= s_axi_wdata;
+                    ADDR_HANDLE_GENERATION: handle_generation <= s_axi_wdata;
+                    ADDR_HANDLE_CONTROL: begin
+                        handle_install <= s_axi_wdata[0];
+                        handle_free <= s_axi_wdata[1];
+                    end
+                    ADDR_JOB_HANDLE_ID: job_handle_id <= s_axi_wdata;
+                    ADDR_JOB_HANDLE_GENERATION: job_handle_generation <= s_axi_wdata;
+"""
+        # CONTROL reads back the resolution state rather than the write bits
+        # (which are pulses and would always read zero): a host that sees a
+        # refused job can tell a fault from a job that never started.
+        handle_read_cases = f"""
+                    ADDR_HANDLE_INDEX: s_axi_rdata <= handle_index;
+                    ADDR_HANDLE_BASE_LOW: s_axi_rdata <= handle_base[31:0];{handle_base_read}
+                    ADDR_HANDLE_LENGTH: s_axi_rdata <= handle_length;
+                    ADDR_HANDLE_GENERATION: s_axi_rdata <= handle_generation;
+                    ADDR_HANDLE_CONTROL: s_axi_rdata <= {{30'd0, handle_fail, handle_pending}};
+                    ADDR_JOB_HANDLE_ID: s_axi_rdata <= job_handle_id;
+                    ADDR_JOB_HANDLE_GENERATION: s_axi_rdata <= job_handle_generation;"""
+    else:
+        handle_reset = handle_tick = handle_write_cases = handle_read_cases = ""
     # THE HIGH HALF OF THE JOB ADDRESS. AXI-Lite carries 32 bits per access,
     # so a job master wider than 32 bits needs a second register or its top
     # bits are unreachable — which is exactly why a build could only ever
@@ -1541,12 +1955,12 @@ def generate_scan_composition_top_sv(
             input_length_bytes <= 32'd0;
             job_start <= 1'b0;
             length_fail <= 1'b0;
-{load_phase_reset}{front_stage_error_reset}            prev_done <= 1'b1;
+{load_phase_reset}{handle_reset}{front_stage_error_reset}            prev_done <= 1'b1;
             pipeline_error_reset <= 1'b0;
 {lane_reset_items}
 {lane_count_clear_items.replace("                ", "            ")}
 """,
-        tick_extra=f"""            prev_done <= job_done;
+        tick_extra=f"""{handle_tick}            prev_done <= job_done;
             pipeline_error_reset <= job_done && !prev_done && job_error;
             if (job_start) begin
                 length_fail <= !length_ok;
@@ -1555,10 +1969,10 @@ def generate_scan_composition_top_sv(
 {front_stage_error_latch}{lane_count_latch_items}
 """,
         write_cases_extra=f"""{input_address_low_write}{input_address_high_write}                    ADDR_INPUT_LENGTH_LOW: input_length_bytes <= s_axi_wdata;
-{load_phase_write}{write_case_items}
+{load_phase_write}{handle_write_cases}{write_case_items}
 """,
         read_cases_extra=f"""                    ADDR_INPUT_ADDRESS_LOW: s_axi_rdata <= input_address[31:0];{input_address_high_read}
-                    ADDR_INPUT_LENGTH_LOW: s_axi_rdata <= input_length_bytes;{load_phase_read}
+                    ADDR_INPUT_LENGTH_LOW: s_axi_rdata <= input_length_bytes;{load_phase_read}{handle_read_cases}
                     12'hFC0: s_axi_rdata <= dbg_first_stream_word[31:0];
                     12'hFC4: s_axi_rdata <= dbg_first_stream_word[63:32];
                     12'hFC8: s_axi_rdata <= dbg_first_araddr;
@@ -1599,10 +2013,10 @@ module {module_name} #(
 
 {_axi_lite_decode_wires_sv()}
 
-    reg [{addr_width - 1}:0] input_address;
+{input_address_note}    reg [{addr_width - 1}:0] input_address;
     reg [31:0] input_length_bytes;
     reg job_start;
-{load_phase_decl}{lane_reg_decls}
+{load_phase_decl}{handle_table_decls}{lane_reg_decls}
 
     wire reader_busy;
     wire reader_done;
@@ -1624,10 +2038,10 @@ module {module_name} #(
     // length must not leave the writers waiting on a status
     reg length_fail;
     wire length_ok = (input_length_bytes != 32'd0) && ({length_ok_check});
-    wire unit_start = job_start && length_ok;
+    wire unit_start = {unit_start_expr};
 
-    wire job_busy = reader_busy || {any_writer_busy};
-    wire job_done = length_fail || (reader_done && {all_writers_done});
+    wire job_busy = reader_busy || {handle_busy_term}{any_writer_busy};
+    wire job_done = length_fail || {handle_done_term}({handle_done_gate}reader_done && {all_writers_done});
     reg job_error;
     reg [7:0] job_error_code;
     reg prev_done;
@@ -1640,7 +2054,7 @@ module {module_name} #(
         if (length_fail) begin
             job_error = 1'b1;
             job_error_code = 8'hFE;
-        end else begin
+        end{handle_error_branch} else begin
             if (reader_error) begin
                 job_error = 1'b1;
                 job_error_code = reader_error_code;
@@ -1654,7 +2068,7 @@ module {module_name} #(
 
 {_identity_registers_instance_sv()}
 
-    dau_axi_burst_reader #(
+{handle_table_block}    dau_axi_burst_reader #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats}),
 {reader_data_width_param}        .LENGTH_ALIGN_BITS({length_align_bits})
@@ -1662,7 +2076,7 @@ module {module_name} #(
         .clk(s_axi_aclk),
         .rst(!s_axi_aresetn),
         .start(unit_start),
-        .read_address(input_address),
+        .read_address({reader_address}),
         .read_length_bytes(input_length_bytes),
         .busy(reader_busy),
         .done(reader_done),
@@ -1730,7 +2144,7 @@ module {module_name} #(
 
 {register_process}
 endmodule
-
+{handle_table_module}
 `default_nettype wire
 """
 
@@ -1808,6 +2222,34 @@ def generate_scan_composition_sim_sv(
     length_align_bits = 3 if composition.front_unpack is not None else 4
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
+    # the harness has no register aperture, so the handle table's programming
+    # and job-handle registers surface as testbench-driven ports — the same
+    # treatment LOAD_PHASE already gets
+    handle_table = composition.handle_table_capacity > 0
+    handle_ports = (
+        f"""    input wire handle_install,
+    input wire handle_free,
+    input wire [31:0] handle_index,
+    input wire [{addr_width - 1}:0] handle_base,
+    input wire [31:0] handle_length,
+    input wire [31:0] handle_generation,
+    input wire [31:0] job_handle_id,
+    input wire [31:0] job_handle_generation,
+"""
+        if handle_table
+        else ""
+    )
+    handle_table_decls = _handle_table_sim_state_decls_sv(addr_width) if handle_table else ""
+    handle_table_block = _handle_table_block_sv(composition, addr_width=addr_width, clk="clk", rst="rst", start="start")
+    handle_error_branch = _handle_table_error_branch_sv(composition, error="error", error_code="error_code")
+    handle_table_module = (
+        f"\n{generate_shell_handle_table_v(capacity=composition.handle_table_capacity, addr_width=addr_width)}" if handle_table else ""
+    )
+    unit_start_expr = "handle_go" if handle_table else "start && length_ok"
+    reader_address = "handle_resolved_base" if handle_table else "input_address"
+    handle_busy_term = "handle_pending || " if handle_table else ""
+    handle_done_term = "handle_fail || " if handle_table else ""
+    handle_done_gate = "!handle_pending && " if handle_table else ""
     lane_instances = _lane_units_sv(composition, clk="clk", writer_rst="rst", start="start")
     all_writers_done = " && ".join(f"writer_done_{i}" for i in lanes)
     any_writer_busy = " || ".join(f"writer_busy_{i}" for i in lanes)
@@ -1835,7 +2277,7 @@ module {name} (
     input wire start,
     input wire [{addr_width - 1}:0] input_address,
     input wire [31:0] input_length_bytes,
-{config_input_ports}    input wire [{num_lanes * addr_width - 1}:0] lane_output_address,
+{config_input_ports}{handle_ports}    input wire [{num_lanes * addr_width - 1}:0] lane_output_address,
     output wire busy,
     output wire done,
     output reg error,
@@ -1896,16 +2338,16 @@ module {name} (
     // length must not leave the writers waiting on a status
     reg length_fail;
     wire length_ok = (input_length_bytes != 32'd0) && ({length_ok_check});
-    wire unit_start = start && length_ok;
+    wire unit_start = {unit_start_expr};
 
-    assign busy = reader_busy || {any_writer_busy};
-    assign done = length_fail || (reader_done && {all_writers_done});
+{handle_table_decls}    assign busy = reader_busy || {handle_busy_term}{any_writer_busy};
+    assign done = length_fail || {handle_done_term}({handle_done_gate}reader_done && {all_writers_done});
 
     always @(*) begin
         if (length_fail) begin
             error = 1'b1;
             error_code = 8'hFE;
-        end else begin
+        end{handle_error_branch} else begin
             if (reader_error) begin
                 error = 1'b1;
                 error_code = reader_error_code;
@@ -1917,7 +2359,7 @@ module {name} (
         end
     end
 
-    dau_axi_burst_reader #(
+{handle_table_block}    dau_axi_burst_reader #(
         .ADDR_WIDTH({addr_width}),
         .BURST_BEATS({burst_beats}),
         .LENGTH_ALIGN_BITS({length_align_bits})
@@ -1925,7 +2367,7 @@ module {name} (
         .clk(clk),
         .rst(rst),
         .start(unit_start),
-        .read_address(input_address),
+        .read_address({reader_address}),
         .read_length_bytes(input_length_bytes),
         .busy(reader_busy),
         .done(reader_done),
@@ -2047,6 +2489,6 @@ module {name} (
         end
     end
 endmodule
-
+{handle_table_module}
 `default_nettype wire
 """

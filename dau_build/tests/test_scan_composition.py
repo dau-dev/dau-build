@@ -6,6 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from dau_build.scan_composition import (
+    HANDLE_FAULT_BAD_ID,
+    HANDLE_FAULT_OUT_OF_BOUNDS,
+    HANDLE_FAULT_STALE,
+    MAX_HANDLE_TABLE_CAPACITY,
     LaneTile,
     RegisterLayout,
     ScanComposition,
@@ -13,6 +17,8 @@ from dau_build.scan_composition import (
     TileInstance,
     generate_scan_composition_sim_sv,
     generate_scan_composition_top_sv,
+    generate_shell_handle_table_v,
+    handle_table_index_width,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "scan_composition"
@@ -1254,3 +1260,191 @@ def test_a_wide_lane_behind_a_packed_front_reads_the_UNPACKED_stream() -> None:
     assert "assign filt_out_data_0 = feed_data;" in sv, "the lane must read the unpacker, not the reader"
     assert "assign feed_ready = filt_out_ready_0;" in sv
     assert "assign scan_ready = filt_out_ready_0;" not in sv, "the unpacker already drives scan_ready"
+
+
+def _handle_table_composition() -> ScanComposition:
+    """The bar-noc shape with a four-slot handle table: the job's input
+    address becomes a generation-checked identity instead of a raw register."""
+    return _bar_noc_composition().model_copy(update={"name": "handle-table-scan", "handle_table_capacity": 4})
+
+
+def test_no_handle_table_is_the_default_and_leaves_the_top_untouched() -> None:
+    """The table is a safety layer over a residency path already proven on
+    silicon, so it is opt-in and its absence must cost nothing: a
+    composition that declares no capacity emits the same bytes it did before
+    the table existed (the goldens above pin that), keeps the raw-address
+    reader wiring, and mentions the table nowhere."""
+    text = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
+    assert "wire unit_start = job_start && length_ok;" in text
+    assert ".read_address(input_address)," in text
+    assert "handle" not in text
+    assert "dau_shell_handle_table" not in text
+
+
+def test_handle_table_top_matches_golden() -> None:
+    """Byte-identity golden for the handle-table shape, table module
+    included: the emitted file carries both the top and the table it
+    instantiates, so no caller has to know to add a second source."""
+    assert generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1") == (_FIXTURES / "handle_table_scan.v").read_text()
+
+
+def test_a_handle_table_replaces_the_raw_job_address() -> None:
+    """The whole point of the wiring: with a table the reader's address is
+    the RESOLVED base, and the units start when the table answers rather
+    than when the host writes JOB_CONTROL."""
+    text = generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1")
+    assert "wire unit_start = handle_go;" in text
+    assert ".read_address(handle_resolved_base)," in text
+    assert ".resolve_id(job_handle_id)," in text
+    assert ".resolve_generation(job_handle_generation)," in text
+    # the length the job asks for is bounds-checked against the grant, so an
+    # over-long read cannot walk off the end of the allocation
+    assert ".resolve_length(input_length_bytes)," in text
+    # a resolve in flight is the job being busy, and a refused handle closes
+    # the job out instead of leaving the host polling a job that never ran
+    assert "wire job_busy = reader_busy || handle_pending || " in text
+    assert "wire job_done = length_fail || handle_fail || (!handle_pending && reader_done && " in text
+    assert "job_error_code = handle_fail_code;" in text
+    # INPUT_ADDRESS survives so the register map does not shift, but nothing
+    # reads it: a raw address is what the table exists to take away
+    assert "ADDR_INPUT_ADDRESS_LOW: s_axi_rdata <= input_address[31:0];" in text
+    assert "read_address(input_address)" not in text
+
+
+def test_the_handle_aperture_sits_between_the_job_and_lane_blocks() -> None:
+    """Adding the table must not move an offset a host already decodes, so
+    it lands in the gap the contract leaves between the job registers and
+    the lane block."""
+    text = generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1")
+    assert "localparam [11:0] ADDR_HANDLE_INDEX = 12'h090;" in text
+    assert "localparam [11:0] ADDR_HANDLE_BASE_LOW = 12'h094;" in text
+    assert "localparam [11:0] ADDR_HANDLE_LENGTH = 12'h09C;" in text
+    assert "localparam [11:0] ADDR_HANDLE_GENERATION = 12'h0A0;" in text
+    assert "localparam [11:0] ADDR_HANDLE_CONTROL = 12'h0A4;" in text
+    assert "localparam [11:0] ADDR_JOB_HANDLE_ID = 12'h0A8;" in text
+    assert "localparam [11:0] ADDR_JOB_HANDLE_GENERATION = 12'h0AC;" in text
+    # the job and lane blocks are exactly where they were
+    assert "localparam [11:0] ADDR_INPUT_ADDRESS_LOW = 12'h058;" in text
+    assert "localparam [11:0] ADDR_LANE0_OUTPUT_ADDRESS = 12'h100;" in text
+
+
+def test_a_wide_address_reaches_the_handle_table_high_half() -> None:
+    """AXI-Lite carries 32 bits per access, so a 64-bit base needs its own
+    high-half register or every allocation a host could name would sit below
+    4 GiB -- the same trap the job address already had."""
+    composition = _handle_table_composition().model_copy(update={"addr_width": 64})
+    text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
+    assert "localparam [11:0] ADDR_HANDLE_BASE_HIGH = 12'h098;" in text
+    assert "ADDR_HANDLE_BASE_LOW: handle_base[31:0] <= s_axi_wdata;" in text
+    assert "ADDR_HANDLE_BASE_HIGH: handle_base[63:32] <= s_axi_wdata[31:0];" in text
+    assert "ADDR_HANDLE_BASE_HIGH: s_axi_rdata <= handle_base[63:32];" in text
+    assert "        .ADDR_WIDTH(64)\n    ) handle_table (" in text
+
+
+def test_install_and_free_are_pulses_not_levels() -> None:
+    """A CONTROL write commits one operation. Held as a level, an install
+    would reprogram the slot on every subsequent cycle -- including after
+    the host had moved the staging registers on to the next allocation."""
+    text = generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1")
+    assert "            handle_install <= 1'b0;\n            handle_free <= 1'b0;\n" in text
+    assert "ADDR_HANDLE_CONTROL: begin\n                        handle_install <= s_axi_wdata[0];\n" in text
+
+
+def test_the_handle_table_module_is_emitted_beside_the_top() -> None:
+    text = generate_scan_composition_top_sv(_handle_table_composition(), platform_id="DPV1")
+    assert "module dau_shell_handle_table #(" in text
+    assert "    parameter integer CAPACITY = 4,\n" in text
+    assert "    parameter integer INDEX_WIDTH = 2,\n" in text
+    # plain Verilog on both sides of the file: a block-design module
+    # reference rejects a SystemVerilog top, and the table rides in the same
+    # file as the top that instantiates it
+    assert "logic " not in text
+    assert text.count("`default_nettype none") == 1
+    assert text.rstrip().endswith("`default_nettype wire")
+
+
+def test_the_handle_table_index_width_covers_the_capacity() -> None:
+    """A capacity that is not a power of two still needs enough index bits,
+    and a one-slot table still needs one bit (a zero-width part select is
+    not representable)."""
+    assert handle_table_index_width(1) == 1
+    assert handle_table_index_width(2) == 1
+    assert handle_table_index_width(3) == 2
+    assert handle_table_index_width(5) == 3
+    assert handle_table_index_width(256) == 8
+
+
+def test_an_out_of_range_id_cannot_index_past_the_table() -> None:
+    """At a capacity that is not a power of two an out-of-range id still
+    fits the index width. The range check refuses the request either way,
+    but the array read has to stay in bounds or the resolved base is x."""
+    table = generate_shell_handle_table_v(capacity=5)
+    assert "wire resolve_in_range = resolve_id < ID_LIMIT;" in table
+    assert "wire [INDEX_WIDTH-1:0] resolve_slot = resolve_in_range ? resolve_id[INDEX_WIDTH-1:0] : {INDEX_WIDTH{1'b0}};" in table
+    assert "wire [INDEX_WIDTH-1:0] program_slot = program_in_range ? program_index[INDEX_WIDTH-1:0] : {INDEX_WIDTH{1'b0}};" in table
+
+
+def test_the_fault_codes_are_distinct_and_clear_of_the_tile_space() -> None:
+    """A refusal has to say WHICH refusal: a stale handle and a job that
+    over-reads its grant are different host bugs. The codes sit beside the
+    shell's own 0xFE at the top of the space, where tile codes -- allocated
+    from the bottom -- cannot reach them."""
+    codes = {HANDLE_FAULT_BAD_ID, HANDLE_FAULT_STALE, HANDLE_FAULT_OUT_OF_BOUNDS}
+    assert len(codes) == 3
+    assert 0xFE not in codes
+    assert all(code > 0xF0 for code in codes)
+    table = generate_shell_handle_table_v(capacity=4)
+    assert f"localparam [7:0] FAULT_BAD_ID = 8'h{HANDLE_FAULT_BAD_ID:02X};" in table
+    assert f"localparam [7:0] FAULT_STALE = 8'h{HANDLE_FAULT_STALE:02X};" in table
+    assert f"localparam [7:0] FAULT_OUT_OF_BOUNDS = 8'h{HANDLE_FAULT_OUT_OF_BOUNDS:02X};" in table
+
+
+def test_a_freed_slot_is_refused_by_liveness_not_only_by_generation() -> None:
+    """The host allocator refuses a freed handle on LIVENESS (its live
+    record is gone) and a recycled one on the generation. Mirroring only the
+    generation would leave a freed-but-not-yet-reallocated slot resolving
+    happily, which is the same silent wrong answer one step earlier."""
+    table = generate_shell_handle_table_v(capacity=4)
+    assert "end else if (!entry_live[resolve_slot]) begin" in table
+    assert "end else if (entry_generation[resolve_slot] != resolve_generation) begin" in table
+    # free outranks install so the collision is never a latch race
+    assert "if (program_free) begin\n                entry_live[program_slot] <= 1'b0;\n            end else if (program_install) begin" in table
+
+
+def test_the_handle_table_capacity_is_planned_and_refused() -> None:
+    """Capacity is a planning-time number: a composition asking for more
+    slots than the shape supports is a composition error, not a synthesis
+    surprise."""
+    # model_copy skips validation, so the generator has to re-check or an
+    # over-capacity copy would emit an array the part cannot hold
+    with pytest.raises(ScanCompositionError, match="handle_table_capacity must be between 0"):
+        generate_scan_composition_top_sv(
+            _bar_noc_composition().model_copy(update={"handle_table_capacity": MAX_HANDLE_TABLE_CAPACITY + 1}), platform_id="DPV1"
+        )
+    with pytest.raises(ValidationError, match="handle_table_capacity must be between 0"):
+        ScanComposition(
+            name="bad",
+            module_name="dau_bad_job",
+            lanes=(LaneTile(module="dau_int32_bar_aggregation", count_port="bar_count"),),
+            handle_table_capacity=-1,
+        )
+    with pytest.raises(ScanCompositionError, match="capacity must be between 1"):
+        generate_shell_handle_table_v(capacity=0)
+    with pytest.raises(ScanCompositionError, match="addr_width must be at least 32"):
+        generate_shell_handle_table_v(capacity=4, addr_width=16)
+
+
+def test_the_sim_harness_surfaces_the_handle_table_as_ports() -> None:
+    """The harness has no register aperture, so the programming and
+    job-handle registers become testbench-driven ports -- the same treatment
+    LOAD_PHASE gets -- and the same resolution logic runs behind them."""
+    text = generate_scan_composition_sim_sv(_handle_table_composition())
+    assert "    input wire handle_install,\n" in text
+    assert "    input wire handle_free,\n" in text
+    assert "    input wire [31:0] job_handle_id,\n" in text
+    assert "    input wire [31:0] job_handle_generation,\n" in text
+    assert "wire unit_start = handle_go;" in text
+    assert ".read_address(handle_resolved_base)," in text
+    assert "module dau_shell_handle_table #(" in text
+    # the table's own resolve_request still comes off the harness start
+    assert ".resolve_request(start && length_ok)," in text
