@@ -129,16 +129,20 @@ class RegisterLayout(BaseModel):
     input_address_high: int = 0x05C
     input_length_low: int = 0x060
     # the handle-table aperture, emitted only by a composition that declares a
-    # capacity. It sits between the job block and the lane block, in the gap
-    # the contract already leaves free, so adding it moves no existing offset.
-    handle_index: int = 0x090
-    handle_base_low: int = 0x094
-    handle_base_high: int = 0x098
-    handle_length: int = 0x09C
-    handle_generation: int = 0x0A0
-    handle_control: int = 0x0A4
-    job_handle_id: int = 0x0A8
-    job_handle_generation: int = 0x0AC
+    # capacity. It sits above the contract's capability block (which ends at
+    # 0x0D0) and below the lane block at 0x100, so adding it moves no existing
+    # offset. Deliberately NOT the 0x090-0x0A0 gap: a static composed-pipeline
+    # shell already decodes its filter/map configuration there, and while no
+    # bitstream is ever both personalities, one aperture per address is a
+    # property worth having rather than an invariant to remember.
+    handle_index: int = 0x0D4
+    handle_base_low: int = 0x0D8
+    handle_base_high: int = 0x0DC
+    handle_length: int = 0x0E0
+    handle_generation: int = 0x0E4
+    handle_control: int = 0x0E8
+    job_handle_id: int = 0x0EC
+    job_handle_generation: int = 0x0F0
     lane_base: int = 0x100
     lane_stride: int = 0x20
     lane_output_address_low: int = 0x00
