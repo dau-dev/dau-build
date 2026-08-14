@@ -24,7 +24,12 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     assert "status=handoff-written" in result.message
     tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
     assert "read_verilog -sv" in tcl and tcl.index("read_verilog") < tcl.index("synth_design")
-    assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context -generic K=8" in tcl
+    assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context" in tcl
+    assert "-generic K=8" in tcl
+    # a tile that includes a header beside it must synthesize; the flag is
+    # harmless when there is no include and removes a wall that would only
+    # ever appear on a remote build
+    assert "-include_dirs [list {" in tcl and "dau_core/hdl}]" in tcl
     # the clock constrains SYNTHESIS: the xdc reads before synth_design
     assert "read_xdc -mode out_of_context" in tcl and tcl.index("read_xdc") < tcl.index("synth_design")
     xdc = (tmp_path / "dau_int32_streaming_top_k.ooc.xdc").read_text()

@@ -258,7 +258,13 @@ class SynthesizeCoresTask(BuildCallableModel):
             xdc = root / f"{definition.module}.ooc.xdc"
             xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports {clock_port}]\n")
             lines.append(f"read_xdc -mode out_of_context {_tcl_path(xdc)}")
-        lines.append(f"synth_design -top {definition.module} -part {part} -mode out_of_context{generic_args}")
+        # every source directory is an include path. Vivado is expected to
+        # resolve a header sitting beside its includer, but "expected to" is a
+        # 35-minute remote build away from being found out, and the flag costs
+        # nothing when the include would have resolved anyway. Verilator needs
+        # the same thing said explicitly, so the two toolchains agree here.
+        include_dirs = " ".join(_tcl_path(path) for path in sorted({source.parent for source in sources}))
+        lines.append(f"synth_design -top {definition.module} -part {part} -mode out_of_context -include_dirs [list {include_dirs}]{generic_args}")
         lines.append(f"report_utilization -file {_tcl_path(util_rpt)}")
         if clock_port:
             timing_rpt = root / f"{definition.module}.timing.rpt"
