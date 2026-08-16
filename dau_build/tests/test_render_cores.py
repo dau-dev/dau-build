@@ -64,11 +64,11 @@ class _GeneratorWithoutRender(_CheckedInCore):
 
 
 def test_generated_cores_are_written_under_the_build_tree(tmp_path: Path) -> None:
-    core = _GeneratedCore("int32-fixed-point-exp", "dau_int32_fixed_point_exp.sv", "// exp\n")
+    core = _GeneratedCore("fixed-point-exp", "dau_fixed_point_exp.sv", "// exp\n")
     written = render_generated_cores([core], root=tmp_path)
 
     assert len(written) == 1
-    assert written[0] == tmp_path / RENDER_DIRNAME / "dau_int32_fixed_point_exp.sv"
+    assert written[0] == tmp_path / RENDER_DIRNAME / "dau_fixed_point_exp.sv"
     assert written[0].read_text(encoding="utf-8") == "// exp\n"
 
 
@@ -124,17 +124,17 @@ def test_the_task_renders_the_cores_it_is_given(tmp_path: Path, monkeypatch) -> 
 
     from dau_build import render_cores
 
-    cores = [_GeneratedCore("int32-fixed-point-exp", "dau_int32_fixed_point_exp.sv"), _CheckedInCore("int32-row-map-alu")]
+    cores = [_GeneratedCore("fixed-point-exp", "dau_fixed_point_exp.sv"), _CheckedInCore("int32-row-map-alu")]
     monkeypatch.setattr(render_cores, "resolve_core_definitions", lambda entries: cores)
 
-    task = render_cores.RenderCoresTask(cores=("/dau-core/int32-fixed-point-exp", "/dau-core/int32-row-map-alu"), output_root=tmp_path)
+    task = render_cores.RenderCoresTask(cores=("/dau-core/fixed-point-exp", "/dau-core/int32-row-map-alu"), output_root=tmp_path)
     result = task(NullContext())
 
     assert result.step == "render-cores"
-    assert "rendered=int32-fixed-point-exp" in result.message
+    assert "rendered=fixed-point-exp" in result.message
     assert "checked_in=int32-row-map-alu" in result.message
     assert "files=1" in result.message
-    assert (tmp_path / RENDER_DIRNAME / "dau_int32_fixed_point_exp.sv").is_file()
+    assert (tmp_path / RENDER_DIRNAME / "dau_fixed_point_exp.sv").is_file()
 
 
 def test_the_task_refuses_an_empty_selection(tmp_path: Path, monkeypatch) -> None:

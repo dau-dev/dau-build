@@ -6,7 +6,7 @@
 # own before staging, so this task is for inspecting or staging the sources
 # on their own.
 #   dau-build task=tasks/build/render-cores \
-#     'model.cores=[/dau-core/int32-fixed-point-exp]' model.output_root=./build
+#     'model.cores=[/dau-core/fixed-point-exp]' model.output_root=./build
 _target_: dau_build.render_cores.RenderCoresTask
 cores: ???
 output_root: ???
