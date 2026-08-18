@@ -1056,7 +1056,7 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
                 module="dau_rolling_moments",
                 count_port="moment_count",
                 chain=(
-                    TileInstance(module="dau_int32_asof_backward", closes_out=True),
+                    TileInstance(module="dau_asof_backward", closes_out=True),
                     TileInstance(module="dau_time_bucket_key"),
                     TileInstance(module="dau_grouped_field_aggregation", closes_out=True),
                 ),
@@ -1104,7 +1104,7 @@ def test_a_chain_without_closing_stages_is_byte_identical() -> None:
             LaneTile(
                 module="dau_field_sum_aggregation",
                 count_port="aggregated_count",
-                chain=(TileInstance(module="dau_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
+                chain=(TileInstance(module="dau_row_predicate_filter"), TileInstance(module="dau_row_map_alu")),
             ),
         ),
     )

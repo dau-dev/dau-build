@@ -74,7 +74,7 @@ def test_generated_cores_are_written_under_the_build_tree(tmp_path: Path) -> Non
 
 def test_checked_in_cores_are_left_alone(tmp_path: Path) -> None:
     """Rendering over reviewed HDL would replace it with generated text."""
-    assert render_generated_cores([_CheckedInCore("int32-row-map-alu")], root=tmp_path) == ()
+    assert render_generated_cores([_CheckedInCore("row-map-alu")], root=tmp_path) == ()
     assert not (tmp_path / RENDER_DIRNAME).exists()
 
 
@@ -124,15 +124,15 @@ def test_the_task_renders_the_cores_it_is_given(tmp_path: Path, monkeypatch) -> 
 
     from dau_build import render_cores
 
-    cores = [_GeneratedCore("fixed-point-exp", "dau_fixed_point_exp.sv"), _CheckedInCore("int32-row-map-alu")]
+    cores = [_GeneratedCore("fixed-point-exp", "dau_fixed_point_exp.sv"), _CheckedInCore("row-map-alu")]
     monkeypatch.setattr(render_cores, "resolve_core_definitions", lambda entries: cores)
 
-    task = render_cores.RenderCoresTask(cores=("/dau-core/fixed-point-exp", "/dau-core/int32-row-map-alu"), output_root=tmp_path)
+    task = render_cores.RenderCoresTask(cores=("/dau-core/fixed-point-exp", "/dau-core/row-map-alu"), output_root=tmp_path)
     result = task(NullContext())
 
     assert result.step == "render-cores"
     assert "rendered=fixed-point-exp" in result.message
-    assert "checked_in=int32-row-map-alu" in result.message
+    assert "checked_in=row-map-alu" in result.message
     assert "files=1" in result.message
     assert (tmp_path / RENDER_DIRNAME / "dau_fixed_point_exp.sv").is_file()
 
