@@ -32,7 +32,7 @@ def _bar_noc_composition() -> ScanComposition:
         module_name="dau_mm_bar_noc_job",
         lanes=tuple(
             LaneTile(
-                module="dau_int32_bar_aggregation",
+                module="dau_bar_aggregation",
                 config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"},
                 count_port="bar_count",
                 partition=TileInstance(
@@ -292,14 +292,14 @@ def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() 
     # the exact "module tile_0 (" substring proves there is no #(...) wedged
     # between the module name and the instance name for a param-less tile
     param_free = generate_scan_composition_top_sv(_bar_noc_composition(), platform_id="DPV1")
-    assert "    dau_int32_bar_aggregation tile_0 (" in param_free
+    assert "    dau_bar_aggregation tile_0 (" in param_free
 
     membership = ScanComposition(
         name="membership",
         module_name="dau_mm_membership_job",
         lanes=(
             LaneTile(
-                module="dau_int32_field_sum_aggregation",
+                module="dau_field_sum_aggregation",
                 config={"cfg_field_mask": "4'b0010"},
                 count_port="aggregated_count",
                 chain=(TileInstance(module="dau_key_membership_filter", params={"KEY_SPACE": 6_000_000}),),
@@ -309,7 +309,7 @@ def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() 
     text = generate_scan_composition_top_sv(membership, platform_id="DPV1")
     assert "    dau_key_membership_filter #(\n        .KEY_SPACE(6000000)\n    ) chain_0_0 (" in text
     # the param-less terminal tile carries no override
-    assert "    dau_int32_field_sum_aggregation tile_0 (" in text
+    assert "    dau_field_sum_aggregation tile_0 (" in text
 
 
 def test_param_override_emits_on_partition_and_terminal_tile_slots() -> None:
@@ -420,8 +420,7 @@ def _wide_front_composition() -> ScanComposition:
         name="bar-noc-wide",
         module_name="dau_mm_bar_noc_wide_job",
         lanes=tuple(
-            LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
-            for _ in range(4)
+            LaneTile(module="dau_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count") for _ in range(4)
         ),
         partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
         front_unpack=TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128}),
@@ -451,7 +450,7 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
     # Constructed directly — model_copy skips model_post_init validation.
     wide_unpack = TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
     plain_lanes = tuple(
-        LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count") for _ in range(4)
+        LaneTile(module="dau_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count") for _ in range(4)
     )
     with pytest.raises(ValidationError, match="needs a shared partitioner"):
         ScanComposition(name="bad", module_name="dau_bad", lanes=plain_lanes, front_unpack=wide_unpack)
@@ -488,7 +487,7 @@ def _load_phase_composition() -> ScanComposition:
         module_name="dau_mm_membership_job",
         lanes=(
             LaneTile(
-                module="dau_int32_bar_aggregation",
+                module="dau_bar_aggregation",
                 config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"},
                 count_port="bar_count",
                 chain=(
@@ -533,7 +532,7 @@ def test_load_phase_free_composition_stays_byte_identical() -> None:
 
 def test_load_phase_shape_rules_mirror_the_walker() -> None:
     membership = TileInstance(module="dau_key_membership_filter", config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"})
-    plain = LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
+    plain = LaneTile(module="dau_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
     loaded = plain.model_copy(update={"chain": (membership,)})
     # the reserved symbol anywhere but chain[0].cfg_load is rejected
     with pytest.raises(ValidationError, match="only a lane's first chain stage"):
@@ -896,7 +895,7 @@ def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> N
     comp = ScanComposition(
         name="wide",
         module_name="dau_mm_wide_job",
-        lanes=tuple(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
+        lanes=tuple(LaneTile(module="dau_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
         partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 512}),
         data_width=512,
     )
@@ -1024,7 +1023,7 @@ def test_wide_data_width_needs_a_dispatcher_not_a_broadcast() -> None:
         ScanComposition(
             name="bad",
             module_name="dau_bad",
-            lanes=tuple(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
+            lanes=tuple(LaneTile(module="dau_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
             data_width=256,
         )
 
@@ -1036,7 +1035,7 @@ def test_wide_packed_reader_is_a_named_followup() -> None:
         ScanComposition(
             name="bad",
             module_name="dau_bad",
-            lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count"),),
+            lanes=(LaneTile(module="dau_field_sum_aggregation", count_port="agg_count"),),
             front_unpack=TileInstance(module="dau_row_unpack", params={"OUT_WIDTH": 128}),
             partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
             data_width=256,
@@ -1054,12 +1053,12 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
         module_name="dau_mm_fused_job",
         lanes=(
             LaneTile(
-                module="dau_int32_rolling_moments",
+                module="dau_rolling_moments",
                 count_port="moment_count",
                 chain=(
                     TileInstance(module="dau_int32_asof_backward", closes_out=True),
                     TileInstance(module="dau_time_bucket_key"),
-                    TileInstance(module="dau_int32_grouped_field_aggregation", closes_out=True),
+                    TileInstance(module="dau_grouped_field_aggregation", closes_out=True),
                 ),
             ),
         ),
@@ -1103,7 +1102,7 @@ def test_a_chain_without_closing_stages_is_byte_identical() -> None:
         module_name="dau_mm_plain_job",
         lanes=(
             LaneTile(
-                module="dau_int32_field_sum_aggregation",
+                module="dau_field_sum_aggregation",
                 count_port="aggregated_count",
                 chain=(TileInstance(module="dau_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
             ),
@@ -1125,7 +1124,7 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
             name="gate",
             module_name="dau_mm_gate_job",
             input_row_bytes=row_bytes,
-            lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="aggregated_count"),),
+            lanes=(LaneTile(module="dau_field_sum_aggregation", count_port="aggregated_count"),),
         )
         sv = generate_scan_composition_top_sv(composition, platform_id="DPV1")
         bits = grid.bit_length() - 1
@@ -1424,7 +1423,7 @@ def test_the_handle_table_capacity_is_planned_and_refused() -> None:
         ScanComposition(
             name="bad",
             module_name="dau_bad_job",
-            lanes=(LaneTile(module="dau_int32_bar_aggregation", count_port="bar_count"),),
+            lanes=(LaneTile(module="dau_bar_aggregation", count_port="bar_count"),),
             handle_table_capacity=-1,
         )
     with pytest.raises(ScanCompositionError, match="capacity must be between 1"):

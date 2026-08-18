@@ -346,7 +346,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_0)
     );
 
-    dau_int32_bar_aggregation tile_0 (
+    dau_bar_aggregation tile_0 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -428,7 +428,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_1)
     );
 
-    dau_int32_bar_aggregation tile_1 (
+    dau_bar_aggregation tile_1 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -510,7 +510,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_2)
     );
 
-    dau_int32_bar_aggregation tile_2 (
+    dau_bar_aggregation tile_2 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -592,7 +592,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_3)
     );
 
-    dau_int32_bar_aggregation tile_3 (
+    dau_bar_aggregation tile_3 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
