@@ -425,7 +425,7 @@ module dau_mm_sorted_scan_job #(
         .dbg_final_fifo_count(dbg_final_fifo_count)
     );
 
-    dau_int32_range_partitioner #(
+    dau_range_partitioner #(
         .NUM_PARTITIONS(4)
     ) partitioner (
         .clk(s_axi_aclk),
@@ -454,7 +454,7 @@ module dau_mm_sorted_scan_job #(
     assign filt_status_error_code_0 = part_status_error_code[7:0];
     assign part_status_ready[0] = filt_status_ready_0;
 
-    dau_int32_bitonic_sorter tile_0 (
+    dau_bitonic_sorter tile_0 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .input_valid(filt_out_valid_0),
@@ -524,7 +524,7 @@ module dau_mm_sorted_scan_job #(
     assign filt_status_error_code_1 = part_status_error_code[15:8];
     assign part_status_ready[1] = filt_status_ready_1;
 
-    dau_int32_bitonic_sorter tile_1 (
+    dau_bitonic_sorter tile_1 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .input_valid(filt_out_valid_1),
@@ -594,7 +594,7 @@ module dau_mm_sorted_scan_job #(
     assign filt_status_error_code_2 = part_status_error_code[23:16];
     assign part_status_ready[2] = filt_status_ready_2;
 
-    dau_int32_bitonic_sorter tile_2 (
+    dau_bitonic_sorter tile_2 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .input_valid(filt_out_valid_2),
@@ -664,7 +664,7 @@ module dau_mm_sorted_scan_job #(
     assign filt_status_error_code_3 = part_status_error_code[31:24];
     assign part_status_ready[3] = filt_status_ready_3;
 
-    dau_int32_bitonic_sorter tile_3 (
+    dau_bitonic_sorter tile_3 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .input_valid(filt_out_valid_3),

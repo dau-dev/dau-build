@@ -139,8 +139,8 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
             f"model.dau_driver_root={tmp_path / 'dau-driver'}",
         ),
         "synthesize": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top", f"model.output_root={tmp_path / 'out'}"),
-        "synthesize-cores": ("model.cores=[/dau-core/int32-streaming-top-k]", f"model.output_root={tmp_path / 'ooc'}"),
-        "render-cores": ("model.cores=[/dau-core/int32-streaming-top-k]", f"model.output_root={tmp_path / 'render'}"),
+        "synthesize-cores": ("model.cores=[/dau-core/streaming-top-k]", f"model.output_root={tmp_path / 'ooc'}"),
+        "render-cores": ("model.cores=[/dau-core/streaming-top-k]", f"model.output_root={tmp_path / 'render'}"),
         "validate-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
     }
     return base[name.split("/")[-1]]

@@ -36,7 +36,7 @@ def _bar_noc_composition() -> ScanComposition:
                 config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"},
                 count_port="bar_count",
                 partition=TileInstance(
-                    module="dau_int32_pair_key_filter",
+                    module="dau_pair_key_filter",
                     config={"cfg_key_mask": "32'd3", "cfg_key_match": f"32'd{lane}"},
                 ),
             )
@@ -51,9 +51,9 @@ def _sorted_scan_composition() -> ScanComposition:
     return ScanComposition(
         name="sorted-scan",
         module_name="dau_mm_sorted_scan_job",
-        lanes=tuple(LaneTile(module="dau_int32_bitonic_sorter", count_port="sorted_count") for _ in range(4)),
+        lanes=tuple(LaneTile(module="dau_bitonic_sorter", count_port="sorted_count") for _ in range(4)),
         partitioner=TileInstance(
-            module="dau_int32_range_partitioner",
+            module="dau_range_partitioner",
             config={"cfg_splitters": "{32'h0000001E, 32'h00000014, 32'h0000000A}"},
         ),
         sort_capacity=16,  # caller-computed capability data (the sorter's batch row capacity)
@@ -134,7 +134,7 @@ def test_sorted_scan_sim_matches_golden() -> None:
     """The partitioned shape's harness surfaces the splitters as a
     testbench-driven config input instead of a literal binding."""
     composition = _sorted_scan_composition().model_copy(
-        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "cfg_splitters"})}
+        update={"partitioner": TileInstance(module="dau_range_partitioner", config={"cfg_splitters": "cfg_splitters"})}
     )
     text = generate_scan_composition_sim_sv(composition, config_inputs={"cfg_splitters": 96})
     assert text == (_FIXTURES / "sorted_scan_sim.v").read_text()
@@ -302,12 +302,12 @@ def test_param_override_emits_on_the_tile_and_param_less_stays_byte_identical() 
                 module="dau_int32_field_sum_aggregation",
                 config={"cfg_field_mask": "4'b0010"},
                 count_port="aggregated_count",
-                chain=(TileInstance(module="dau_int32_key_membership_filter", params={"KEY_SPACE": 6_000_000}),),
+                chain=(TileInstance(module="dau_key_membership_filter", params={"KEY_SPACE": 6_000_000}),),
             ),
         ),
     )
     text = generate_scan_composition_top_sv(membership, platform_id="DPV1")
-    assert "    dau_int32_key_membership_filter #(\n        .KEY_SPACE(6000000)\n    ) chain_0_0 (" in text
+    assert "    dau_key_membership_filter #(\n        .KEY_SPACE(6000000)\n    ) chain_0_0 (" in text
     # the param-less terminal tile carries no override
     assert "    dau_int32_field_sum_aggregation tile_0 (" in text
 
@@ -333,18 +333,18 @@ def test_param_override_emits_on_partition_and_terminal_tile_slots() -> None:
 def test_param_override_emits_on_the_shared_partitioner() -> None:
     # a param-less shared partitioner emits only the derived NUM_PARTITIONS (byte-identical)
     plain = generate_scan_composition_top_sv(_sorted_scan_composition(), platform_id="DPV1")
-    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4)\n    ) partitioner (" in plain
+    assert "    dau_range_partitioner #(\n        .NUM_PARTITIONS(4)\n    ) partitioner (" in plain
     # custom params append after NUM_PARTITIONS
     with_params = _sorted_scan_composition().model_copy(
-        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"KEY_SPACE": 4096})}
+        update={"partitioner": TileInstance(module="dau_range_partitioner", config={"cfg_splitters": "s"}, params={"KEY_SPACE": 4096})}
     )
     text = generate_scan_composition_top_sv(with_params, platform_id="DPV1")
-    assert "    dau_int32_range_partitioner #(\n        .NUM_PARTITIONS(4),\n        .KEY_SPACE(4096)\n    ) partitioner (" in text
+    assert "    dau_range_partitioner #(\n        .NUM_PARTITIONS(4),\n        .KEY_SPACE(4096)\n    ) partitioner (" in text
 
 
 def test_shared_partitioner_rejects_a_num_partitions_param_override() -> None:
     composition = _sorted_scan_composition().model_copy(
-        update={"partitioner": TileInstance(module="dau_int32_range_partitioner", config={"cfg_splitters": "s"}, params={"NUM_PARTITIONS": 8})}
+        update={"partitioner": TileInstance(module="dau_range_partitioner", config={"cfg_splitters": "s"}, params={"NUM_PARTITIONS": 8})}
     )
     with pytest.raises(ScanCompositionError, match="NUM_PARTITIONS is derived"):
         generate_scan_composition_top_sv(composition, platform_id="DPV1")
@@ -379,7 +379,7 @@ _FRONT_UNPACK_CONFIG = {
 def _front_unpacked_composition() -> ScanComposition:
     """The bar-noc shape with a packed-row front unpacker between the burst
     reader and the broadcast fan-out."""
-    return _bar_noc_composition().model_copy(update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))})
+    return _bar_noc_composition().model_copy(update={"front_unpack": TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))})
 
 
 def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
@@ -387,7 +387,7 @@ def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
     # the reader is unchanged: it still drives the scan_* stream
     assert ".stream_valid(scan_valid)," in text
     # the unpacker consumes the reader's scan_* stream ...
-    unpack_block = text.split("dau_int32_row_unpack front_unpack (")[1].split(");")[0]
+    unpack_block = text.split("dau_row_unpack front_unpack (")[1].split(");")[0]
     assert ".input_valid(scan_valid)," in unpack_block
     assert ".input_ready(scan_ready)," in unpack_block
     assert ".input_data(scan_data)," in unpack_block
@@ -407,7 +407,7 @@ def test_front_unpack_wires_reader_through_unpacker_to_the_fanout() -> None:
     assert ".input_data(feed_data)," in bcast_block
     assert ".input_last(feed_last)," in bcast_block
     # the unpacker sits between the reader and the fan-out in the emission
-    assert text.index("dau_axi_burst_reader") < text.index("dau_int32_row_unpack front_unpack (") < text.index("dau_stream_broadcast #(")
+    assert text.index("dau_axi_burst_reader") < text.index("dau_row_unpack front_unpack (") < text.index("dau_stream_broadcast #(")
     # the feed_* stream wires are declared
     assert "    wire feed_valid;\n    wire feed_ready;\n    wire [63:0] feed_data;\n    wire feed_last;\n" in text
 
@@ -423,8 +423,8 @@ def _wide_front_composition() -> ScanComposition:
             LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
             for _ in range(4)
         ),
-        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
-        front_unpack=TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128}),
+        partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+        front_unpack=TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128}),
     )
 
 
@@ -433,8 +433,8 @@ def test_wide_front_widens_the_feed_and_threads_the_width_params() -> None:
     # width params land on their instances via the module-parameter channel
     text = generate_scan_composition_top_sv(_wide_front_composition(), platform_id="DPV1")
     assert "    wire feed_valid;\n    wire feed_ready;\n    wire [127:0] feed_data;\n    wire feed_last;\n" in text
-    assert "dau_int32_row_unpack #(\n        .OUT_WIDTH(128)\n    )" in text
-    dispatcher_block = text.split("dau_int32_key_mask_dispatcher #(")[1].split(");")[0]
+    assert "dau_row_unpack #(\n        .OUT_WIDTH(128)\n    )" in text
+    dispatcher_block = text.split("dau_key_mask_dispatcher #(")[1].split(");")[0]
     assert ".NUM_PARTITIONS(4)" in dispatcher_block
     assert ".IN_WIDTH(128)" in dispatcher_block
     assert ".input_data(feed_data)," in dispatcher_block
@@ -449,7 +449,7 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
     # broadcast is 64-bit only: a wide front with no shared partitioner is
     # rejected, as is any feed/fan-out width mismatch (either direction).
     # Constructed directly — model_copy skips model_post_init validation.
-    wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
+    wide_unpack = TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
     plain_lanes = tuple(
         LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count") for _ in range(4)
     )
@@ -460,7 +460,7 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
             name="bad",
             module_name="dau_bad",
             lanes=plain_lanes,
-            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher"),
+            partitioner=TileInstance(module="dau_key_mask_dispatcher"),
             front_unpack=wide_unpack,
         )
     with pytest.raises(ValidationError, match="feed stream is 64-bit"):
@@ -468,15 +468,15 @@ def test_wide_front_requires_a_matching_wide_fanout() -> None:
             name="bad",
             module_name="dau_bad",
             lanes=plain_lanes,
-            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+            partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
         )
     with pytest.raises(ValidationError, match="OUT_WIDTH must be 64/128/256/512/1024"):
         ScanComposition(
             name="bad",
             module_name="dau_bad",
             lanes=plain_lanes,
-            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
-            front_unpack=TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 96}),
+            partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+            front_unpack=TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 96}),
         )
 
 
@@ -493,7 +493,7 @@ def _load_phase_composition() -> ScanComposition:
                 count_port="bar_count",
                 chain=(
                     TileInstance(
-                        module="dau_int32_key_membership_filter",
+                        module="dau_key_membership_filter",
                         config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"},
                     ),
                 ),
@@ -511,7 +511,7 @@ def test_load_phase_binding_emits_the_register_and_drives_cfg_load() -> None:
     assert "                    ADDR_LOAD_PHASE: s_axi_rdata <= {31'd0, load_phase};" in text
     assert "            load_phase <= 1'b0;" in text
     # the binding: the membership tile's cfg_load is driven by the register
-    membership_block = text.split("dau_int32_key_membership_filter")[1].split(");")[0]
+    membership_block = text.split("dau_key_membership_filter")[1].split(");")[0]
     assert ".cfg_load(load_phase)," in membership_block
 
 
@@ -532,7 +532,7 @@ def test_load_phase_free_composition_stays_byte_identical() -> None:
 
 
 def test_load_phase_shape_rules_mirror_the_walker() -> None:
-    membership = TileInstance(module="dau_int32_key_membership_filter", config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"})
+    membership = TileInstance(module="dau_key_membership_filter", config={"cfg_load": "load_phase", "cfg_mode": "1'b0", "cfg_kind": "2'd1"})
     plain = LaneTile(module="dau_int32_bar_aggregation", config={"cfg_mode": "2'd0", "cfg_row_count": "64'd0"}, count_port="bar_count")
     loaded = plain.model_copy(update={"chain": (membership,)})
     # the reserved symbol anywhere but chain[0].cfg_load is rejected
@@ -540,7 +540,7 @@ def test_load_phase_shape_rules_mirror_the_walker() -> None:
         ScanComposition(
             name="bad",
             module_name="dau_bad",
-            lanes=(plain.model_copy(update={"partition": TileInstance(module="dau_int32_pair_key_filter", config={"cfg_key_mask": "load_phase"})}),),
+            lanes=(plain.model_copy(update={"partition": TileInstance(module="dau_pair_key_filter", config={"cfg_key_mask": "load_phase"})}),),
         )
     # non-uniform lanes rejected
     with pytest.raises(ValidationError, match="EVERY lane"):
@@ -552,14 +552,12 @@ def test_load_phase_shape_rules_mirror_the_walker() -> None:
             module_name="dau_bad",
             lanes=(
                 loaded.model_copy(
-                    update={"partition": TileInstance(module="dau_int32_pair_key_filter", config={"cfg_key_mask": "32'd3", "cfg_key_match": "32'd0"})}
+                    update={"partition": TileInstance(module="dau_pair_key_filter", config={"cfg_key_mask": "32'd3", "cfg_key_match": "32'd0"})}
                 ),
             ),
         )
     # generators re-check a model-copied composition
-    broken = _load_phase_composition().model_copy(
-        update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
-    )
+    broken = _load_phase_composition().model_copy(update={"front_unpack": TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))})
     with pytest.raises(ScanCompositionError, match="front unpacker"):
         generate_scan_composition_top_sv(broken, platform_id="DPV1")
 
@@ -568,20 +566,18 @@ def test_generators_revalidate_a_model_copied_composition() -> None:
     # model_copy(update=...) skips model_post_init, so BOTH generators must
     # re-check shape/width coherence — an incoherent copy must never emit
     # width-broken Verilog
-    wide_unpack = TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
+    wide_unpack = TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG), params={"OUT_WIDTH": 128})
     broadcast_mismatch = _bar_noc_composition().model_copy(update={"front_unpack": wide_unpack})
     with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
         generate_scan_composition_top_sv(broadcast_mismatch, platform_id="DPV1")
     with pytest.raises(ScanCompositionError, match="needs a shared partitioner"):
         generate_scan_composition_sim_sv(broadcast_mismatch)
-    narrow_fanout = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher")})
+    narrow_fanout = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_key_mask_dispatcher")})
     with pytest.raises(ScanCompositionError, match="widths must agree"):
         generate_scan_composition_top_sv(narrow_fanout, platform_id="DPV1")
     with pytest.raises(ScanCompositionError, match="widths must agree"):
         generate_scan_composition_sim_sv(narrow_fanout)
-    bad_width = _wide_front_composition().model_copy(
-        update={"partitioner": TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 96})}
-    )
+    bad_width = _wide_front_composition().model_copy(update={"partitioner": TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 96})})
     with pytest.raises(ScanCompositionError, match="IN_WIDTH must be one of"):
         generate_scan_composition_top_sv(bad_width, platform_id="DPV1")
 
@@ -637,18 +633,18 @@ def test_front_unpack_relaxes_the_length_grid_to_eight_bytes() -> None:
 
 def test_front_unpack_with_a_shared_partitioner_feeds_the_partitioner() -> None:
     composition = _sorted_scan_composition().model_copy(
-        update={"front_unpack": TileInstance(module="dau_int32_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
+        update={"front_unpack": TileInstance(module="dau_row_unpack", config=dict(_FRONT_UNPACK_CONFIG))}
     )
     text = generate_scan_composition_top_sv(composition, platform_id="DPV1")
     part_block = text.split(") partitioner (")[1].split(");")[0]
     assert ".input_valid(feed_valid)," in part_block
     assert ".input_last(feed_last)," in part_block
-    assert text.index("dau_int32_row_unpack front_unpack (") < text.index(") partitioner (")
+    assert text.index("dau_row_unpack front_unpack (") < text.index(") partitioner (")
 
 
 def test_front_unpack_sim_harness_carries_the_unpacker() -> None:
     text = generate_scan_composition_sim_sv(_front_unpacked_composition())
-    unpack_block = text.split("dau_int32_row_unpack front_unpack (")[1].split(");")[0]
+    unpack_block = text.split("dau_row_unpack front_unpack (")[1].split(");")[0]
     assert ".input_valid(scan_valid)," in unpack_block
     assert ".output_valid(feed_valid)," in unpack_block
     bcast_block = text.split("dau_stream_broadcast #(")[1].split(");")[0]
@@ -671,7 +667,7 @@ def _front_gearbox_composition() -> ScanComposition:
         name="geared",
         module_name="dau_mm_geared_job",
         lanes=tuple(LaneTile(module="dau_int32_temporal_hero", count_port="record_count") for _ in range(8)),
-        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher"),
+        partitioner=TileInstance(module="dau_key_mask_dispatcher"),
         front_gearbox=TileInstance(module="dau_record_gearbox"),
         data_width=512,
         input_row_bytes=24,
@@ -730,7 +726,7 @@ def test_front_gearbox_status_is_latched_and_folded_into_job_error() -> None:
 def test_front_gearbox_shape_refusals() -> None:
     lanes = tuple(LaneTile(module="dau_int32_temporal_hero", count_port="record_count") for _ in range(8))
     gearbox = TileInstance(module="dau_record_gearbox")
-    dispatcher = TileInstance(module="dau_int32_key_mask_dispatcher")
+    dispatcher = TileInstance(module="dau_key_mask_dispatcher")
 
     with pytest.raises(ValidationError, match="front_gearbox requires data_width > 64"):
         ScanComposition(
@@ -756,7 +752,7 @@ def test_front_gearbox_shape_refusals() -> None:
             module_name="dau_bad",
             lanes=lanes,
             partitioner=dispatcher,
-            front_unpack=TileInstance(module="dau_int32_row_unpack"),
+            front_unpack=TileInstance(module="dau_row_unpack"),
             front_gearbox=gearbox,
             data_width=512,
             input_row_bytes=24,
@@ -901,7 +897,7 @@ def test_wide_data_width_splits_the_m_axi_into_wide_read_and_narrow_write() -> N
         name="wide",
         module_name="dau_mm_wide_job",
         lanes=tuple(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count") for _ in range(4)),
-        partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 512}),
+        partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 512}),
         data_width=512,
     )
     sv = generate_scan_composition_top_sv(comp, platform_id="DPV1")
@@ -925,7 +921,7 @@ def _wide_lane_composition() -> ScanComposition:
                 params={"SLOTS": 4},
                 count_port="record_count",
                 chain=(
-                    TileInstance(module="dau_int32_wide_row_predicate_filter", params={"SLOTS": 4}),
+                    TileInstance(module="dau_wide_row_predicate_filter", params={"SLOTS": 4}),
                     TileInstance(module="dau_int32_wide_row_transform", params={"SLOTS": 4}),
                 ),
             ),
@@ -976,7 +972,7 @@ def test_wide_lane_requires_exactly_one_lane() -> None:
 
 def test_wide_lane_rejects_a_shared_partitioner() -> None:
     composition = _wide_lane_composition().model_dump()
-    composition["partitioner"] = TileInstance(module="dau_int32_key_mask_dispatcher")
+    composition["partitioner"] = TileInstance(module="dau_key_mask_dispatcher")
     with pytest.raises(ValidationError, match="wide_lane.*shared partitioner"):
         ScanComposition.model_validate(composition)
 
@@ -996,13 +992,13 @@ def test_a_packed_front_feeds_a_wide_lane_only_at_matching_widths() -> None:
     base = _wide_lane_composition().model_dump()
 
     # a 64-bit front emits at most one quad row and cannot feed a wide lane
-    narrow = dict(base, front_unpack=TileInstance(module="dau_int32_row_unpack", params={"OUT_WIDTH": 64}))
+    narrow = dict(base, front_unpack=TileInstance(module="dau_row_unpack", params={"OUT_WIDTH": 64}))
     with pytest.raises(ValidationError, match="emits at most one"):
         ScanComposition.model_validate(narrow)
 
     # and the read width must be the PACKED one, not the quad-row one
     slots = base["data_width"] // 128
-    mismatched = dict(base, front_unpack=TileInstance(module="dau_int32_row_unpack", params={"OUT_WIDTH": slots * 128}))
+    mismatched = dict(base, front_unpack=TileInstance(module="dau_row_unpack", params={"OUT_WIDTH": slots * 128}))
     with pytest.raises(ValidationError, match="reads SLOTS packed 64-bit rows"):
         ScanComposition.model_validate(mismatched)
 
@@ -1041,8 +1037,8 @@ def test_wide_packed_reader_is_a_named_followup() -> None:
             name="bad",
             module_name="dau_bad",
             lanes=(LaneTile(module="dau_int32_field_sum_aggregation", count_port="agg_count"),),
-            front_unpack=TileInstance(module="dau_int32_row_unpack", params={"OUT_WIDTH": 128}),
-            partitioner=TileInstance(module="dau_int32_key_mask_dispatcher", params={"IN_WIDTH": 128}),
+            front_unpack=TileInstance(module="dau_row_unpack", params={"OUT_WIDTH": 128}),
+            partitioner=TileInstance(module="dau_key_mask_dispatcher", params={"IN_WIDTH": 128}),
             data_width=256,
         )
 
@@ -1062,7 +1058,7 @@ def test_fused_chain_drains_mid_stage_close_outs_and_latches_their_errors() -> N
                 count_port="moment_count",
                 chain=(
                     TileInstance(module="dau_int32_asof_backward", closes_out=True),
-                    TileInstance(module="dau_int32_time_bucket_key"),
+                    TileInstance(module="dau_time_bucket_key"),
                     TileInstance(module="dau_int32_grouped_field_aggregation", closes_out=True),
                 ),
             ),
@@ -1109,7 +1105,7 @@ def test_a_chain_without_closing_stages_is_byte_identical() -> None:
             LaneTile(
                 module="dau_int32_field_sum_aggregation",
                 count_port="aggregated_count",
-                chain=(TileInstance(module="dau_int32_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
+                chain=(TileInstance(module="dau_row_predicate_filter"), TileInstance(module="dau_int32_row_map_alu")),
             ),
         ),
     )
@@ -1248,7 +1244,7 @@ def test_a_wide_lane_behind_a_packed_front_reads_the_UNPACKED_stream() -> None:
             base,
             data_width=slots * 64,
             front_unpack=TileInstance(
-                module="dau_int32_row_unpack",
+                module="dau_row_unpack",
                 config=dict(_FRONT_UNPACK_CONFIG),
                 params={"OUT_WIDTH": slots * 128},
             ),
