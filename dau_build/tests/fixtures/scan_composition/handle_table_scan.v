@@ -513,7 +513,7 @@ module dau_mm_bar_noc_job #(
         .output_last(bcast_last)
     );
 
-    dau_int32_pair_key_filter partition_0 (
+    dau_pair_key_filter partition_0 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .cfg_key_mask(32'd3),
@@ -595,7 +595,7 @@ module dau_mm_bar_noc_job #(
         .status_error_code(unit_status_error_code_0)
     );
 
-    dau_int32_pair_key_filter partition_1 (
+    dau_pair_key_filter partition_1 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .cfg_key_mask(32'd3),
@@ -677,7 +677,7 @@ module dau_mm_bar_noc_job #(
         .status_error_code(unit_status_error_code_1)
     );
 
-    dau_int32_pair_key_filter partition_2 (
+    dau_pair_key_filter partition_2 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .cfg_key_mask(32'd3),
@@ -759,7 +759,7 @@ module dau_mm_bar_noc_job #(
         .status_error_code(unit_status_error_code_2)
     );
 
-    dau_int32_pair_key_filter partition_3 (
+    dau_pair_key_filter partition_3 (
         .clk(s_axi_aclk),
         .rst(lane_rst),
         .cfg_key_mask(32'd3),

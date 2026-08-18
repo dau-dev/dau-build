@@ -5,7 +5,7 @@
 # vivado synthesis per core, and (execute=true, on the synthesis host)
 # parses envelope reports and flags drift against the registered envelope.
 #   dau-build task=tasks/build/synthesize-cores \
-#     'model.cores=[/dau-core/int32-streaming-top-k]' \
+#     'model.cores=[/dau-core/streaming-top-k]' \
 #     model.output_root=./ooc platform=platforms/example/probe model.execute=true
 _target_: dau_build.synthesize_cores.SynthesizeCoresTask
 platform: ${oc.select:platform,null}

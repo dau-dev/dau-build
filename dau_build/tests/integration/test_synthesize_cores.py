@@ -10,7 +10,7 @@ from dau_build.synthesize_cores import SynthesizeCoresTask
 
 pytest.importorskip("dau_core", reason="dau-core not installed (registry unavailable)")
 
-_TOP_K = "/dau-core/int32-streaming-top-k"
+_TOP_K = "/dau-core/streaming-top-k"
 
 
 def _task(tmp_path: Path, **kwargs) -> SynthesizeCoresTask:
@@ -22,9 +22,9 @@ def _task(tmp_path: Path, **kwargs) -> SynthesizeCoresTask:
 def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     result = _task(tmp_path)(NullContext())
     assert "status=handoff-written" in result.message
-    tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
+    tcl = (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
     assert "read_verilog -sv" in tcl and tcl.index("read_verilog") < tcl.index("synth_design")
-    assert "synth_design -top dau_int32_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context" in tcl
+    assert "synth_design -top dau_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context" in tcl
     assert "-generic K=8" in tcl
     # a tile that includes a header beside it must synthesize; the flag is
     # harmless when there is no include and removes a wall that would only
@@ -32,11 +32,11 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     assert "-include_dirs [list {" in tcl and "dau_core/hdl}]" in tcl
     # the clock constrains SYNTHESIS: the xdc reads before synth_design
     assert "read_xdc -mode out_of_context" in tcl and tcl.index("read_xdc") < tcl.index("synth_design")
-    xdc = (tmp_path / "dau_int32_streaming_top_k.ooc.xdc").read_text()
+    xdc = (tmp_path / "dau_streaming_top_k.ooc.xdc").read_text()
     assert "create_clock -period 8.000 -name clk [get_ports clk]" in xdc
     assert "report_utilization" in tcl and "report_timing_summary" in tcl
     plan = (tmp_path / "synthesize-cores.sh").read_text()
-    assert "vivado -mode batch -source" in plan and "dau_int32_streaming_top_k.ooc.tcl" in plan
+    assert "vivado -mode batch -source" in plan and "dau_streaming_top_k.ooc.tcl" in plan
 
 
 def test_sources_are_dependency_closed_in_order(tmp_path: Path) -> None:
@@ -50,8 +50,8 @@ def test_sources_are_dependency_closed_in_order(tmp_path: Path) -> None:
 
 
 def test_parameter_override_changes_generic(tmp_path: Path) -> None:
-    _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 32}})(NullContext())
-    tcl = (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
+    _task(tmp_path, parameters={"streaming-top-k": {"K": 32}})(NullContext())
+    tcl = (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
     assert "-generic K=32" in tcl
 
 
@@ -96,12 +96,12 @@ def test_a_spelling_on_a_plain_size_parameter_is_refused(tmp_path: Path) -> None
     """K is a size, not a type. Reading 'int32' as a number there would
     silently synthesize a 32-deep heap."""
     with pytest.raises(BuildStepError, match="must be an int"):
-        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": "int32"}})(NullContext())
+        _task(tmp_path, parameters={"streaming-top-k": {"K": "int32"}})(NullContext())
 
 
 def test_undeclared_parameter_override_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="declares no parameter"):
-        _task(tmp_path, parameters={"int32-streaming-top-k": {"DEPTH": 4}})(NullContext())
+        _task(tmp_path, parameters={"streaming-top-k": {"DEPTH": 4}})(NullContext())
 
 
 def test_unknown_core_and_bad_path_are_rejected(tmp_path: Path) -> None:
@@ -117,7 +117,7 @@ def test_part_falls_back_to_platform_and_errors_without_either(tmp_path: Path) -
 
     task = SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path, platform=FakePlatform())
     task(NullContext())
-    assert "-part xc7k325tffg900-2" in (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").read_text()
+    assert "-part xc7k325tffg900-2" in (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
     with pytest.raises(BuildStepError, match="no part selected"):
         SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path / "x")(NullContext())
 
@@ -135,18 +135,20 @@ _TIMING_RPT = "Slack (MET) :             4.350ns  (required time - arrival time)
 def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     from dau_core.registry import core
 
-    definition = core("int32-streaming-top-k")
-    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
-    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+    definition = core("streaming-top-k")
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
     # this core carries a measurement SURFACE: several points share the part
-    # and clock, so the comparison is only meaningful with the params too
-    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8}}
+    # and clock, so the comparison is only meaningful with the params too --
+    # ALL of them, since the comparison is an exact coordinate match and the
+    # tile declares its element type beside K (int32 encodes as 32)
+    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
     assert report.wns_ns == 4.350 and report.met
     assert report.registered_matches is True  # the registered point came from this shape
 
-    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "999"))
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "999"))
     drifted = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert drifted.registered_matches is False
 
@@ -159,12 +161,12 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
     carries the same part and params at two clocks."""
     from dau_core.registry import core
 
-    definition = core("int32-streaming-top-k")
+    definition = core("streaming-top-k")
     assert isinstance(definition.resources, (list, tuple)) and len(definition.resources) > 1
-    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
-    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
 
-    full = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8}}
+    full = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     assert SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **full).registered_matches is True
     for dropped in ("clock_period_ns", "params"):
         coordinate = {**full, dropped: None}
@@ -175,9 +177,9 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
 def test_parse_reports_negative_slack_is_violated(tmp_path: Path) -> None:
     from dau_core.registry import core
 
-    definition = core("int32-streaming-top-k")
-    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
-    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text("Slack (VIOLATED) :        -0.898ns  (required time - arrival time)\n")
+    definition = core("streaming-top-k")
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text("Slack (VIOLATED) :        -0.898ns  (required time - arrival time)\n")
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path)
     assert not report.met and report.wns_ns == -0.898
 
@@ -190,7 +192,7 @@ def test_resolving_cores_leaves_the_root_registry_alone() -> None:
     from ccflow import ModelRegistry
 
     before = set(ModelRegistry.root().models)
-    task = SynthesizeCoresTask(cores=("/dau-core/int32-streaming-top-k",), output_root=Path("/unused"), part="xc7a200tfbg484-2")
+    task = SynthesizeCoresTask(cores=("/dau-core/streaming-top-k",), output_root=Path("/unused"), part="xc7a200tfbg484-2")
     assert len(task._core_registry().models) > 0
     assert set(ModelRegistry.root().models) == before
 
@@ -213,16 +215,16 @@ def test_task_composes_from_the_config_group(tmp_path: Path) -> None:
     )
     outcome = cfg_run(result.cfg)
     assert "status=handoff-written" in outcome.message
-    assert (tmp_path / "dau_int32_streaming_top_k.ooc.tcl").is_file()
+    assert (tmp_path / "dau_streaming_top_k.ooc.tcl").is_file()
 
 
 def test_parameter_override_constraints_are_enforced(tmp_path: Path) -> None:
     # the registry's declared ParameterSpec bounds reject bad overrides here,
     # never as an HDL elaboration failure
     with pytest.raises(BuildStepError, match="positive int"):
-        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 0}})(NullContext())
+        _task(tmp_path, parameters={"streaming-top-k": {"K": 0}})(NullContext())
     with pytest.raises(BuildStepError, match="<= 128"):
-        _task(tmp_path, parameters={"int32-streaming-top-k": {"K": 200}})(NullContext())
+        _task(tmp_path, parameters={"streaming-top-k": {"K": 200}})(NullContext())
 
 
 def test_relative_output_root_stages_absolute_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -231,12 +233,12 @@ def test_relative_output_root_stages_absolute_paths(tmp_path: Path, monkeypatch:
     monkeypatch.chdir(tmp_path)
     result = _task(Path("ooc"))(NullContext())
     assert "status=handoff-written" in result.message
-    tcl = (tmp_path / "ooc" / "dau_int32_streaming_top_k.ooc.tcl").read_text()
+    tcl = (tmp_path / "ooc" / "dau_streaming_top_k.ooc.tcl").read_text()
     for line in tcl.splitlines():
         if line.startswith("read_xdc") or "-file" in line:
             assert str(tmp_path) in line, line
     plan = (tmp_path / "ooc" / "synthesize-cores.sh").read_text()
-    assert str(tmp_path / "ooc" / "dau_int32_streaming_top_k.ooc.tcl") in plan
+    assert str(tmp_path / "ooc" / "dau_streaming_top_k.ooc.tcl") in plan
 
 
 def test_clock_port_mapping_and_unclocked_core(tmp_path: Path) -> None:
@@ -252,9 +254,9 @@ def test_clock_port_mapping_and_unclocked_core(tmp_path: Path) -> None:
 def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
     from dau_core.registry import core
 
-    definition = core("int32-streaming-top-k")
-    (tmp_path / "dau_int32_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "5000"))
-    (tmp_path / "dau_int32_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+    definition = core("streaming-top-k")
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT.replace("1295", "5000"))
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
     # a K=32 build is a different shape than the registered K=8 envelope, not drift
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, compare=False)
     assert report.registered_matches is None
