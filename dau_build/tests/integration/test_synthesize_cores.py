@@ -40,12 +40,12 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
 
 
 def test_sources_are_dependency_closed_in_order(tmp_path: Path) -> None:
-    _task(tmp_path, cores=("/dau-core/int32-stream-aggregation",))(NullContext())
-    tcl = (tmp_path / "dau_int32_stream_aggregation.ooc.tcl").read_text()
+    _task(tmp_path, cores=("/dau-core/stream-aggregation",))(NullContext())
+    tcl = (tmp_path / "dau_stream_aggregation.ooc.tcl").read_text()
     reads = [line for line in tcl.splitlines() if line.startswith("read_verilog")]
     assert len(reads) > 1  # the package + tile deps come along
     assert reads.index(next(r for r in reads if "dau_aggregation_pkg.sv" in r)) < reads.index(
-        next(r for r in reads if "dau_int32_stream_aggregation.sv" in r)
+        next(r for r in reads if "dau_stream_aggregation.sv" in r)
     )
 
 
