@@ -11,6 +11,13 @@ synthesis host) it runs the plan and parses each utilization/timing report
 into a resource-envelope summary, flagging drift against the envelope
 registered in the core registry. Envelope numbers enter the registry only
 from this task — never from hand-run synthesis.
+
+Each report also carries ``measured_from``: the digest of the HDL closure
+the run actually read, which is what the registry records beside the numbers
+so a later edit to that RTL is a test failure rather than a discovery. It is
+reported here because this is the only place that knows it honestly — a
+digest written by anything other than the process that ran Vivado is a claim
+about a measurement nobody took.
 """
 
 # NOTE: no `from __future__ import annotations` — ccflow's Flow.call
@@ -44,6 +51,11 @@ class CoreEnvelopeReport(BaseModel):
     wns_ns: float | None = None  # None: characterized unclocked
     met: bool | None = None
     registered_matches: bool | None = None  # None: no envelope registered, or overrides changed the shape
+    # the digest of the HDL closure this run actually read, which is what the
+    # registry records beside the numbers as `measured_from`. Reported so the
+    # transcriber pastes what was measured rather than re-deriving it.
+    measured_from: str | None = None  # None: the core model does not offer a closure digest
+    registered_measured_from_matches: bool | None = None  # None: nothing stamped to compare against
 
 
 def core_registry():
@@ -184,9 +196,14 @@ class SynthesizeCoresTask(BuildCallableModel):
             )
         reports = [self._run_and_parse(definition, script, root=root) for definition, script in zip(definitions, scripts)]
         drift = [report.name for report in reports if report.registered_matches is False]
+        # a SEPARATE field from envelope_drift, because it answers a separate
+        # question: the numbers can reproduce exactly while the registry still
+        # has no idea which RTL they came from
+        stamp_drift = [report.name for report in reports if report.registered_measured_from_matches is False]
         summary = " ".join(
             f"{r.name}:lut={r.lut},ff={r.ff},bram36={r.bram36},dsp={r.dsp},"
             + (f"wns={r.wns_ns:+.3f},{'met' if r.met else 'VIOLATED'}" if r.wns_ns is not None else "unclocked")
+            + (f",measured_from={r.measured_from}" if r.measured_from is not None else "")
             for r in reports
         )
         return BuildStepResult(
@@ -194,7 +211,8 @@ class SynthesizeCoresTask(BuildCallableModel):
             message=(
                 f"dau-build-synthesize-cores\tcores={','.join(d.name for d in definitions)} part={part} "
                 f"clock_ns={self.clock_period_ns} output_root={root} {summary} "
-                f"envelope_drift={','.join(drift) if drift else 'none'} status=synthesized"
+                f"envelope_drift={','.join(drift) if drift else 'none'} "
+                f"measured_from_drift={','.join(stamp_drift) if stamp_drift else 'none'} status=synthesized"
             ),
         )
 
@@ -328,6 +346,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             part=self._part(),
             clock_period_ns=self.clock_period_ns,
             params=self._generics(definition),
+            resolve=self._core_registry().models.get,
         )
 
     @staticmethod
@@ -340,6 +359,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         part: str | None = None,
         clock_period_ns: float | None = None,
         params: Mapping[str, int] | None = None,
+        resolve=None,
     ) -> CoreEnvelopeReport:
         """Parse a core's utilization (and, when clocked, timing) reports into
         an envelope report and compare it against the registered one.
@@ -350,7 +370,16 @@ class SynthesizeCoresTask(BuildCallableModel):
         part and clock would otherwise compare against whichever happened to
         be first, and report drift against a different parameter's numbers.
         Without ``params`` such a core is not compared at all, because there
-        is no way to tell which point the build corresponds to."""
+        is no way to tell which point the build corresponds to.
+
+        ``resolve`` maps a core name to its definition, which is what closing
+        the HDL dependency graph needs. Given one, the report also carries the
+        digest of the closure this run READ, and whether the registry's
+        ``measured_from`` stamp agrees with it. That second comparison answers
+        a question the numbers cannot: ``registered_matches`` says the numbers
+        still reproduce, while the stamp says whether the registry knows which
+        RTL produced them. A run whose numbers match a stamp recorded against
+        DIFFERENT sources matched by luck."""
         util = (output_root / f"{definition.module}.util.rpt").read_text()
         lut = _util_value(util, r"Slice LUTs\*?")
         ff = _util_value(util, r"Slice Registers")
@@ -392,6 +421,14 @@ class SynthesizeCoresTask(BuildCallableModel):
                 point = registered if params is None or dict(params) == {name: spec.default for name, spec in definition.parameters.items()} else None
             if point is not None:
                 matches = (point.lut, point.ff, point.bram36, point.dsp) == (lut, ff, bram, dsp)
+        # The stamp is reported whether or not the numbers are being compared:
+        # an override run measures a coordinate the registry does not carry,
+        # and its digest is still the one that coordinate must be recorded
+        # with. Only the COMPARISON needs something registered to compare to.
+        measured_from = definition.hdl_closure_digest(resolve) if resolve is not None else None
+        stamp_matches = None
+        if measured_from is not None and definition.measured_from is not None:
+            stamp_matches = definition.measured_from == measured_from
         return CoreEnvelopeReport(
             name=definition.name,
             module=definition.module,
@@ -402,6 +439,8 @@ class SynthesizeCoresTask(BuildCallableModel):
             wns_ns=wns,
             met=met,
             registered_matches=matches,
+            measured_from=measured_from,
+            registered_measured_from_matches=stamp_matches,
         )
 
 

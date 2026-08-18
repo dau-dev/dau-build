@@ -262,6 +262,48 @@ def test_overridden_parameters_skip_envelope_comparison(tmp_path: Path) -> None:
     assert report.registered_matches is None
 
 
+def test_parse_reports_carries_the_digest_of_the_hdl_it_read(tmp_path: Path) -> None:
+    """The number a transcriber must record beside the LUT count. It comes
+    from here because this is the only process that knows what synthesis
+    actually read; a digest written anywhere else is a claim about a
+    measurement nobody took."""
+    from dau_core.registry import core, loaded_cores
+
+    definition = core("streaming-top-k")
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+
+    without = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path)
+    assert without.measured_from is None and without.registered_measured_from_matches is None
+
+    report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, resolve=loaded_cores().get)
+    assert report.measured_from == definition.hdl_closure_digest(loaded_cores().get)
+    # nothing stamped yet: no comparison, which is not the same as a match
+    assert report.registered_measured_from_matches is None
+
+
+def test_parse_reports_flags_a_stamp_that_disagrees_with_the_hdl(tmp_path: Path) -> None:
+    """The two comparisons are independent. Numbers that reproduce exactly
+    say nothing about whether the registry knows which RTL produced them, so
+    a stamp is reported on its own axis."""
+    from dau_core.registry import core, loaded_cores
+
+    definition = core("streaming-top-k")
+    (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
+    (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
+    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
+    resolve = loaded_cores().get
+
+    stamped = definition.model_copy(update={"measured_from": definition.hdl_closure_digest(resolve)})
+    agreed = SynthesizeCoresTask.parse_reports(stamped, output_root=tmp_path, resolve=resolve, **at_k8)
+    assert agreed.registered_matches is True and agreed.registered_measured_from_matches is True
+
+    stale = definition.model_copy(update={"measured_from": f"1:{'0' * 64}"})
+    flagged = SynthesizeCoresTask.parse_reports(stale, output_root=tmp_path, resolve=resolve, **at_k8)
+    assert flagged.registered_matches is True, "the numbers still reproduce"
+    assert flagged.registered_measured_from_matches is False, "and the RTL behind them is not what was stamped"
+
+
 def test_package_entries_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="not a synthesizable top"):
         _task(tmp_path, cores=("/dau-core/aggregation-pkg",))(NullContext())
