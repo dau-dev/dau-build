@@ -15,6 +15,7 @@ from dau_build.scan_composition import (
     ScanComposition,
     ScanCompositionError,
     TileInstance,
+    _length_align_bits,
     generate_scan_composition_sim_sv,
     generate_scan_composition_top_sv,
     generate_shell_handle_table_v,
@@ -1140,6 +1141,30 @@ def test_the_length_gate_follows_the_head_record_size() -> None:
             ),
             platform_id="DPV1",
         )
+
+
+def test_the_sim_harness_gates_job_length_exactly_as_the_shell_top_does() -> None:
+    """The bench is the pre-silicon proof of the shell, so it must gate the
+    job on the SAME byte grid. The sim used to hard-code `3 if front_unpack
+    else 4` and read neither `input_row_bytes` nor `data_width`, which at
+    32-byte records ACCEPTED a torn-record length the top rejects and at the
+    geared 24-byte record rejected whole-record jobs the top takes."""
+    for row_bytes in (8, 16, 24, 32, 64):
+        for unpack in (None, TileInstance(module="dau_row_unpack")):
+            composition = ScanComposition(
+                name="gate",
+                module_name="dau_mm_gate_job",
+                input_row_bytes=row_bytes,
+                front_unpack=unpack,
+                lanes=(LaneTile(module="dau_field_sum_aggregation", count_port="aggregated_count"),),
+            )
+            top = generate_scan_composition_top_sv(composition, platform_id="DPV1")
+            sim = generate_scan_composition_sim_sv(composition)
+            bits = _length_align_bits(composition)
+            gate = f"input_length_bytes[{bits - 1}:0] == {bits}'d0"
+            assert gate in top, f"{row_bytes}B rows, unpack={unpack is not None}: the top gate moved"
+            assert gate in sim, f"{row_bytes}B rows, unpack={unpack is not None}: the sim gates on a different grid than the top"
+            assert f".LENGTH_ALIGN_BITS({bits})" in top and f".LENGTH_ALIGN_BITS({bits})" in sim
 
 
 def test_a_geared_record_bus_must_be_a_size_the_rtl_can_elaborate() -> None:

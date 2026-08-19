@@ -371,3 +371,32 @@ def test_a_missing_searchpath_plugin_names_itself(monkeypatch) -> None:
     assert "hydra.lernaplugins" in message
     assert "hydra_plugins.lerna" in message, "the message must name the plugin whose absence causes this"
     assert "str" in message, "it should say what it got instead of a group"
+
+
+def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
+    """The 150 MHz tier is DERIVED (1000 / 150 = 6.666666666666667), and the
+    registry writes it both as 6.66667 and as 6.667 while the XDC this task
+    emits rounds every one of them to `-period 6.667`. One physical clock.
+
+    An exact float comparison therefore found NO registered point for the
+    tiles carrying the other spelling, and no point is reported as no
+    comparison — which rolls up as `envelope_drift=none` however far the
+    numbers moved. Enumerated from the registry rather than listed here, so
+    a tile added at this tier is covered the day it lands.
+    """
+    from dau_core.registry import loaded_cores
+
+    from dau_build.synthesize_cores import _registered_point
+
+    spellings = set()
+    for definition in loaded_cores().values():
+        points = definition.resources if isinstance(definition.resources, (list, tuple)) else ()
+        for point in points:
+            if not 6.6 < point.clock_ns < 6.7:
+                continue
+            spellings.add(point.clock_ns)
+            for spelling in (6.667, 6.66667, 1000.0 / 150.0):
+                found = _registered_point(definition, part=point.part, clock_period_ns=spelling, params=dict(point.params))
+                assert found is point, f"{definition.name}: its {point.clock_ns} point is invisible to a run at clock_period_ns={spelling}"
+
+    assert len(spellings) > 1, f"the registry now spells the 150 MHz tier one way ({spellings}); this guard's premise is gone, and so is its value"
