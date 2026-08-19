@@ -254,6 +254,33 @@ def _largest_power_of_two_divisor_bits(row_bytes: int) -> int:
     return (row_bytes & -row_bytes).bit_length() - 1
 
 
+def _length_align_bits(composition: ScanComposition) -> int:
+    """The byte grid the job-length gate enforces, for BOTH generators.
+
+    The input length must be a whole number of rows AND of reader beats: at
+    a wide bus (data_width > 64) a beat spans several rows, so beat
+    alignment (log2(data_width/8)) dominates the row grid. Packed rows land
+    one per 8-byte word (unpack mode) and pre-widened quad rows are two
+    8-byte words, so a front-unpack composition sits on an 8-byte row grid;
+    otherwise the row grid is the largest power of two dividing the declared
+    record size, and a length on that grid that still tears a record is the
+    head tile's ERR_STREAM job.
+
+    ONE derivation, read by the shell top and by the sim harness. They used
+    to compute it separately, and the sim's copy -- ``3 if front_unpack else
+    4`` -- read neither ``input_row_bytes`` nor ``data_width``. So at every
+    declared record size but 16 the bench parameterized the reader's
+    ``LENGTH_ALIGN_BITS`` differently from the shell it is the proof OF: at
+    32-byte records the sim accepted a torn-record length the top rejects,
+    and at the geared 24-byte record it rejected whole-record jobs the top
+    takes. A pre-silicon proof that gates on a different number than the
+    board is not a proof of the board.
+    """
+    row_align = 3 if composition.front_unpack is not None else _largest_power_of_two_divisor_bits(composition.input_row_bytes)
+    beat_align = (composition.data_width // 8).bit_length() - 1
+    return max(row_align, beat_align)
+
+
 def _validate_composition_shape(composition: ScanComposition) -> None:
     """The composition's shape and width-coherence invariants. Called from
     ``model_post_init`` AND from both public generators: ``model_copy`` skips
@@ -1786,18 +1813,7 @@ def generate_scan_composition_top_sv(
     ) + _front_gearbox_error_branch_sv(composition, error="job_error", error_code="job_error_code")
     front_stage_error_reset = _front_unpack_error_reset_sv(composition) + _front_gearbox_error_reset_sv(composition)
     front_stage_error_latch = _front_unpack_error_latch_sv(composition) + _front_gearbox_error_latch_sv(composition)
-    # packed rows land one per 8-byte word (unpack mode); pre-widened quad
-    # rows are two 8-byte words. Both sit on an 8-byte grid, so a front-unpack
-    # composition relaxes the reader/length gate from the 16-byte quad grid to
-    # 8 bytes (an odd packed-row count would round to a non-16-multiple length
-    # and be rejected otherwise); bypass-mode odd-word framing stays the
-    # unpacker's ERR_STREAM job.
-    # the input length must be a whole number of rows AND of reader beats: at
-    # a wide bus (data_width > 64) a beat spans several rows, so beat
-    # alignment (log2(data_width/8)) dominates the row grid (3 packed / 4 quad)
-    _row_align = 3 if composition.front_unpack is not None else _largest_power_of_two_divisor_bits(composition.input_row_bytes)
-    _beat_align = (data_width // 8).bit_length() - 1
-    length_align_bits = max(_row_align, _beat_align)
+    length_align_bits = _length_align_bits(composition)
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
 
@@ -2232,7 +2248,7 @@ def generate_scan_composition_sim_sv(
     )
     front_stage_error_reset = _front_unpack_error_reset_sv(composition) + _front_gearbox_error_reset_sv(composition)
     front_stage_error_latch = _front_unpack_error_latch_sv(composition) + _front_gearbox_error_latch_sv(composition)
-    length_align_bits = 3 if composition.front_unpack is not None else 4
+    length_align_bits = _length_align_bits(composition)
     grid_bytes = 1 << length_align_bits
     length_ok_check = f"input_length_bytes[{length_align_bits - 1}:0] == {length_align_bits}'d0"
     # the harness has no register aperture, so the handle table's programming

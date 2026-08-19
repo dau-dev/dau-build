@@ -58,6 +58,49 @@ class CoreEnvelopeReport(BaseModel):
     registered_measured_from_matches: bool | None = None  # None: nothing stamped to compare against
 
 
+def _registered_point(definition, *, part: str | None, clock_period_ns: float | None, params):
+    """The registered measurement this run corresponds to, or None when the
+    registry carries no point at this coordinate.
+
+    A measurement surface is resolved by the REGISTRY'S OWN lookup
+    (``resource_measurement``), not by a second implementation of it here.
+    The second implementation disagreed with the first on coordinates that
+    name the same physical point: it compared the clock period with ``==``
+    where the registry compares to the picosecond, and it took ``params``
+    as given where the registry fills declared defaults first.
+
+    The clock half is not hypothetical. The registry spells the 150 MHz tier
+    ``6.66667`` on most of the tiles that carry it and ``6.667`` on at least
+    one, and the XDC this task writes rounds both to ``-period 6.667`` -- one
+    physical constraint, two spellings. A run at either spelling therefore
+    found NO point for the tiles carrying the other, and no point is reported
+    as no comparison, which rolls up as ``envelope_drift=none``. A drift
+    report that cannot see drift is worse than no drift report.
+
+    A LEGACY scalar envelope carries no coordinates at all, so the registry
+    refuses to answer for one; it stays comparable here against a build that
+    used the declared defaults, which is the only claim it supports.
+    """
+    registered = definition.resources
+    if isinstance(registered, (list, tuple)):
+        # every axis must match. A missing clock is NOT a wildcard: once a
+        # tile carries both an 8 ns and a 10 ns point for the same part and
+        # params, a wildcard silently picks whichever was written first and
+        # reports drift against the wrong one.
+        if params is None or clock_period_ns is None or part is None:
+            return None
+        try:
+            return definition.resource_measurement(part=part, clock_ns=clock_period_ns, params=params)
+        except LookupError:
+            # the registry's own "unmeasured coordinate" refusal: this run
+            # measured something nobody recorded, which is not drift
+            return None
+    # a scalar envelope declares one shape: it is comparable only against a
+    # build that used the declared defaults
+    defaults = {name: spec.default for name, spec in definition.parameters.items()}
+    return registered if params is None or dict(params) == defaults else None
+
+
 def core_registry():
     """The composed ``/dau-core`` subregistry.
 
@@ -370,7 +413,10 @@ class SynthesizeCoresTask(BuildCallableModel):
         part and clock would otherwise compare against whichever happened to
         be first, and report drift against a different parameter's numbers.
         Without ``params`` such a core is not compared at all, because there
-        is no way to tell which point the build corresponds to.
+        is no way to tell which point the build corresponds to. Resolving
+        that coordinate is the PROVIDER's (``resource_measurement``): only
+        the side that wrote the coordinates knows when two spellings of one
+        name the same physical point (:func:`_registered_point`).
 
         ``resolve`` maps a core name to its definition, which is what closing
         the HDL dependency graph needs. Given one, the report also carries the
@@ -402,23 +448,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         registered = definition.resources
         matches = None
         if compare and registered is not None:
-            if isinstance(registered, (list, tuple)):
-                # every axis must match. A missing clock is NOT a wildcard:
-                # once a tile carries both an 8 ns and a 10 ns point for the
-                # same part and params, a wildcard silently picks whichever
-                # was written first and reports drift against the wrong one.
-                point = (
-                    None
-                    if params is None or clock_period_ns is None
-                    else next(
-                        (m for m in registered if m.part == part and m.clock_ns == clock_period_ns and dict(m.params) == dict(params)),
-                        None,
-                    )
-                )
-            else:
-                # a scalar envelope declares one shape: it is comparable only
-                # against a build that used the declared defaults
-                point = registered if params is None or dict(params) == {name: spec.default for name, spec in definition.parameters.items()} else None
+            point = _registered_point(definition, part=part, clock_period_ns=clock_period_ns, params=params)
             if point is not None:
                 matches = (point.lut, point.ff, point.bram36, point.dsp) == (lut, ff, bram, dsp)
         # The stamp is reported whether or not the numbers are being compared:
