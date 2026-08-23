@@ -7,12 +7,7 @@ develop:  ## install dependencies and build library
 	uv pip install -e .[develop]
 
 requirements:  ## install prerequisite python build requirements
-<<<<<<< before updating
-	python -m pip install --upgrade pip
-	python -m pip install -e ".[develop]"
-=======
 	uv pip install -r pyproject.toml --extra develop
->>>>>>> after updating
 
 build:  ## build the python library
 	python -m build -n
