@@ -1,26 +1,26 @@
 # Build the identity example
 
-In this tutorial we will take a checked-in example design through dau-build:
-inspect it, generate its artifacts, validate the result, and run a simulation
-check — all on your machine, with no FPGA and no Xilinx tools installed. By the
-end you will have run every stage of the plan-first build flow and seen what each
-one produces.
+This tutorial takes a checked-in example design through dau-build: inspect
+it, generate its artifacts, validate the result, and run a simulation check.
+Everything runs on your machine; no FPGA and no Xilinx tools are involved.
+By the end you will have run every stage of the plan-first build flow and
+seen what each stage produces.
 
-Work from the root of a `dau-build` checkout. Every command here uses the
+Work from the root of a `dau-build` checkout. Every command uses the
 `examples/identity` design that ships with the package. Each step shows the
-command to type in a shell block, then an **Output** block with what it prints —
-the output lines are tab-separated `label⇥key=value` status lines, so a leading
-word like `dau-build-spec` is a line label the task emits, not a command.
+command, then an **Output** block with what it prints. The output lines are
+tab-separated `label⇥key=value` status lines, so a leading word such as
+`dau-build-spec` is a label the task emits, not a command.
 
-## Step 1 — Inspect the spec
+## Step 1: inspect the spec
 
-First, look at what the example declares. Run:
+Start by looking at what the example declares:
 
 ```bash
 dau-build task=tasks/spec/inspect model.spec_path=examples/identity/dau-build.yaml
 ```
 
-**Output** — a summary line, then the resolved inputs:
+**Output**, a summary line and then the resolved inputs:
 
 ```text
 dau-build-spec	name=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=identity sources=1 clock=clk reset=reset backend=vivado
@@ -31,19 +31,19 @@ metadata	index=0 path=.../examples/identity/constraints/identity.xdc role=constr
 binary	index=0 path=.../examples/identity/bitstreams/seed.bit role=bitstream format=xilinx-bitstream origin=...
 ```
 
-Notice that each source, constraint, and binary is listed with its role and the
-artifact bundle it came from. This is the resolved view dau-build hands to a
-backend — nothing has been generated yet.
+Each source, constraint and binary is listed with its role and the artifact
+bundle it came from. This is the resolved view dau-build hands to a backend.
+Nothing has been generated yet.
 
-## Step 2 — Generate the artifacts
+## Step 2: generate the artifacts
 
-Now generate the build outputs into a fresh directory:
+Generate the build outputs into a fresh directory:
 
 ```bash
 dau-build task=tasks/spec/build model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
 ```
 
-**Output** — the two headline artifacts it wrote:
+**Output**, the two headline artifacts it wrote:
 
 ```text
 dau-build-artifacts	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
@@ -61,14 +61,14 @@ ls outputs/identity
 dau-identity.artifacts.yaml   dau-identity.manifest   generated
 ```
 
-You have generated the top-level SystemVerilog (`generated/dau_identity_top.sv`),
-the DAU manifest, and an `artlink.manifest/v0` artifact bundle. These are the
-portable inputs a synthesis backend consumes.
+You now have the top-level SystemVerilog (`generated/dau_identity_top.sv`),
+the DAU manifest, and an `artlink.manifest/v0` artifact bundle. These are
+the portable inputs a synthesis backend consumes.
 
-## Step 3 — Validate the bundle
+## Step 3: validate the bundle
 
-Check that the generated bundle is internally consistent — that every file the
-manifest references exists and every required role is present:
+Check that the generated bundle is consistent: every file the manifest
+references exists and every required role is present.
 
 ```bash
 dau-build task=tasks/spec/validate model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
@@ -80,14 +80,14 @@ dau-build task=tasks/spec/validate model.manifest_path=outputs/identity/dau-iden
 dau-build-artifacts-valid	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
 ```
 
-The `-valid` label confirms the bundle passed. If a referenced file were missing,
-validation would fail here rather than deep inside a Vivado run later.
+The `-valid` label means the bundle passed. A missing file fails here rather
+than an hour into a Vivado run.
 
-## Step 4 — Run a simulation check
+## Step 4: run a simulation check
 
-Finally, validate the generated top against the spec through the simulation task.
-The default simulator, `svparser`, parses and checks the module without needing
-any external simulator:
+Validate the generated top against the spec through the simulation task. The
+default simulator, `svparser`, parses and checks the module without an
+external simulator:
 
 ```bash
 dau-build task=tasks/sim/simulate model.module=dau_identity_top model.spec_path=examples/identity/dau-build.yaml
@@ -99,26 +99,25 @@ dau-build task=tasks/sim/simulate model.module=dau_identity_top model.spec_path=
 dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
 ```
 
-`status=validated` means the module checked out against the build spec. Like the
-previous steps, `task=tasks/sim/simulate` selected a task from the config tree and
-the `model.module=` and `model.spec_path=` overrides supplied its fields.
+`status=validated` means the module checked out against the build spec. As
+in the earlier steps, `task=tasks/sim/simulate` selected a task from the
+config tree and the `model.module=` and `model.spec_path=` overrides
+supplied its fields.
 
 ## What you have done
 
-You have run the identity design through the full plan-first flow: **inspect →
-build → validate → simulate**, and seen the artifacts each stage produces — all
-without a board or a vendor toolchain. Every step was the same shape —
-`dau-build task=<path> model.field=value` — because every dau-build operation is a
-task you select from the config tree and override.
+You ran the identity design through the full plan-first flow (inspect,
+build, validate, simulate) and saw the artifacts each stage produces,
+without a board or a vendor toolchain. Every step had the same shape,
+`dau-build task=<path> model.field=value`, because every dau-build operation
+is a task selected from the config tree and configured by overrides.
 
 From here:
 
-- To drive a real synthesis-and-program sequence, see
+- To run a real synthesis-and-program sequence, see
   [Run a build end to end](../how-to/run-a-build.md) and
-  [Program a bitstream on dpv1](../how-to/program-hardware.md).
-- To understand how the config composition works underneath these commands, read
+  [Program a bitstream on a board](../how-to/program-hardware.md).
+- To see how the config composition works underneath these commands, read
   [the architecture explanation](../explanation/architecture.md).
-- For the full set of commands, tasks, and config groups, see the
+- For the full set of commands, tasks and config groups, see the
   [reference](../reference/commands.md).
-```
-

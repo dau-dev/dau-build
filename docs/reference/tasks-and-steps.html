@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="config-groups.html">Config group reference</a></li>
@@ -248,7 +248,7 @@
 <h1>Task and step catalog<a class="headerlink" href="#task-and-step-catalog" title="Link to this heading">¶</a></h1>
 <p>Tasks and steps are <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s selected from the <code class="docutils literal notranslate"><span class="pre">task</span></code> and <code class="docutils literal notranslate"><span class="pre">step</span></code>
 config groups. This page lists each one, its <code class="docutils literal notranslate"><span class="pre">_target_</span></code> model, its required
-fields (those set to <code class="docutils literal notranslate"><span class="pre">???</span></code> in the config, which must be supplied as overrides),
+fields (those set to <code class="docutils literal notranslate"><span class="pre">???</span></code> in the config, which you must supply as overrides),
 and its default execution mode.</p>
 <p>The complete field set with defaults for any task or step is self-describing:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=&lt;path&gt;
@@ -256,151 +256,154 @@ dau-build --explain step=&lt;path&gt;
 </pre></div>
 </div>
 <p>Fields marked <strong>required</strong> have no default and must be overridden. Field
-overrides carry a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix (<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code>), since the selected
+overrides take a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix (<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code>), because the selected
 task or step is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.</p>
-<p>Tasks whose default is <strong>plan</strong> carry <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and produce plans,
-manifests, and staged files without invoking a vendor toolchain or touching
-hardware. Pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run the privileged action. Tasks marked <strong>run</strong>
-always execute their (non-privileged) operation.</p>
+<p>Tasks whose default mode is <strong>plan</strong> have <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and produce plans,
+manifests and staged files without invoking a vendor toolchain or touching
+hardware. Pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run the privileged action. Tasks marked
+<strong>run</strong> always execute their operation, which needs no special privileges.</p>
 <section id="tasks">
 <h2>Tasks<a class="headerlink" href="#tasks" title="Link to this heading">¶</a></h2>
 <section id="tasks-spec-inspect-inspecttask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code> — <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code><a class="headerlink" href="#tasks-spec-inspect-inspecttask" title="Link to this heading">¶</a></h3>
-<p>Prints the resolved build-spec summary (each source, metadata file, and binary
-asset with its originating manifest). Reads the spec via <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a composed
-<code class="docutils literal notranslate"><span class="pre">spec=</span></code> group. Mode: <strong>run</strong>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code>: <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code><a class="headerlink" href="#tasks-spec-inspect-inspecttask" title="Link to this heading">¶</a></h3>
+<p>Prints the resolved build-spec summary (each source, metadata file and binary
+asset with the manifest it came from). Reads the spec from <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a
+composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> group. Mode: <strong>run</strong>.</p>
 </section>
 <section id="tasks-spec-build-buildartifactstask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code><a class="headerlink" href="#tasks-spec-build-buildartifactstask" title="Link to this heading">¶</a></h3>
-<p>Writes the generated top-level SystemVerilog, DAU manifest, and
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code><a class="headerlink" href="#tasks-spec-build-buildartifactstask" title="Link to this heading">¶</a></h3>
+<p>Writes the generated top-level SystemVerilog, the DAU manifest and the
 <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundle. Required: <code class="docutils literal notranslate"><span class="pre">output_root</span></code>. Mode: <strong>run</strong>.</p>
 </section>
 <section id="tasks-spec-validate-validatetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code><a class="headerlink" href="#tasks-spec-validate-validatetask" title="Link to this heading">¶</a></h3>
-<p>Validates a generated artifact bundle when <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code> is given (with optional
-<code class="docutils literal notranslate"><span class="pre">root</span></code>), otherwise validates the spec. Mode: <strong>run</strong>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code><a class="headerlink" href="#tasks-spec-validate-validatetask" title="Link to this heading">¶</a></h3>
+<p>Validates a generated artifact bundle when <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code> is given (with an
+optional <code class="docutils literal notranslate"><span class="pre">root</span></code>), otherwise validates the spec. Mode: <strong>run</strong>.</p>
 </section>
 <section id="tasks-sim-simulate-simulatetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code><a class="headerlink" href="#tasks-sim-simulate-simulatetask" title="Link to this heading">¶</a></h3>
-<p>Validates or simulates a module, delegating to the simulator composed from the
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code>: <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code><a class="headerlink" href="#tasks-sim-simulate-simulatetask" title="Link to this heading">¶</a></h3>
+<p>Validates or simulates a module through the simulator composed from the
 <code class="docutils literal notranslate"><span class="pre">simulator</span></code> group (default <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code>). <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code> and
 <code class="docutils literal notranslate"><span class="pre">simulators/cocotb</span></code> validate the module against the spec; <code class="docutils literal notranslate"><span class="pre">simulators/verilator</span></code>
-runs a Verilator testbench (via <code class="docutils literal notranslate"><span class="pre">simulator.testbench_path</span></code>/<code class="docutils literal notranslate"><span class="pre">simulator.top_module</span></code>)
-or a registered profile (<code class="docutils literal notranslate"><span class="pre">simulator.profile</span></code>). Select+configure the simulator
-with, e.g., <code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code>. Mode:
-<strong>run</strong>. See the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the simulator
-models.</p>
+runs a Verilator testbench (<code class="docutils literal notranslate"><span class="pre">simulator.testbench_path</span></code> and
+<code class="docutils literal notranslate"><span class="pre">simulator.top_module</span></code>) or a registered profile (<code class="docutils literal notranslate"><span class="pre">simulator.profile</span></code>). Select
+and configure the simulator together, for example
+<code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code>. Mode: <strong>run</strong>. The
+simulator models are in the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
 <section id="tasks-build-synthesize-synthesizetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code><a class="headerlink" href="#tasks-build-synthesize-synthesizetask" title="Link to this heading">¶</a></h3>
-<p>Writes the generated DAU top, manifest, and <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> bundle, then
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code><a class="headerlink" href="#tasks-build-synthesize-synthesizetask" title="Link to this heading">¶</a></h3>
+<p>Writes the generated DAU top, manifest and <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> bundle, then
 delegates to the synthesis engine composed from the <code class="docutils literal notranslate"><span class="pre">backend</span></code> group (default
 <code class="docutils literal notranslate"><span class="pre">backends/vivado</span></code>). Required: <code class="docutils literal notranslate"><span class="pre">module</span></code>, <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code> writes the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;artifact-stem&gt;.manifest</span></code> handoff
-at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does not invoke Vivado.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code> runs a real synthesis of the generated top with yosys,
-failing the task if synthesis fails. The engine is fully configurable:
+<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code> writes the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;artifact-stem&gt;.manifest</span></code>
+handoff at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does not invoke Vivado.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code> runs a real synthesis of the generated top with
+yosys and fails the task if synthesis fails. The engine is configurable:
 <code class="docutils literal notranslate"><span class="pre">backend.frontend=verilog</span></code> (default, <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>) or
 <code class="docutils literal notranslate"><span class="pre">backend.frontend=slang</span></code> (yosys-slang), and <code class="docutils literal notranslate"><span class="pre">backend.yosys=&lt;exe&gt;</span></code>.</p></li>
 </ul>
-<p>Mode: <strong>run</strong>. See the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the engine
-models.</p>
+<p>Mode: <strong>run</strong>. The engine models are in the
+<a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
 <section id="tasks-build-synthesize-cores-synthesizecorestask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code><a class="headerlink" href="#tasks-build-synthesize-cores-synthesizecorestask" title="Link to this heading">¶</a></h3>
-<p>Per-core out-of-context characterization through the registry: resolves
-<code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code> entries (the dau-core lernaplugin’s config tree), stages one
-OOC synthesis per core — dependency-closed sources, <code class="docutils literal notranslate"><span class="pre">-generic</span></code> values from the
-core’s declared parameters merged with validated <code class="docutils literal notranslate"><span class="pre">model.parameters</span></code> overrides,
-the part from <code class="docutils literal notranslate"><span class="pre">model.part</span></code> or the composed <code class="docutils literal notranslate"><span class="pre">platform</span></code> group, and the clock as
-an XDC read before <code class="docutils literal notranslate"><span class="pre">synth_design</span></code> — and writes the Tcl plus a command-plan
-runner. Required: <code class="docutils literal notranslate"><span class="pre">model.cores</span></code>, <code class="docutils literal notranslate"><span class="pre">model.output_root</span></code>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code><a class="headerlink" href="#tasks-build-synthesize-cores-synthesizecorestask" title="Link to this heading">¶</a></h3>
+<p>Characterizes cores one at a time, out of context, through the registry. It
+resolves <code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code> entries from the dau-core lernaplugin’s config
+tree and stages one OOC synthesis per core: dependency-closed sources,
+<code class="docutils literal notranslate"><span class="pre">-generic</span></code> values from the core’s declared parameters merged with validated
+<code class="docutils literal notranslate"><span class="pre">model.parameters</span></code> overrides, the part from <code class="docutils literal notranslate"><span class="pre">model.part</span></code> or the composed
+<code class="docutils literal notranslate"><span class="pre">platform</span></code> group, and the clock as an XDC read before <code class="docutils literal notranslate"><span class="pre">synth_design</span></code>. It
+writes the Tcl plus a command-plan runner. Required: <code class="docutils literal notranslate"><span class="pre">model.cores</span></code>,
+<code class="docutils literal notranslate"><span class="pre">model.output_root</span></code>.</p>
 <ul class="simple">
-<li><p>Default (handoff): stages files only; run the plan where Vivado lives.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">model.execute=true</span></code>: runs Vivado per core, parses utilization/timing into
-envelope reports, and flags drift against the envelope registered in the
-core registry. <code class="docutils literal notranslate"><span class="pre">model.clock_ports</span></code> maps non-<code class="docutils literal notranslate"><span class="pre">clk</span></code> clocks (empty string =
-combinational: no constraint, no timing report). Package cores are rejected
-as synthesis tops.</p></li>
+<li><p>Default (handoff): stages files only; run the plan on the Vivado host.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model.execute=true</span></code>: runs Vivado per core, parses utilization and timing
+into envelope reports, and flags drift from the envelope registered for the
+core. <code class="docutils literal notranslate"><span class="pre">model.clock_ports</span></code> maps clocks not named <code class="docutils literal notranslate"><span class="pre">clk</span></code> (an empty string
+means combinational: no constraint, no timing report). Package cores are
+rejected as synthesis tops.</p></li>
 </ul>
 <p>Mode: <strong>run</strong>.</p>
 </section>
 <section id="tasks-build-build-shell-project-buildshellprojecttask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code><a class="headerlink" href="#tasks-build-build-shell-project-buildshellprojecttask" title="Link to this heading">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code><a class="headerlink" href="#tasks-build-build-shell-project-buildshellprojecttask" title="Link to this heading">¶</a></h3>
 <p>Builds a standalone shell project from a generated Tcl script. Required:
 <code class="docutils literal notranslate"><span class="pre">output_root</span></code>. Default <code class="docutils literal notranslate"><span class="pre">script:</span> <span class="pre">build_mm_job.tcl</span></code>. Mode: <strong>plan</strong>.</p>
 </section>
 <section id="tasks-build-build-vivado-artifacts-buildvivadoartifactstask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code><a class="headerlink" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask" title="Link to this heading">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code><a class="headerlink" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask" title="Link to this heading">¶</a></h3>
 <p>Runs the generated overlay/build Vivado command, then validates the artifact
-bundle. Moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code> once the bitstream,
-resource report, timing report, and Vivado log exist. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>.
-Default <code class="docutils literal notranslate"><span class="pre">artifact_stem:</span> <span class="pre">dau-vivado</span></code>. Mode: <strong>plan</strong> (pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the
-Vivado host).</p>
+bundle. Moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code> once the
+bitstream, resource report, timing report and Vivado log exist. Required:
+<code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Default <code class="docutils literal notranslate"><span class="pre">artifact_stem:</span> <span class="pre">dau-vivado</span></code>. Mode: <strong>plan</strong> (pass
+<code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the Vivado host).</p>
 </section>
 <section id="tasks-build-overlay-build-vivadooverlaybuildtask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/overlay-build</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoOverlayBuildTask</span></code><a class="headerlink" href="#tasks-build-overlay-build-vivadooverlaybuildtask" title="Link to this heading">¶</a></h3>
-<p>Runs only the generated overlay/build Vivado command (no JTAG, PCIe rescan, or
-smoke test). Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Default <code class="docutils literal notranslate"><span class="pre">backend:</span> <span class="pre">vivado</span></code>. Mode: <strong>plan</strong>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/overlay-build</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoOverlayBuildTask</span></code><a class="headerlink" href="#tasks-build-overlay-build-vivadooverlaybuildtask" title="Link to this heading">¶</a></h3>
+<p>Runs only the generated overlay/build Vivado command, with no JTAG, PCIe
+rescan or smoke test. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Default <code class="docutils literal notranslate"><span class="pre">backend:</span> <span class="pre">vivado</span></code>. Mode:
+<strong>plan</strong>.</p>
 </section>
 <section id="tasks-stage-stage-shell-shellstagetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-shell</span></code> — <code class="docutils literal notranslate"><span class="pre">ShellStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-shell-shellstagetask" title="Link to this heading">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-shell</span></code>: <code class="docutils literal notranslate"><span class="pre">ShellStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-shell-shellstagetask" title="Link to this heading">¶</a></h3>
 <p>Copies a read-only Vivado shell seed into a generated work directory with
-<code class="docutils literal notranslate"><span class="pre">rsync</span> <span class="pre">--delete</span> <span class="pre">--delete-excluded</span></code>, excluding Vivado run/cache/log outputs.
-Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>. Mode: <strong>plan</strong>.</p>
+<code class="docutils literal notranslate"><span class="pre">rsync</span> <span class="pre">--delete</span> <span class="pre">--delete-excluded</span></code>, excluding Vivado run, cache and log
+outputs. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>. Mode: <strong>plan</strong>.</p>
 </section>
 <section id="tasks-stage-stage-vivado-overlay-vivadooverlaystagetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoOverlayStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-vivado-overlay-vivadooverlaystagetask" title="Link to this heading">¶</a></h3>
-<p>Writes the generated overlay Tcl, guarded build Tcl, backend manifest preview,
-and Vivado command plan without invoking Vivado. Pass <code class="docutils literal notranslate"><span class="pre">dau_artifact_bundle=</span></code> to
-fold a DAU artifact bundle into the overlay. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>,
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoOverlayStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-vivado-overlay-vivadooverlaystagetask" title="Link to this heading">¶</a></h3>
+<p>Writes the generated overlay Tcl, guarded build Tcl, backend manifest preview
+and Vivado command plan without invoking Vivado. Pass <code class="docutils literal notranslate"><span class="pre">dau_artifact_bundle=</span></code>
+to fold a DAU artifact bundle into the overlay. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>,
 <code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>. Mode: <strong>plan</strong>.</p>
 </section>
 <section id="tasks-stage-stage-vivado-project-vivadoprojectstagetask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-project</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoProjectStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-vivado-project-vivadoprojectstagetask" title="Link to this heading">¶</a></h3>
-<p>Stages the shell seed and writes <code class="docutils literal notranslate"><span class="pre">&lt;artifact-stem&gt;.project</span></code> recording the shell
-seed, work directory, DAU checkout roots, XDMA module path, backend artifacts,
-and stage/build/validate commands, plus the same overlay artifacts as
-<code class="docutils literal notranslate"><span class="pre">stage-vivado-overlay</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>,
-<code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_driver_root</span></code>. Mode: <strong>plan</strong>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-project</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoProjectStageTask</span></code><a class="headerlink" href="#tasks-stage-stage-vivado-project-vivadoprojectstagetask" title="Link to this heading">¶</a></h3>
+<p>Stages the shell seed and writes <code class="docutils literal notranslate"><span class="pre">&lt;artifact-stem&gt;.project</span></code>, which records the
+shell seed, work directory, DAU checkout roots, XDMA module path, backend
+artifacts and the stage/build/validate commands. Also writes the same overlay
+artifacts as <code class="docutils literal notranslate"><span class="pre">stage-vivado-overlay</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>,
+<code class="docutils literal notranslate"><span class="pre">source_shell_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_driver_root</span></code>. Mode: <strong>plan</strong>.</p>
 </section>
 <section id="tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/validate/validate-vivado-artifacts</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateVivadoArtifactsTask</span></code><a class="headerlink" href="#tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask" title="Link to this heading">¶</a></h3>
-<p>Checks that the manifest, overlay Tcl, build Tcl, command plan, and planned
-output paths agree, without requiring Xilinx tools. Pass
-<code class="docutils literal notranslate"><span class="pre">project_manifest_path=&lt;artifact-stem&gt;.project</span></code> to include the project manifest.
-Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/validate/validate-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateVivadoArtifactsTask</span></code><a class="headerlink" href="#tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask" title="Link to this heading">¶</a></h3>
+<p>Checks that the manifest, overlay Tcl, build Tcl, command plan and planned
+output paths agree, without Xilinx tools. Pass
+<code class="docutils literal notranslate"><span class="pre">project_manifest_path=&lt;artifact-stem&gt;.project</span></code> to include the project
+manifest. Required: <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>.</p>
 </section>
 <section id="tasks-hardware-hardware-plan-hardwareplantask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code> — <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code><a class="headerlink" href="#tasks-hardware-hardware-plan-hardwareplantask" title="Link to this heading">¶</a></h3>
-<p>Produces a live hardware-session command sequence for the plan composed from the
-<code class="docutils literal notranslate"><span class="pre">plan</span></code> group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>). The task holds the shared toolchain fields
-(<code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>, …); each plan owns its own
-fields (e.g. <code class="docutils literal notranslate"><span class="pre">plan.dau_core_root</span></code>). Host access composes from the <code class="docutils literal notranslate"><span class="pre">platform</span></code>
-group’s <code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>); dau-build
-carries no board defaults, so steps that need an unset fact refuse to render.
-Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong>
-(pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the hardware host). See the
-<a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a> for the plan models.</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code>: <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code><a class="headerlink" href="#tasks-hardware-hardware-plan-hardwareplantask" title="Link to this heading">¶</a></h3>
+<p>Produces a live hardware-session command sequence for the plan composed from
+the <code class="docutils literal notranslate"><span class="pre">plan</span></code> group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>). The task owns the shared toolchain
+fields (<code class="docutils literal notranslate"><span class="pre">work_root</span></code>, <code class="docutils literal notranslate"><span class="pre">bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code> and so on); each plan
+owns its own fields (<code class="docutils literal notranslate"><span class="pre">plan.dau_core_root</span></code>, for example). Host access composes
+from the <code class="docutils literal notranslate"><span class="pre">platform</span></code> group’s <code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>).
+dau-build has no board defaults, so a step that needs an unset fact fails to
+render. Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong> (pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on
+the hardware host). The plan models are in the
+<a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
 <section id="tasks-flash-flash-flashtask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code> — <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code><a class="headerlink" href="#tasks-flash-flash-flashtask" title="Link to this heading">¶</a></h3>
-<p>Produces a flashing plan for a bitstream. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when it
-consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Default <code class="docutils literal notranslate"><span class="pre">tool:</span> <span class="pre">openFPGAloader</span></code>, <code class="docutils literal notranslate"><span class="pre">mode:</span> <span class="pre">volatile</span></code>.
-Mode: <strong>run</strong> (produces a plan).</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code>: <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code><a class="headerlink" href="#tasks-flash-flash-flashtask" title="Link to this heading">¶</a></h3>
+<p>Produces a flashing plan for a bitstream. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when
+it consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Default <code class="docutils literal notranslate"><span class="pre">tool:</span> <span class="pre">openFPGAloader</span></code>,
+<code class="docutils literal notranslate"><span class="pre">mode:</span> <span class="pre">volatile</span></code>. Mode: <strong>run</strong> (produces a plan).</p>
 </section>
 <section id="tasks-flash-smoke-test-smoketesttask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code> — <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code><a class="headerlink" href="#tasks-flash-smoke-test-smoketesttask" title="Link to this heading">¶</a></h3>
-<p>Produces a smoke-test plan/validation. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when it
-consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">test</span></code>. Mode: <strong>run</strong> (produces a plan).</p>
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code>: <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code><a class="headerlink" href="#tasks-flash-smoke-test-smoketesttask" title="Link to this heading">¶</a></h3>
+<p>Produces a smoke-test plan or validation. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when
+it consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">test</span></code>. Mode: <strong>run</strong> (produces a
+plan).</p>
 </section>
 </section>
 <section id="steps">
 <h2>Steps<a class="headerlink" href="#steps" title="Link to this heading">¶</a></h2>
-<p>Steps are lower-level operations over the spec and artifact bundle. All read the
-spec via <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> group, and accept optional <code class="docutils literal notranslate"><span class="pre">board=</span></code>
-and <code class="docutils literal notranslate"><span class="pre">backend=</span></code> groups.</p>
+<p>Steps are lower-level operations over the spec and artifact bundle. All read
+the spec from <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> group, and accept optional
+<code class="docutils literal notranslate"><span class="pre">board=</span></code> and <code class="docutils literal notranslate"><span class="pre">backend=</span></code> groups.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -413,22 +416,22 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/inspect</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">InspectStep</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 <td><p>Print the resolved spec summary.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/validate</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ValidateStep</span></code></p></td>
-<td><p>—</p></td>
-<td><p>Validate the spec / bundle.</p></td>
+<td><p>none</p></td>
+<td><p>Validate the spec or bundle.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/explain</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ExplainStep</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 <td><p>Explain the resolved inputs.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/resolved-config</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ResolvedConfigStep</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 <td><p>Print the resolved build config (spec + board + backend view).</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/generate</span></code></p></td>
@@ -448,7 +451,7 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/simulate</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">SimulateStep</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 <td><p>Run a simulation (fields prefixed <code class="docutils literal notranslate"><span class="pre">simulate_*</span></code>).</p></td>
 </tr>
 </tbody>
@@ -514,22 +517,22 @@ and <code class="docutils literal notranslate"><span class="pre">backend=</span>
             <ul>
 <li><a class="reference internal" href="#">Task and step catalog</a><ul>
 <li><a class="reference internal" href="#tasks">Tasks</a><ul>
-<li><a class="reference internal" href="#tasks-spec-inspect-inspecttask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code> — <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-spec-build-buildartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-spec-validate-validatetask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-sim-simulate-simulatetask"><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code> — <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-build-synthesize-synthesizetask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-build-synthesize-cores-synthesizecorestask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code> — <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-build-build-shell-project-buildshellprojecttask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code> — <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-build-overlay-build-vivadooverlaybuildtask"><code class="docutils literal notranslate"><span class="pre">tasks/build/overlay-build</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoOverlayBuildTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-stage-stage-shell-shellstagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-shell</span></code> — <code class="docutils literal notranslate"><span class="pre">ShellStageTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-stage-stage-vivado-overlay-vivadooverlaystagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoOverlayStageTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-stage-stage-vivado-project-vivadoprojectstagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-project</span></code> — <code class="docutils literal notranslate"><span class="pre">VivadoProjectStageTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/validate/validate-vivado-artifacts</span></code> — <code class="docutils literal notranslate"><span class="pre">ValidateVivadoArtifactsTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-hardware-hardware-plan-hardwareplantask"><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code> — <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-flash-flash-flashtask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code> — <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-flash-smoke-test-smoketesttask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code> — <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-spec-inspect-inspecttask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code>: <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-spec-build-buildartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-spec-validate-validatetask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-sim-simulate-simulatetask"><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code>: <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-synthesize-synthesizetask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-synthesize-cores-synthesizecorestask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-build-shell-project-buildshellprojecttask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-overlay-build-vivadooverlaybuildtask"><code class="docutils literal notranslate"><span class="pre">tasks/build/overlay-build</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoOverlayBuildTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-stage-stage-shell-shellstagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-shell</span></code>: <code class="docutils literal notranslate"><span class="pre">ShellStageTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-stage-stage-vivado-overlay-vivadooverlaystagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoOverlayStageTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-stage-stage-vivado-project-vivadoprojectstagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-project</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoProjectStageTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/validate/validate-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateVivadoArtifactsTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-hardware-hardware-plan-hardwareplantask"><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code>: <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-flash-flash-flashtask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code>: <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-flash-smoke-test-smoketesttask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code>: <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#steps">Steps</a></li>

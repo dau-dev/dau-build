@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="commands.html">Command reference</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Config group reference</a></li>
@@ -246,10 +246,10 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="config-group-reference">
 <h1>Config group reference<a class="headerlink" href="#config-group-reference" title="Link to this heading">¶</a></h1>
-<p>The packaged Hydra config tree lives in <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. Each subdirectory is
-a Hydra <strong>config group</strong>; selecting an option from a group is a CLI override of
-the form <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option-path&gt;</span></code>. Options are addressed by their path relative to
-the group directory, so a file at <code class="docutils literal notranslate"><span class="pre">config/task/tasks/sim/simulate.yaml</span></code> is
+<p>The packaged Hydra config tree is <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. Each subdirectory is a
+Hydra <strong>config group</strong>; selecting an option from a group is a CLI override of
+the form <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option-path&gt;</span></code>. Options are addressed by their path relative
+to the group directory, so a file at <code class="docutils literal notranslate"><span class="pre">config/task/tasks/sim/simulate.yaml</span></code> is
 selected with <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>.</p>
 <p>The base config <code class="docutils literal notranslate"><span class="pre">config/base.yaml</span></code> declares the groups and their defaults:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">defaults</span><span class="p">:</span>
@@ -269,11 +269,12 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 </pre></div>
 </div>
 <p>Every group except <code class="docutils literal notranslate"><span class="pre">callable</span></code> is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
-overridden. A run selects exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to populate <code class="docutils literal notranslate"><span class="pre">model</span></code>,
-optionally augmented by <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, <code class="docutils literal notranslate"><span class="pre">host=</span></code>, and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
+you override it. A run selects exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to populate
+<code class="docutils literal notranslate"><span class="pre">model</span></code>, and may add <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>,
+<code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, <code class="docutils literal notranslate"><span class="pre">host=</span></code> and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
 <p>Each option file begins with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that places its
 content under that top-level key. Tasks and steps use <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>; the
-other groups use their singular key (<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">board</span></code>, etc.).</p>
+other groups use their singular key (<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">board</span></code>, and so on).</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -345,7 +346,7 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <td><p>Reserved; registered by extension packages.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 <td><p>ccflow registry pointer</p></td>
 <td><p>Fixed evaluator wiring; not normally overridden.</p></td>
 </tr>
@@ -392,16 +393,16 @@ steps/write
 <section id="spec">
 <h2><code class="docutils literal notranslate"><span class="pre">spec</span></code><a class="headerlink" href="#spec" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.build_spec.BuildSpec</span></code> into the <code class="docutils literal notranslate"><span class="pre">spec</span></code>
-key. Tasks and steps read it via <code class="docutils literal notranslate"><span class="pre">spec:</span> <span class="pre">${oc.select:spec,null}</span></code>, so a composed
-<code class="docutils literal notranslate"><span class="pre">spec=</span></code> is an alternative to passing <code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code>. The packaged
-<code class="docutils literal notranslate"><span class="pre">specs/identity</span></code> option carries <code class="docutils literal notranslate"><span class="pre">base_dir:</span> <span class="pre">examples/identity</span></code>, so it resolves
-only when run from the dau-build repository root.</p>
+key. Tasks and steps read it through <code class="docutils literal notranslate"><span class="pre">spec:</span> <span class="pre">${oc.select:spec,null}</span></code>, so a
+composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> is an alternative to <code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code>. The packaged
+<code class="docutils literal notranslate"><span class="pre">specs/identity</span></code> option has <code class="docutils literal notranslate"><span class="pre">base_dir:</span> <span class="pre">examples/identity</span></code>, so it resolves only
+when run from the dau-build repository root.</p>
 </section>
 <section id="board">
 <h2><code class="docutils literal notranslate"><span class="pre">board</span></code><a class="headerlink" href="#board" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code> composes <code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code> into the <code class="docutils literal notranslate"><span class="pre">board</span></code> key. Options
-live under <code class="docutils literal notranslate"><span class="pre">boards/&lt;vendor&gt;/&lt;board&gt;</span></code>. dau-build packages no real board — drop
-yours in through a search-path package — so the only packaged option is the
+<p><code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code> composes <code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code> into the <code class="docutils literal notranslate"><span class="pre">board</span></code> key.
+Options live under <code class="docutils literal notranslate"><span class="pre">boards/&lt;vendor&gt;/&lt;board&gt;</span></code>. dau-build packages no real
+board; add yours from a search-path package. The only packaged option is the
 fictional example, <code class="docutils literal notranslate"><span class="pre">boards/example/probe</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dau_build.build_config.BoardConfig</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">probe</span>
@@ -414,8 +415,8 @@ fictional example, <code class="docutils literal notranslate"><span class="pre">
 <section id="backend">
 <h2><code class="docutils literal notranslate"><span class="pre">backend</span></code><a class="headerlink" href="#backend" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">backend=backends/&lt;name&gt;</span></code> composes a synthesis engine into the <code class="docutils literal notranslate"><span class="pre">backend</span></code> key.
-<code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> uses it as the engine (default <code class="docutils literal notranslate"><span class="pre">backends/vivado</span></code>); other tasks
-use its <code class="docutils literal notranslate"><span class="pre">name</span></code>/<code class="docutils literal notranslate"><span class="pre">invocation</span></code> as the resolved-config backend label.</p>
+<code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> uses it as the engine (default <code class="docutils literal notranslate"><span class="pre">backends/vivado</span></code>); other
+tasks use its <code class="docutils literal notranslate"><span class="pre">name</span></code> and <code class="docutils literal notranslate"><span class="pre">invocation</span></code> as the resolved-config backend label.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -439,32 +440,32 @@ use its <code class="docutils literal notranslate"><span class="pre">name</span>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">backends/none</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">invocation</span></code></p></td>
-<td><p>No engine — a dry-run label.</p></td>
+<td><p>No engine; a dry-run label.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>The engines are polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> models, so they are fully
-hydra-configurable — e.g. <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span> <span class="pre">backend.frontend=slang</span></code> or
+<p>The engines are polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> models, so every field is a
+Hydra override: <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span> <span class="pre">backend.frontend=slang</span></code>, or
 <code class="docutils literal notranslate"><span class="pre">+backend.&lt;field&gt;=...</span></code>. <code class="docutils literal notranslate"><span class="pre">YosysEngine.frontend</span></code> is <code class="docutils literal notranslate"><span class="pre">verilog</span></code> (<code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>)
-or <code class="docutils literal notranslate"><span class="pre">slang</span></code> (yosys-slang); <code class="docutils literal notranslate"><span class="pre">yosys</span></code> sets the executable. See
-<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a> for how the two
-engines differ.</p>
+or <code class="docutils literal notranslate"><span class="pre">slang</span></code> (yosys-slang); <code class="docutils literal notranslate"><span class="pre">yosys</span></code> sets the executable. The
+<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">architecture explanation</span></a> describes how the
+two engines differ.</p>
 </section>
 <section id="driver-and-memory">
 <h2><code class="docutils literal notranslate"><span class="pre">driver</span></code> and <code class="docutils literal notranslate"><span class="pre">memory</span></code><a class="headerlink" href="#driver-and-memory" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">driver=drivers/&lt;name&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">memory=memories/&lt;name&gt;</span></code> compose a <code class="docutils literal notranslate"><span class="pre">DriverConfig</span></code>
-(<code class="docutils literal notranslate"><span class="pre">os</span></code>, <code class="docutils literal notranslate"><span class="pre">transport</span></code>) and <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> (<code class="docutils literal notranslate"><span class="pre">host_staging_bytes</span></code>,
-<code class="docutils literal notranslate"><span class="pre">device_staging_bytes</span></code>) into the resolved build config, winning over the
-spec-derived defaults (<code class="docutils literal notranslate"><span class="pre">drivers/host</span></code> = <code class="docutils literal notranslate"><span class="pre">host</span></code>/<code class="docutils literal notranslate"><span class="pre">xdma</span></code>; <code class="docutils literal notranslate"><span class="pre">memories/default</span></code> =
-zeros). They surface in the <code class="docutils literal notranslate"><span class="pre">resolved-config</span></code> step and are the axes a future
-board/platform (dpv2) selects. Overridable like any group, e.g.
-<code class="docutils literal notranslate"><span class="pre">memory=memories/default</span> <span class="pre">memory.host_staging_bytes=4096</span></code>.</p>
+(<code class="docutils literal notranslate"><span class="pre">os</span></code>, <code class="docutils literal notranslate"><span class="pre">transport</span></code>) and a <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> (<code class="docutils literal notranslate"><span class="pre">host_staging_bytes</span></code>,
+<code class="docutils literal notranslate"><span class="pre">device_staging_bytes</span></code>) into the resolved build config, taking precedence
+over the spec-derived defaults (<code class="docutils literal notranslate"><span class="pre">drivers/host</span></code> = <code class="docutils literal notranslate"><span class="pre">host</span></code>/<code class="docutils literal notranslate"><span class="pre">xdma</span></code>;
+<code class="docutils literal notranslate"><span class="pre">memories/default</span></code> = zeros). They appear in the <code class="docutils literal notranslate"><span class="pre">resolved-config</span></code> step and are
+the axes a board or platform selects. Override them like any group, for
+example <code class="docutils literal notranslate"><span class="pre">memory=memories/default</span> <span class="pre">memory.host_staging_bytes=4096</span></code>.</p>
 </section>
 <section id="simulator">
 <h2><code class="docutils literal notranslate"><span class="pre">simulator</span></code><a class="headerlink" href="#simulator" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">simulator=simulators/&lt;name&gt;</span></code> composes a <code class="docutils literal notranslate"><span class="pre">Simulator</span></code> model into the <code class="docutils literal notranslate"><span class="pre">simulator</span></code>
-key; <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code> uses it as the simulator (default <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code>).</p>
+<p><code class="docutils literal notranslate"><span class="pre">simulator=simulators/&lt;name&gt;</span></code> composes a <code class="docutils literal notranslate"><span class="pre">Simulator</span></code> model into the
+<code class="docutils literal notranslate"><span class="pre">simulator</span></code> key; <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code> uses it (default <code class="docutils literal notranslate"><span class="pre">simulators/svparser</span></code>).</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -489,8 +490,8 @@ key; <code class="docutils literal notranslate"><span class="pre">SimulateTask</
 </tbody>
 </table>
 </div>
-<p>Like the engines, simulators are polymorphic and fully hydra-configurable — e.g.
-<code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code> or
+<p>Like the engines, simulators are polymorphic models configured through
+overrides: <code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code>, or
 <code class="docutils literal notranslate"><span class="pre">+simulator.&lt;field&gt;=...</span></code>.</p>
 </section>
 <section id="platform">
@@ -498,50 +499,56 @@ key; <code class="docutils literal notranslate"><span class="pre">SimulateTask</
 <p><code class="docutils literal notranslate"><span class="pre">platform=platforms/example/probe</span></code> composes
 <code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code> into the <code class="docutils literal notranslate"><span class="pre">platform</span></code> key. Options live
 under <code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
-<p>dau-build ships exactly one, <code class="docutils literal notranslate"><span class="pre">platforms/example/probe</span></code>, and it is a <strong>fiction</strong>:
+<p>dau-build ships exactly one, <code class="docutils literal notranslate"><span class="pre">platforms/example/probe</span></code>, and it is a fiction:
 internally consistent, plausible for a Kintex-7 x8 XDMA card, measured on
-nothing. It is the template you copy and the board dau-build’s own tests build
-against — never build a real design with it. Your board is your package’s, added
-through the hydra search path with no dau-build source change.</p>
+nothing. It is the template you copy and the board dau-build’s own tests
+build against. Never build a real design with it. Your board belongs in your
+package, added through the Hydra search path with no dau-build source change.</p>
 <p>A real board’s option is the authoritative definition of that board: part
 number, program method, <code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code>, <code class="docutils literal notranslate"><span class="pre">storage_tiers</span></code>, and a <code class="docutils literal notranslate"><span class="pre">HostLink</span></code>
 whose <code class="docutils literal notranslate"><span class="pre">XdmaPersonality.params</span></code> are its proven bring-up XCI parameters, quoted
-verbatim and order-preserved so the generated Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block is
-byte-for-byte identical to the known-good core.</p>
-<p><code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code> is composed of <code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code> (<code class="docutils literal notranslate"><span class="pre">lut</span></code>, <code class="docutils literal notranslate"><span class="pre">ff</span></code>, <code class="docutils literal notranslate"><span class="pre">bram36</span></code>,
-<code class="docutils literal notranslate"><span class="pre">dsp</span></code>), <code class="docutils literal notranslate"><span class="pre">storage_tiers</span></code> (each a <code class="docutils literal notranslate"><span class="pre">StorageTier</span></code>: <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">technology</span></code>,
-<code class="docutils literal notranslate"><span class="pre">capacity_bytes</span></code>, <code class="docutils literal notranslate"><span class="pre">access</span></code>, <code class="docutils literal notranslate"><span class="pre">persistent</span></code>, <code class="docutils literal notranslate"><span class="pre">bandwidth_bytes_per_s</span></code>, <code class="docutils literal notranslate"><span class="pre">mig_prj</span></code>,
-<code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>; <code class="docutils literal notranslate"><span class="pre">platform.memory</span></code> selects the active shared tier), and
-<code class="docutils literal notranslate"><span class="pre">HostLink</span></code> (<code class="docutils literal notranslate"><span class="pre">interface</span></code>,
-<code class="docutils literal notranslate"><span class="pre">pcie_lanes</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma_personality</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_width</span></code>,
-<code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>), plus the board-level <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code> (pin
-constraint text the shell project generators emit behind their banner),
-<code class="docutils literal notranslate"><span class="pre">lane_placements</span></code> (the GT lane swizzle, applied as a pre-<code class="docutils literal notranslate"><span class="pre">opt_design</span></code>
-implementation hook; empty means the board needs none), and <code class="docutils literal notranslate"><span class="pre">placeholders</span></code>
-(names of hardware-derived values not yet measured on the board —
-<code class="docutils literal notranslate"><span class="pre">require_measured</span></code> refuses placeholder boards for real builds while
-config-only generation stays open). <code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>,
-<code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>,
-<code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>) carries the bench host’s measured
-access facts; <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain config from it when
-<code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected (explicit task fields override). The shell project requests
-(<code class="docutils literal notranslate"><span class="pre">MmJobShellRequest</span></code>, <code class="docutils literal notranslate"><span class="pre">MmDdrJobShellRequest</span></code>) take a <code class="docutils literal notranslate"><span class="pre">platform</span></code> and default
-to dpv1; <code class="docutils literal notranslate"><span class="pre">part</span></code> defaults from the platform.</p>
+verbatim and in order, so the generated Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block matches the
+known-good core byte for byte.</p>
+<p><code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code> is made of:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ResourceBudget</span></code> (<code class="docutils literal notranslate"><span class="pre">lut</span></code>, <code class="docutils literal notranslate"><span class="pre">ff</span></code>, <code class="docutils literal notranslate"><span class="pre">bram36</span></code>, <code class="docutils literal notranslate"><span class="pre">dsp</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">storage_tiers</span></code>, each a <code class="docutils literal notranslate"><span class="pre">StorageTier</span></code> (<code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">technology</span></code>,
+<code class="docutils literal notranslate"><span class="pre">capacity_bytes</span></code>, <code class="docutils literal notranslate"><span class="pre">access</span></code>, <code class="docutils literal notranslate"><span class="pre">persistent</span></code>, <code class="docutils literal notranslate"><span class="pre">bandwidth_bytes_per_s</span></code>,
+<code class="docutils literal notranslate"><span class="pre">mig_prj</span></code>, <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>); <code class="docutils literal notranslate"><span class="pre">platform.memory</span></code> selects the active shared
+tier.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">HostLink</span></code> (<code class="docutils literal notranslate"><span class="pre">interface</span></code>, <code class="docutils literal notranslate"><span class="pre">pcie_lanes</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma_personality</span></code>,
+<code class="docutils literal notranslate"><span class="pre">expected_link_width</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>).</p></li>
+<li><p>The board-level <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>: pin constraint text the shell project
+generators emit behind their banner.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lane_placements</span></code>: the GT lane swizzle, applied as a pre-<code class="docutils literal notranslate"><span class="pre">opt_design</span></code>
+implementation hook. Empty means the board needs none.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">placeholders</span></code>: names of hardware-derived values not yet measured on the
+board. <code class="docutils literal notranslate"><span class="pre">require_measured</span></code> rejects placeholder boards for real builds while
+config-only generation stays open.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>, <code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>,
+<code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>): the bench
+host’s measured access facts. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain
+config from these when <code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected; explicit task fields take
+precedence.</p></li>
+</ul>
+<p>The shell project requests (<code class="docutils literal notranslate"><span class="pre">MmJobShellRequest</span></code>, <code class="docutils literal notranslate"><span class="pre">MmDdrJobShellRequest</span></code>) take
+a <code class="docutils literal notranslate"><span class="pre">platform</span></code> and default to dpv1; <code class="docutils literal notranslate"><span class="pre">part</span></code> defaults from the platform.</p>
 </section>
 <section id="host">
 <h2><code class="docutils literal notranslate"><span class="pre">host</span></code><a class="headerlink" href="#host" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">host=hosts/&lt;name&gt;</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.build_config.HostConfig</span></code> — where the
+<p><code class="docutils literal notranslate"><span class="pre">host=hosts/&lt;name&gt;</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.build_config.HostConfig</span></code>: where the
 build host keeps its source checkouts (<code class="docutils literal notranslate"><span class="pre">dau_core_root</span></code>, <code class="docutils literal notranslate"><span class="pre">dau_driver_root</span></code>,
-<code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>). dau-build packages no host options (checkout layouts are
-site-specific); register them from a search-path package or a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>
-overlay. The stage tasks and hardware plans interpolate their checkout roots
-from the composed host, and a direct <code class="docutils literal notranslate"><span class="pre">&lt;field&gt;=...</span></code> override always wins.</p>
+<code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>). dau-build packages no host options, because checkout
+layouts are site-specific; register them from a search-path package or a
+<code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. The stage tasks and hardware plans interpolate their
+checkout roots from the composed host, and a direct <code class="docutils literal notranslate"><span class="pre">&lt;field&gt;=...</span></code> override
+always takes precedence.</p>
 </section>
 <section id="plan">
 <h2><code class="docutils literal notranslate"><span class="pre">plan</span></code><a class="headerlink" href="#plan" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code> composes a <code class="docutils literal notranslate"><span class="pre">HardwarePlan</span></code> model into the <code class="docutils literal notranslate"><span class="pre">plan</span></code> key;
-<code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> delegates to it. Each plan owns its required fields (so
-pydantic enforces them, rather than a runtime check).</p>
+<code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> delegates to it. Each plan owns its required fields, so
+pydantic enforces them rather than a runtime check.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -553,7 +560,7 @@ pydantic enforces them, rather than a runtime check).</p>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/build-and-program</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">BuildAndProgramPlan</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/local-build-and-program</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">LocalBuildAndProgramPlan</span></code></p></td>
@@ -569,33 +576,33 @@ pydantic enforces them, rather than a runtime check).</p>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/recovery</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">RecoveryPlan</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-hold</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltHoldPlan</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-release</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltReleasePlan</span></code></p></td>
-<td><p>—</p></td>
+<td><p>none</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p>Configure a plan with <code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=…</span></code>; see
-<a class="reference internal" href="../how-to/program-hardware.html"><span class="std std-doc">Program a bitstream on dpv1</span></a>.</p>
+<a class="reference internal" href="../how-to/program-hardware.html"><span class="std std-doc">Program a bitstream on a board</span></a>.</p>
 </section>
 <section id="design">
 <h2><code class="docutils literal notranslate"><span class="pre">design</span></code><a class="headerlink" href="#design" title="Link to this heading">¶</a></h2>
-<p>Declared in the defaults (<code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">design:</span> <span class="pre">null</span></code>) but no option is packaged in
-<code class="docutils literal notranslate"><span class="pre">dau-build</span></code>. It is the reserved group for higher-level design/tile compositions
-registered by extension packages on the search path.</p>
+<p>Declared in the defaults (<code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">design:</span> <span class="pre">null</span></code>) but no option is packaged
+in <code class="docutils literal notranslate"><span class="pre">dau-build</span></code>. It is the reserved group for higher-level design and tile
+compositions registered by extension packages on the search path.</p>
 </section>
 <section id="callable">
 <h2><code class="docutils literal notranslate"><span class="pre">callable</span></code><a class="headerlink" href="#callable" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">callable/callable.yaml</span></code> is a fixed ccflow registry pointer wiring the evaluator
-(<code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> + <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> via <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code>). It is selected
-by default and is not normally overridden.</p>
+<p><code class="docutils literal notranslate"><span class="pre">callable/callable.yaml</span></code> is a fixed ccflow registry pointer that wires the
+evaluator (<code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> + <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> through
+<code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code>). It is selected by default and not normally overridden.</p>
 </section>
 </section>
 

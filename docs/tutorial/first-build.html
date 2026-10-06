@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
@@ -246,23 +246,23 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="build-the-identity-example">
 <h1>Build the identity example<a class="headerlink" href="#build-the-identity-example" title="Link to this heading">¶</a></h1>
-<p>In this tutorial we will take a checked-in example design through dau-build:
-inspect it, generate its artifacts, validate the result, and run a simulation
-check — all on your machine, with no FPGA and no Xilinx tools installed. By the
-end you will have run every stage of the plan-first build flow and seen what each
-one produces.</p>
-<p>Work from the root of a <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> checkout. Every command here uses the
+<p>This tutorial takes a checked-in example design through dau-build: inspect
+it, generate its artifacts, validate the result, and run a simulation check.
+Everything runs on your machine; no FPGA and no Xilinx tools are involved.
+By the end you will have run every stage of the plan-first build flow and
+seen what each stage produces.</p>
+<p>Work from the root of a <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> checkout. Every command uses the
 <code class="docutils literal notranslate"><span class="pre">examples/identity</span></code> design that ships with the package. Each step shows the
-command to type in a shell block, then an <strong>Output</strong> block with what it prints —
-the output lines are tab-separated <code class="docutils literal notranslate"><span class="pre">label⇥key=value</span></code> status lines, so a leading
-word like <code class="docutils literal notranslate"><span class="pre">dau-build-spec</span></code> is a line label the task emits, not a command.</p>
+command, then an <strong>Output</strong> block with what it prints. The output lines are
+tab-separated <code class="docutils literal notranslate"><span class="pre">label⇥key=value</span></code> status lines, so a leading word such as
+<code class="docutils literal notranslate"><span class="pre">dau-build-spec</span></code> is a label the task emits, not a command.</p>
 <section id="step-1-inspect-the-spec">
-<h2>Step 1 — Inspect the spec<a class="headerlink" href="#step-1-inspect-the-spec" title="Link to this heading">¶</a></h2>
-<p>First, look at what the example declares. Run:</p>
+<h2>Step 1: inspect the spec<a class="headerlink" href="#step-1-inspect-the-spec" title="Link to this heading">¶</a></h2>
+<p>Start by looking at what the example declares:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
-<p><strong>Output</strong> — a summary line, then the resolved inputs:</p>
+<p><strong>Output</strong>, a summary line and then the resolved inputs:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-spec	name=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=identity sources=1 clock=clk reset=reset backend=vivado
 manifest	index=0 path=.../examples/identity/package.artifacts.yaml
 source	index=0 path=.../examples/identity/rtl/identity.sv role=hdl-source language=systemverilog origin=...
@@ -271,17 +271,17 @@ metadata	index=0 path=.../examples/identity/constraints/identity.xdc role=constr
 binary	index=0 path=.../examples/identity/bitstreams/seed.bit role=bitstream format=xilinx-bitstream origin=...
 </pre></div>
 </div>
-<p>Notice that each source, constraint, and binary is listed with its role and the
-artifact bundle it came from. This is the resolved view dau-build hands to a
-backend — nothing has been generated yet.</p>
+<p>Each source, constraint and binary is listed with its role and the artifact
+bundle it came from. This is the resolved view dau-build hands to a backend.
+Nothing has been generated yet.</p>
 </section>
 <section id="step-2-generate-the-artifacts">
-<h2>Step 2 — Generate the artifacts<a class="headerlink" href="#step-2-generate-the-artifacts" title="Link to this heading">¶</a></h2>
-<p>Now generate the build outputs into a fresh directory:</p>
+<h2>Step 2: generate the artifacts<a class="headerlink" href="#step-2-generate-the-artifacts" title="Link to this heading">¶</a></h2>
+<p>Generate the build outputs into a fresh directory:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
-<p><strong>Output</strong> — the two headline artifacts it wrote:</p>
+<p><strong>Output</strong>, the two headline artifacts it wrote:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-artifacts	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
 </pre></div>
 </div>
@@ -293,14 +293,14 @@ backend — nothing has been generated yet.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-identity.artifacts.yaml   dau-identity.manifest   generated
 </pre></div>
 </div>
-<p>You have generated the top-level SystemVerilog (<code class="docutils literal notranslate"><span class="pre">generated/dau_identity_top.sv</span></code>),
-the DAU manifest, and an <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundle. These are the
-portable inputs a synthesis backend consumes.</p>
+<p>You now have the top-level SystemVerilog (<code class="docutils literal notranslate"><span class="pre">generated/dau_identity_top.sv</span></code>),
+the DAU manifest, and an <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundle. These are
+the portable inputs a synthesis backend consumes.</p>
 </section>
 <section id="step-3-validate-the-bundle">
-<h2>Step 3 — Validate the bundle<a class="headerlink" href="#step-3-validate-the-bundle" title="Link to this heading">¶</a></h2>
-<p>Check that the generated bundle is internally consistent — that every file the
-manifest references exists and every required role is present:</p>
+<h2>Step 3: validate the bundle<a class="headerlink" href="#step-3-validate-the-bundle" title="Link to this heading">¶</a></h2>
+<p>Check that the generated bundle is consistent: every file the manifest
+references exists and every required role is present.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w"> </span>model.manifest_path<span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span>model.root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
@@ -308,14 +308,14 @@ manifest references exists and every required role is present:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-artifacts-valid	manifest=outputs/identity/dau-identity.manifest top_sv=outputs/identity/generated/dau_identity_top.sv
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">-valid</span></code> label confirms the bundle passed. If a referenced file were missing,
-validation would fail here rather than deep inside a Vivado run later.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">-valid</span></code> label means the bundle passed. A missing file fails here rather
+than an hour into a Vivado run.</p>
 </section>
 <section id="step-4-run-a-simulation-check">
-<h2>Step 4 — Run a simulation check<a class="headerlink" href="#step-4-run-a-simulation-check" title="Link to this heading">¶</a></h2>
-<p>Finally, validate the generated top against the spec through the simulation task.
-The default simulator, <code class="docutils literal notranslate"><span class="pre">svparser</span></code>, parses and checks the module without needing
-any external simulator:</p>
+<h2>Step 4: run a simulation check<a class="headerlink" href="#step-4-run-a-simulation-check" title="Link to this heading">¶</a></h2>
+<p>Validate the generated top against the spec through the simulation task. The
+default simulator, <code class="docutils literal notranslate"><span class="pre">svparser</span></code>, parses and checks the module without an
+external simulator:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
 </pre></div>
 </div>
@@ -323,30 +323,28 @@ any external simulator:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. Like the
-previous steps, <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected a task from the config tree and
-the <code class="docutils literal notranslate"><span class="pre">model.module=</span></code> and <code class="docutils literal notranslate"><span class="pre">model.spec_path=</span></code> overrides supplied its fields.</p>
+<p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. As
+in the earlier steps, <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected a task from the
+config tree and the <code class="docutils literal notranslate"><span class="pre">model.module=</span></code> and <code class="docutils literal notranslate"><span class="pre">model.spec_path=</span></code> overrides
+supplied its fields.</p>
 </section>
 <section id="what-you-have-done">
 <h2>What you have done<a class="headerlink" href="#what-you-have-done" title="Link to this heading">¶</a></h2>
-<p>You have run the identity design through the full plan-first flow: <strong>inspect →
-build → validate → simulate</strong>, and seen the artifacts each stage produces — all
-without a board or a vendor toolchain. Every step was the same shape —
-<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">model.field=value</span></code> — because every dau-build operation is a
-task you select from the config tree and override.</p>
+<p>You ran the identity design through the full plan-first flow (inspect,
+build, validate, simulate) and saw the artifacts each stage produces,
+without a board or a vendor toolchain. Every step had the same shape,
+<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=&lt;path&gt;</span> <span class="pre">model.field=value</span></code>, because every dau-build operation
+is a task selected from the config tree and configured by overrides.</p>
 <p>From here:</p>
 <ul class="simple">
-<li><p>To drive a real synthesis-and-program sequence, see
+<li><p>To run a real synthesis-and-program sequence, see
 <a class="reference internal" href="../how-to/run-a-build.html"><span class="std std-doc">Run a build end to end</span></a> and
-<a class="reference internal" href="../how-to/program-hardware.html"><span class="std std-doc">Program a bitstream on dpv1</span></a>.</p></li>
-<li><p>To understand how the config composition works underneath these commands, read
+<a class="reference internal" href="../how-to/program-hardware.html"><span class="std std-doc">Program a bitstream on a board</span></a>.</p></li>
+<li><p>To see how the config composition works underneath these commands, read
 <a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a>.</p></li>
-<li><p>For the full set of commands, tasks, and config groups, see the
+<li><p>For the full set of commands, tasks and config groups, see the
 <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">reference</span></a>.</p></li>
 </ul>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
 </section>
 </section>
 
@@ -406,10 +404,10 @@ task you select from the config tree and override.</p>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Build the identity example</a><ul>
-<li><a class="reference internal" href="#step-1-inspect-the-spec">Step 1 — Inspect the spec</a></li>
-<li><a class="reference internal" href="#step-2-generate-the-artifacts">Step 2 — Generate the artifacts</a></li>
-<li><a class="reference internal" href="#step-3-validate-the-bundle">Step 3 — Validate the bundle</a></li>
-<li><a class="reference internal" href="#step-4-run-a-simulation-check">Step 4 — Run a simulation check</a></li>
+<li><a class="reference internal" href="#step-1-inspect-the-spec">Step 1: inspect the spec</a></li>
+<li><a class="reference internal" href="#step-2-generate-the-artifacts">Step 2: generate the artifacts</a></li>
+<li><a class="reference internal" href="#step-3-validate-the-bundle">Step 3: validate the bundle</a></li>
+<li><a class="reference internal" href="#step-4-run-a-simulation-check">Step 4: run a simulation check</a></li>
 <li><a class="reference internal" href="#what-you-have-done">What you have done</a></li>
 </ul>
 </li>

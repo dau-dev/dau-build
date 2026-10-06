@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
@@ -246,167 +246,167 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="architecture-how-dau-build-composes-work-from-hydra-config">
 <h1>Architecture: how dau-build composes work from Hydra config<a class="headerlink" href="#architecture-how-dau-build-composes-work-from-hydra-config" title="Link to this heading">¶</a></h1>
-<p>This page explains <em>why</em> dau-build is built the way it is — declarative specs,
-typed <code class="docutils literal notranslate"><span class="pre">ccflow</span></code> models, and a Hydra config tree — and what that structure buys
-you. It is background reading. For the commands themselves, see the
+<p>This page explains why dau-build is built from declarative specs, typed
+<code class="docutils literal notranslate"><span class="pre">ccflow</span></code> models and a Hydra config tree, and what that structure gives you.
+It is background reading. For the commands themselves, see the
 <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">command reference</span></a>; for step-by-step goals, the
 <a class="reference internal" href="../how-to/run-a-build.html"><span class="std std-doc">how-to guides</span></a>.</p>
 <section id="the-shape-of-the-tool">
 <h2>The shape of the tool<a class="headerlink" href="#the-shape-of-the-tool" title="Link to this heading">¶</a></h2>
 <p>dau-build turns a declarative description of an FPGA build into concrete
-artifacts: generated SystemVerilog, artifact bundles, backend handoff manifests,
-Tcl scripts, and command plans. Everything the tool does is expressed as a typed
-<code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> — a <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code>, a <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>, a
-<code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code>, and so on — and every one of those models is <em>built
-from configuration</em>, not hand-constructed in Python.</p>
-<p>That configuration is a Hydra config tree under <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. Running the
-tool is therefore always the same two-phase act: <strong>compose</strong> a config from
-groups and overrides, then <strong>instantiate and run</strong> the model it describes. The
-CLIs are thin front-ends over that one idea.</p>
-<p>The reason for this design is that an FPGA build has many axes that vary
-independently — which task, which board, which backend, which spec — and those
-axes are reused across dozens of operations. Encoding each axis as a Hydra config
-group lets any combination compose without a bespoke argument parser per command,
-and lets a downstream package add new options without editing dau-build.</p>
+artifacts: generated SystemVerilog, artifact bundles, backend handoff
+manifests, Tcl scripts and command plans. Everything the tool does is a typed
+<code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> (a <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code>, a <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>, a
+<code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code>, and so on), and every one of those models is
+built from configuration rather than constructed by hand in Python.</p>
+<p>That configuration is a Hydra config tree under <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. Running
+the tool is always the same two-phase act: compose a config from groups and
+overrides, then instantiate and run the model it describes. The CLI is a thin
+front end over that one idea.</p>
+<p>The reason is that an FPGA build has many axes that vary independently (which
+task, which board, which backend, which spec), and those axes recur across
+dozens of operations. Encoding each axis as a Hydra config group lets any
+combination compose without a separate argument parser per command, and lets
+a downstream package add new options without editing dau-build.</p>
 </section>
 <section id="config-groups-are-directories">
 <h2>Config groups are directories<a class="headerlink" href="#config-groups-are-directories" title="Link to this heading">¶</a></h2>
-<p>Each subdirectory of <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code> is a Hydra config group: <code class="docutils literal notranslate"><span class="pre">task</span></code>, <code class="docutils literal notranslate"><span class="pre">step</span></code>,
-<code class="docutils literal notranslate"><span class="pre">spec</span></code>, <code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>, <code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">design</span></code>, <code class="docutils literal notranslate"><span class="pre">callable</span></code>. Selecting an option
-is an override <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code>, where the option is the file’s path relative to
-the group directory. A file at <code class="docutils literal notranslate"><span class="pre">config/task/tasks/sim/simulate.yaml</span></code> is selected
-as <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>. The names are path-style because the groups nest;
-short aliases are deliberately not supported, so a name always says where its
-file lives.</p>
-<p>Each option file opens with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that decides where its
-content lands in the composed config. Tasks and steps declare <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>,
-so a selected task <em>becomes</em> the <code class="docutils literal notranslate"><span class="pre">model</span></code> that gets run. Boards, backends, specs,
-and platforms declare their own singular key. The base config
-<code class="docutils literal notranslate"><span class="pre">config/base.yaml</span></code> lists every group as <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>, so nothing is selected
-until you override it, and a run picks exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to fill
-<code class="docutils literal notranslate"><span class="pre">model</span></code>. See the <a class="reference internal" href="../reference/config-groups.html"><span class="std std-doc">config group reference</span></a> for the
-full list.</p>
-<p>Because groups are just directories and options are just files, the config tree
-<em>is</em> the catalog. Adding a task is adding a file; the name→class registry is
-derived by globbing the tree (<code class="docutils literal notranslate"><span class="pre">_model_types_from_config_group</span></code>), so there is no
-second place to register it.</p>
+<p>Each subdirectory of <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code> is a Hydra config group: <code class="docutils literal notranslate"><span class="pre">task</span></code>,
+<code class="docutils literal notranslate"><span class="pre">step</span></code>, <code class="docutils literal notranslate"><span class="pre">spec</span></code>, <code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>, <code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">design</span></code>, <code class="docutils literal notranslate"><span class="pre">callable</span></code>.
+Selecting an option is an override <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code>, where the option is the
+file’s path relative to the group directory. A file at
+<code class="docutils literal notranslate"><span class="pre">config/task/tasks/sim/simulate.yaml</span></code> is selected as <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>.
+The names are paths because the groups nest. Short aliases are not supported,
+so a name always tells you where its file is.</p>
+<p>Each option file opens with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that decides where
+its content lands in the composed config. Tasks and steps declare
+<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>, so a selected task becomes the <code class="docutils literal notranslate"><span class="pre">model</span></code> that runs. Boards,
+backends, specs and platforms declare their own singular key. The base config
+<code class="docutils literal notranslate"><span class="pre">config/base.yaml</span></code> lists every group as <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>, so nothing is
+selected until you override it, and a run picks exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or
+<code class="docutils literal notranslate"><span class="pre">step=</span></code> to fill <code class="docutils literal notranslate"><span class="pre">model</span></code>. The <a class="reference internal" href="../reference/config-groups.html"><span class="std std-doc">config group reference</span></a>
+has the full list.</p>
+<p>Because groups are directories and options are files, the config tree is the
+catalog. Adding a task is adding a file; the name-to-class registry is derived
+by globbing the tree (<code class="docutils literal notranslate"><span class="pre">_model_types_from_config_group</span></code>), so there is no second
+place to register it.</p>
 </section>
 <section id="the-override-syntax">
 <h2>The override syntax<a class="headerlink" href="#the-override-syntax" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> composes the config tree and runs the result, so a single command
-carries three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code> (or <code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code>) selects the
-runnable and composes it <em>into</em> the <code class="docutils literal notranslate"><span class="pre">model</span></code> key. <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code> selects a
-config group — <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code>, <code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code>,
-<code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code> sets a field on the selected
-model. The <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix is not decoration: because the task is composed into
-the <code class="docutils literal notranslate"><span class="pre">model</span></code> key, its fields are addressed under <code class="docutils literal notranslate"><span class="pre">model.</span></code>.</p>
-<p>Names are path-style (<code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>) because
-they <em>are</em> paths into the config tree — the same reason adding a task is adding a
-file. Passing <code class="docutils literal notranslate"><span class="pre">--explain</span></code> composes the overrides without running, printing the
-resolved config so you can see exactly what they produced.</p>
+<p>A single <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> command takes three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code>) selects the runnable and composes it into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.
+<code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code> selects a config group: <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code>,
+<code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And
+<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code> sets a field on the selected model. The <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix
+is there because the task is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key, so its fields are
+addressed under <code class="docutils literal notranslate"><span class="pre">model.</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">--explain</span></code> composes the overrides without running and prints the resolved
+config, so you can see what they produced.</p>
 </section>
 <section id="ccflow-owns-ordering-and-caching">
 <h2>ccflow owns ordering and caching<a class="headerlink" href="#ccflow-owns-ordering-and-caching" title="Link to this heading">¶</a></h2>
 <p>A composed <code class="docutils literal notranslate"><span class="pre">model</span></code> is run by ccflow, not by dau-build directly. The <code class="docutils literal notranslate"><span class="pre">callable</span></code>
-group wires a <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code> of a <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> and a <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code>.
-Composite tasks declare their prerequisites through <code class="docutils literal notranslate"><span class="pre">Flow.deps</span></code>, and the
-<code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> walks that dependency graph so the pieces run in the right order;
-the <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> prevents a shared dependency from executing twice in a
-single process. This is why, for example, <code class="docutils literal notranslate"><span class="pre">build-vivado-artifacts</span></code> can depend on
-staging and validation without dau-build hand-coding the sequence — the ordering
-lives in the model graph, and the evaluator owns it.</p>
+group wires a <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code> of a <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> and a
+<code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code>. Composite tasks declare their prerequisites through
+<code class="docutils literal notranslate"><span class="pre">Flow.deps</span></code>, the <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> walks that dependency graph so the pieces
+run in order, and the <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> keeps a shared dependency from
+executing twice in one process. This is why <code class="docutils literal notranslate"><span class="pre">build-vivado-artifacts</span></code> can
+depend on staging and validation without dau-build hand-coding the sequence:
+the ordering is in the model graph and the evaluator owns it.</p>
 </section>
 <section id="the-search-path-makes-the-tree-extensible">
 <h2>The search path makes the tree extensible<a class="headerlink" href="#the-search-path-makes-the-tree-extensible" title="Link to this heading">¶</a></h2>
 <p>dau-build registers its own config tree on the Hydra search path through a
-<code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point (<code class="docutils literal notranslate"><span class="pre">pkg:dau_build.config</span></code>). Any installed package
-can do the same for its own <code class="docutils literal notranslate"><span class="pre">pkg:&lt;name&gt;.config</span></code>, and its groups then compose
-uniformly alongside the packaged ones — new boards, backends, designs, or tasks
+<code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point (<code class="docutils literal notranslate"><span class="pre">pkg:dau_build.config</span></code>). Any installed
+package can do the same for its own <code class="docutils literal notranslate"><span class="pre">pkg:&lt;name&gt;.config</span></code>, and its groups then
+compose alongside the packaged ones: new boards, backends, designs or tasks
 without touching dau-build.</p>
-<p>The mechanism is honored by the lerna search-path bridge (<code class="docutils literal notranslate"><span class="pre">lerna</span></code> on PyPI); the
-entry point is inert without it, so a package that relies on cross-package
-composition depends on <code class="docutils literal notranslate"><span class="pre">lerna</span></code> directly. The private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package is the working
-example: it registers <code class="docutils literal notranslate"><span class="pre">pkg:dau.config</span></code>, which adds <code class="docutils literal notranslate"><span class="pre">task=shell</span></code>, and with
-<code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span></code> resolves that task with no
-<code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. dau-build never imports <code class="docutils literal notranslate"><span class="pre">dau</span></code> — extension flows one way,
-through the search path, which keeps the public tool free of private
-dependencies. See <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> for how to
-do this yourself.</p>
+<p>The lerna search-path bridge (<code class="docutils literal notranslate"><span class="pre">lerna</span></code> on PyPI) is what honors the entry point.
+Without it the entry point does nothing, so a package that relies on
+cross-package composition depends on <code class="docutils literal notranslate"><span class="pre">lerna</span></code> directly. The <code class="docutils literal notranslate"><span class="pre">dau</span></code> package is
+the working example: it registers <code class="docutils literal notranslate"><span class="pre">pkg:dau.config</span></code>, which adds <code class="docutils literal notranslate"><span class="pre">task=shell</span></code>,
+and with <code class="docutils literal notranslate"><span class="pre">dau</span></code> installed <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span></code> resolves that task with no
+<code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. dau-build never imports <code class="docutils literal notranslate"><span class="pre">dau</span></code>. Extension flows one
+way, through the search path, so dau-build stays free of downstream
+dependencies. <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> shows how
+to do this yourself.</p>
 </section>
 <section id="plans-first-execution-on-the-host">
 <h2>Plans first, execution on the host<a class="headerlink" href="#plans-first-execution-on-the-host" title="Link to this heading">¶</a></h2>
-<p>Most build and hardware tasks default to <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and emit <em>plans</em>:
+<p>Most build and hardware tasks default to <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and emit plans:
 generated Tcl, backend manifests at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code>, staged work
-directories, and ordered command sequences — all without invoking a vendor
-toolchain or touching hardware. Passing <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> runs the privileged action.</p>
-<p>This separation is deliberate. It lets the whole pipeline be composed, inspected,
-validated, and tested on a developer machine with no Xilinx tools and no board
-attached, and confines the privileged, irreversible steps (running Vivado,
-programming JTAG, rescanning PCIe) to an explicit opt-in on the machine that
-actually has the hardware. The validators (<code class="docutils literal notranslate"><span class="pre">validate-vivado-artifacts</span></code>) check that
-a plan is internally consistent — manifest, Tcl, command plan, and output paths
-all agree — before anyone spends an hour of synthesis on it.</p>
+directories and ordered command sequences, all without invoking a vendor
+toolchain or touching hardware. Passing <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> runs the privileged
+action.</p>
+<p>The split lets the whole pipeline be composed, inspected, validated and
+tested on a developer machine with no Xilinx tools and no board attached. The
+steps that are privileged and hard to undo (running Vivado, programming over
+JTAG, rescanning PCIe) happen only on explicit opt-in, on the machine that has
+the hardware. The validators (<code class="docutils literal notranslate"><span class="pre">validate-vivado-artifacts</span></code>) check that a plan
+agrees with itself (manifest, Tcl, command plan and output paths) before
+anyone spends an hour of synthesis on it.</p>
 </section>
 <section id="board-platform-and-backend-are-three-separate-things">
-<h2>Board, platform, and backend are three separate things<a class="headerlink" href="#board-platform-and-backend-are-three-separate-things" title="Link to this heading">¶</a></h2>
-<p>These three groups are easy to conflate; they answer different questions.</p>
+<h2>Board, platform and backend are three separate things<a class="headerlink" href="#board-platform-and-backend-are-three-separate-things" title="Link to this heading">¶</a></h2>
+<p>These three groups are easy to confuse. They answer different questions.</p>
 <ul class="simple">
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">platform</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code>) is the hardware board as data: the part
-number, the resource budget, the memory, and the host link — including the
-full XDMA personality. For dpv1 the personality is the 47 proven bring-up XCI
-parameters, quoted verbatim and order-preserved so the generated Vivado
-<code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block is byte-for-byte identical to the known-good core. A hand-picked
-subset of those parameters leaves the device memory-dead on hardware, which is
-why the definition insists on carrying all of them exactly. <code class="docutils literal notranslate"><span class="pre">fits()</span></code> checks a
-design’s resource use against this budget.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">board</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code>) is a small build-config view — <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">platform</span></code>,
-<code class="docutils literal notranslate"><span class="pre">shell</span></code> — where <code class="docutils literal notranslate"><span class="pre">platform</span></code> and <code class="docutils literal notranslate"><span class="pre">shell</span></code> here are backend <em>labels</em> (e.g.
-<code class="docutils literal notranslate"><span class="pre">vivado-xdma</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma-ddr</span></code>) threaded into Vivado manifests, not the hardware
-<code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code>.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">platform</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code>) is the hardware board as data: the
+part number, the resource budget, the memory, and the host link including
+the full XDMA personality. For dpv1 the personality is the 47 proven
+bring-up XCI parameters, quoted verbatim and in order, so the generated
+Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</span></code> block matches the known-good core byte for byte. A
+hand-picked subset of those parameters leaves the device memory-dead on
+hardware, which is why the definition insists on all of them. <code class="docutils literal notranslate"><span class="pre">fits()</span></code>
+checks a design’s resource use against the budget.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">board</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code>) is a small build-config view: <code class="docutils literal notranslate"><span class="pre">name</span></code>,
+<code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">shell</span></code>. Here <code class="docutils literal notranslate"><span class="pre">platform</span></code> and <code class="docutils literal notranslate"><span class="pre">shell</span></code> are backend labels
+(<code class="docutils literal notranslate"><span class="pre">vivado-xdma</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma-ddr</span></code>) threaded into Vivado manifests, not the
+hardware <code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code>.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">backend</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code>) is the synthesis toolchain, as a label.</p></li>
 </ul>
-<p>They are independent groups, composed together into a task’s
-<code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code> only where a task needs them. Keeping the hardware truth
-(<code class="docutils literal notranslate"><span class="pre">platform</span></code>) separate from the backend labels (<code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>) means the same
-physical dpv1 definition can be reused regardless of which backend produced a
-bitstream.</p>
+<p>They are independent groups, composed into a task’s <code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code>
+only where a task needs them. Keeping the hardware facts (<code class="docutils literal notranslate"><span class="pre">platform</span></code>) apart
+from the backend labels (<code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>) means the same physical dpv1
+definition serves whichever backend produced a bitstream.</p>
 </section>
 <section id="backends-vivado-and-yosys">
 <h2>Backends: Vivado and yosys<a class="headerlink" href="#backends-vivado-and-yosys" title="Link to this heading">¶</a></h2>
-<p>Two synthesis engines are real: <strong>Vivado</strong> (the FPGA bitstream flow) and
-<strong>yosys</strong> (open-source synthesis). The engine is chosen the hydra-first way —
-it <em>is</em> the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group. Each option instantiates a polymorphic
-<code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> just delegates to
-<code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code>. There is no engine <code class="docutils literal notranslate"><span class="pre">Literal</span></code> and no <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">engine</span> <span class="pre">==</span></code>
-dispatch branch; adding an engine is adding a model and a yaml.</p>
+<p>Two synthesis engines are implemented: Vivado for the FPGA bitstream flow and
+yosys for open-source synthesis. The engine is the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group.
+Each option instantiates a polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and
+<code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> delegates to <code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code>. There is no engine
+<code class="docutils literal notranslate"><span class="pre">Literal</span></code> and no <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">engine</span> <span class="pre">==</span></code> branch; adding an engine is adding a model and
+a yaml file.</p>
 <ul class="simple">
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code></strong> (the default) composes a <code class="docutils literal notranslate"><span class="pre">VivadoEngine</span></code>, which
-writes a Vivado <em>handoff</em> — <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code> generates text artifacts
-(overlay Tcl, build Tcl, a key=value manifest, a command plan) but never
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code></strong> (the default) composes a <code class="docutils literal notranslate"><span class="pre">VivadoEngine</span></code>,
+which writes a Vivado handoff. <code class="docutils literal notranslate"><span class="pre">vivado_backend.py</span></code> generates text artifacts
+(overlay Tcl, build Tcl, a key=value manifest, a command plan) and never
 spawns Vivado; that happens later in the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> build tasks and in
-<code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>. Vivado is not present in CI, so this path is plan-only there.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></strong> composes a <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code>, which <em>runs</em> synthesis.
-<code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> generates a yosys script and executes it, so the generated
-top is actually elaborated and synthesized — a real check, not a plan. yosys is
-open-source and installs in CI, which is the point: it turns synthesis into
-something the test suite can exercise on every run.</p></li>
+<code class="docutils literal notranslate"><span class="pre">hardware_plan.py</span></code>. Vivado is not present in CI, so this path is plan-only
+there.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></strong> composes a <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code>, which runs the
+synthesis. <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> generates a yosys script and executes it, so
+the generated top is elaborated and synthesized for real. yosys is open
+source and installs in CI, which turns synthesis into something the test
+suite runs on every push.</p></li>
 </ul>
-<p>Because the engine is a composed model, it is fully hydra-configurable. The
-<code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code>’s SystemVerilog frontend is a field, set like any other override:
+<p>Because the engine is a composed model, its fields are Hydra overrides. The
+<code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> SystemVerilog frontend is one of them:
 <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span> <span class="pre">backend.frontend=slang</span></code> (or <code class="docutils literal notranslate"><span class="pre">+backend.&lt;field&gt;=...</span></code>).
-<code class="docutils literal notranslate"><span class="pre">frontend=verilog</span></code> uses yosys’s built-in <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code> (enough for
-dau-build’s own synthesizable sources); <code class="docutils literal notranslate"><span class="pre">frontend=slang</span></code> uses the yosys-slang
-plugin’s <code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code> parser,
-for the full SV surface (packages, interfaces) the private cores use.</p>
-<p>The engine model carries only <code class="docutils literal notranslate"><span class="pre">name</span></code>/<code class="docutils literal notranslate"><span class="pre">invocation</span></code> up to the resolved-config view
-(<code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code> normalizes it to that label), so an engine’s own fields
-never leak into the build-config reporting. A third engine (a nextpnr
-place-and-route flow, another vendor) is a new <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass and a
-yaml; the config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> indirection,
-and the search-path extension are all engine-agnostic, so it can even come from a
-package without touching dau-build —
-<a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> walks through exactly what a
-new engine requires, using yosys as the worked example.</p>
+<code class="docutils literal notranslate"><span class="pre">frontend=verilog</span></code> uses yosys’s built-in <code class="docutils literal notranslate"><span class="pre">read_verilog</span> <span class="pre">-sv</span></code>, enough for
+dau-build’s own synthesizable sources. <code class="docutils literal notranslate"><span class="pre">frontend=slang</span></code> uses the yosys-slang
+plugin’s <code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code>
+parser, for the full SystemVerilog surface (packages, interfaces) the dau-core
+tiles use.</p>
+<p>Only <code class="docutils literal notranslate"><span class="pre">name</span></code> and <code class="docutils literal notranslate"><span class="pre">invocation</span></code> reach the resolved-config view
+(<code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code> normalizes the engine to that label), so an engine’s
+own fields never leak into build-config reporting. A third engine (a nextpnr
+place-and-route flow, another vendor) is a new <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass and
+a yaml file. The config-group plumbing, the open registry, the <code class="docutils literal notranslate"><span class="pre">_target_</span></code>
+indirection and the search-path extension are all engine-agnostic, so it can
+come from another package without touching dau-build.
+<a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a> lists what a new engine
+needs, with yosys as the worked example.</p>
 </section>
 </section>
 
@@ -464,7 +464,7 @@ new engine requires, using yosys as the worked example.</p>
 <li><a class="reference internal" href="#ccflow-owns-ordering-and-caching">ccflow owns ordering and caching</a></li>
 <li><a class="reference internal" href="#the-search-path-makes-the-tree-extensible">The search path makes the tree extensible</a></li>
 <li><a class="reference internal" href="#plans-first-execution-on-the-host">Plans first, execution on the host</a></li>
-<li><a class="reference internal" href="#board-platform-and-backend-are-three-separate-things">Board, platform, and backend are three separate things</a></li>
+<li><a class="reference internal" href="#board-platform-and-backend-are-three-separate-things">Board, platform and backend are three separate things</a></li>
 <li><a class="reference internal" href="#backends-vivado-and-yosys">Backends: Vivado and yosys</a></li>
 </ul>
 </li>

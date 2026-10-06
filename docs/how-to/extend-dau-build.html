@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Command reference" href="../reference/commands.html"><link rel="prev" title="How to program a bitstream on dpv1" href="program-hardware.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Command reference" href="../reference/commands.html"><link rel="prev" title="How to program a bitstream on a board" href="program-hardware.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>How to extend dau-build - dau-build v0.14.0</title>
@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
@@ -246,25 +246,24 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="how-to-extend-dau-build">
 <h1>How to extend dau-build<a class="headerlink" href="#how-to-extend-dau-build" title="Link to this heading">¶</a></h1>
-<p>dau-build is designed to be extended without editing it. Its config tree is on
-the Hydra search path, so an installed package can add its own tasks, steps,
-boards, backends, or platforms, and they compose alongside the packaged ones.
-This guide shows the three things you are most likely to add: a new task from
-your own package, a new board or platform, and a new synthesis backend.</p>
+<p>You extend dau-build without editing it. Its config tree is on the Hydra
+search path, so an installed package can add its own tasks, steps, boards,
+backends or platforms, and they compose alongside the packaged ones. This
+guide covers the three additions you are most likely to make: a task from
+your own package, a board or platform, and a synthesis backend.</p>
 <p>For the concepts behind the search path and the config groups, see
 <a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the architecture explanation</span></a>. To test an
-overlay without packaging, see <strong>Try it without packaging</strong> at the end of this
-guide.</p>
+overlay without packaging it, see the last section of this guide.</p>
 <section id="register-your-config-tree-on-the-search-path">
 <h2>Register your config tree on the search path<a class="headerlink" href="#register-your-config-tree-on-the-search-path" title="Link to this heading">¶</a></h2>
 <p>The one-time setup: give your package a <code class="docutils literal notranslate"><span class="pre">config</span></code> directory laid out like
-dau-build’s (config groups as subdirectories), make it importable, and register
-it on the Hydra search path.</p>
+dau-build’s (config groups as subdirectories), make it importable, and
+register it on the Hydra search path.</p>
 <ol class="arabic">
-<li><p>Put a Hydra config tree in your package, e.g. <code class="docutils literal notranslate"><span class="pre">mypkg/config/</span></code>, with an
-<code class="docutils literal notranslate"><span class="pre">__init__.py</span></code> so <code class="docutils literal notranslate"><span class="pre">mypkg.config</span></code> is an importable package (Hydra resolves the
-<code class="docutils literal notranslate"><span class="pre">pkg:</span></code> search-path entry by importing it).</p></li>
-<li><p>Add the entry point and depend on the search-path bridge in your
+<li><p>Put a Hydra config tree in your package, for example <code class="docutils literal notranslate"><span class="pre">mypkg/config/</span></code>,
+with an <code class="docutils literal notranslate"><span class="pre">__init__.py</span></code> so <code class="docutils literal notranslate"><span class="pre">mypkg.config</span></code> is an importable package. Hydra
+resolves the <code class="docutils literal notranslate"><span class="pre">pkg:</span></code> search-path entry by importing it.</p></li>
+<li><p>Add the entry point and depend on the search-path bridge in
 <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>:</p>
 <div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="n">dependencies</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"dau-build"</span><span class="p">,</span><span class="w"> </span><span class="s2">"lerna&gt;=2.0.4"</span><span class="p">]</span>
 
@@ -272,19 +271,19 @@ it on the Hydra search path.</p>
 <span class="n">mypkg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"pkg:mypkg.config"</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">lerna</span></code> is what honors the <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point; without it the
-entry point is inert.</p>
+<p><code class="docutils literal notranslate"><span class="pre">lerna</span></code> is what honors the <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point; without it
+the entry point does nothing.</p>
 </li>
 </ol>
-<p>Your groups now compose through dau-build’s Hydra CLIs. dau-build never imports
-your package — extension flows one way, so your private code can depend on
+<p>Your groups now compose through dau-build’s Hydra CLIs. dau-build never
+imports your package. Extension flows one way, so your code can depend on
 dau-build while dau-build stays free of it.</p>
 </section>
 <section id="add-a-task">
 <h2>Add a task<a class="headerlink" href="#add-a-task" title="Link to this heading">¶</a></h2>
 <p>A task is a config file plus the <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> it targets.</p>
 <ol class="arabic">
-<li><p>Write the model as a <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> in your package (e.g.
+<li><p>Write the model as a <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> in your package (for example
 <code class="docutils literal notranslate"><span class="pre">mypkg.tasks.MyTask</span></code>).</p></li>
 <li><p>Add <code class="docutils literal notranslate"><span class="pre">mypkg/config/task/tasks/&lt;category&gt;/&lt;name&gt;.yaml</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package model</span>
@@ -294,9 +293,9 @@ dau-build while dau-build stays free of it.</p>
 <span class="nt">other_field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code> directive makes the selected task <em>become</em> the <code class="docutils literal notranslate"><span class="pre">model</span></code>
-that runs. dau-build derives its name→class registry by globbing the config
-tree, so there is nothing else to register — the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> may point at any
+<p>The <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code> directive makes the selected task the <code class="docutils literal notranslate"><span class="pre">model</span></code> that
+runs. dau-build derives its name-to-class registry by globbing the config
+tree, so there is nothing else to register; <code class="docutils literal notranslate"><span class="pre">_target_</span></code> may point at any
 importable module.</p>
 </li>
 <li><p>Run it through the <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> CLI:</p>
@@ -305,14 +304,14 @@ importable module.</p>
 </div>
 </li>
 </ol>
-<p>The private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package does exactly this to add <code class="docutils literal notranslate"><span class="pre">task=shell</span></code>: with <code class="docutils literal notranslate"><span class="pre">dau</span></code>
-installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span> <span class="pre">model.output_root=...</span></code>
-resolves a task defined entirely in <code class="docutils literal notranslate"><span class="pre">dau</span></code>, with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">dau</span></code> package adds <code class="docutils literal notranslate"><span class="pre">task=shell</span></code> this way: with <code class="docutils literal notranslate"><span class="pre">dau</span></code> installed,
+<code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span> <span class="pre">model.output_root=...</span></code> resolves
+a task defined entirely in <code class="docutils literal notranslate"><span class="pre">dau</span></code>, with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay.</p>
 </section>
 <section id="add-a-board-or-platform">
 <h2>Add a board or platform<a class="headerlink" href="#add-a-board-or-platform" title="Link to this heading">¶</a></h2>
-<p>Boards and platforms reuse dau-build’s existing models, so they are pure config —
-no new Python.</p>
+<p>Boards and platforms reuse dau-build’s existing models, so they are config
+only, with no new Python.</p>
 <p>For a board’s build-config view, add
 <code class="docutils literal notranslate"><span class="pre">mypkg/config/board/boards/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package board</span>
@@ -323,29 +322,29 @@ no new Python.</p>
 <span class="nt">shell</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-shell</span>
 </pre></div>
 </div>
-<p>For the hardware platform definition (part, resource budget, memory, host link),
-add <code class="docutils literal notranslate"><span class="pre">mypkg/config/platform/platforms/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code> targeting
+<p>For the hardware platform definition (part, resource budget, memory, host
+link), add <code class="docutils literal notranslate"><span class="pre">mypkg/config/platform/platforms/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code> targeting
 <code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>. Select them with
 <code class="docutils literal notranslate"><span class="pre">board=boards/&lt;vendor&gt;/&lt;board&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
 </section>
 <section id="add-a-synthesis-engine">
 <h2>Add a synthesis engine<a class="headerlink" href="#add-a-synthesis-engine" title="Link to this heading">¶</a></h2>
-<p>The synthesis engine is the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group: each option instantiates a
-polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code> delegates to
-<code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code> — there is no dispatch <code class="docutils literal notranslate"><span class="pre">if</span></code> to edit. <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> is
-the worked example; read
-<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">the backend section of the architecture explanation</span></a>
-first, then use <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> + <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> as the template. A new engine
-requires:</p>
+<p>The synthesis engine is the <code class="docutils literal notranslate"><span class="pre">backend</span></code> config group. Each option
+instantiates a polymorphic <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> model, and <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>
+delegates to <code class="docutils literal notranslate"><span class="pre">engine.synthesize(...)</span></code>; there is no dispatch <code class="docutils literal notranslate"><span class="pre">if</span></code> to edit.
+<code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> is the worked example: read the
+<a class="reference internal" href="../explanation/architecture.html"><span class="std std-doc">backend section of the architecture explanation</span></a>
+first, then use <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code> and <code class="docutils literal notranslate"><span class="pre">YosysEngine</span></code> as the template. A new
+engine needs:</p>
 <ol class="arabic">
-<li><p><strong>An engine model</strong> — a <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass with a <code class="docutils literal notranslate"><span class="pre">synthesize</span></code>
+<li><p><strong>An engine model</strong>: a <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> subclass with a <code class="docutils literal notranslate"><span class="pre">synthesize</span></code>
 method and whatever fields it needs (like <code class="docutils literal notranslate"><span class="pre">YosysEngine.frontend</span></code>). Its
-<code class="docutils literal notranslate"><span class="pre">synthesize</span></code> either generates a plan (Vivado’s Tcl/manifests) or generates and
-runs a tool (yosys’s script + <code class="docutils literal notranslate"><span class="pre">run_yosys_synthesis</span></code>). Put its heavy backend
-logic in a module paralleling <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code>.</p></li>
+<code class="docutils literal notranslate"><span class="pre">synthesize</span></code> either generates a plan (Vivado’s Tcl and manifests) or
+generates and runs a tool (yosys’s script and <code class="docutils literal notranslate"><span class="pre">run_yosys_synthesis</span></code>). Put
+the heavy backend logic in a module alongside <code class="docutils literal notranslate"><span class="pre">yosys_backend.py</span></code>.</p></li>
 <li><p><strong>A config option</strong> so it is selectable and configurable. Add
-<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/&lt;name&gt;.yaml</span></code> (this is exactly
-<code class="docutils literal notranslate"><span class="pre">backends/yosys.yaml</span></code>):</p>
+<code class="docutils literal notranslate"><span class="pre">&lt;pkg&gt;/config/backend/backends/&lt;name&gt;.yaml</span></code>; this is exactly
+<code class="docutils literal notranslate"><span class="pre">backends/yosys.yaml</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package backend</span>
 
 <span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypkg.engines.NextpnrEngine</span>
@@ -353,26 +352,26 @@ logic in a module paralleling <code class="docutils literal notranslate"><span c
 <span class="nt">invocation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standard</span>
 </pre></div>
 </div>
-<p>It composes as <code class="docutils literal notranslate"><span class="pre">backend=backends/&lt;name&gt;</span></code> and is fully configurable via
-<code class="docutils literal notranslate"><span class="pre">backend.&lt;field&gt;=...</span></code> — no change to <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>.</p>
+<p>It composes as <code class="docutils literal notranslate"><span class="pre">backend=backends/&lt;name&gt;</span></code> and is configurable through
+<code class="docutils literal notranslate"><span class="pre">backend.&lt;field&gt;=...</span></code> with no change to <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code>.</p>
 </li>
-<li><p><strong>Any build/validate tasks</strong> your flow needs, paralleling the Vivado ones,
-each targeting a new <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>.</p></li>
+<li><p><strong>Any build and validate tasks</strong> your flow needs, mirroring the Vivado
+ones, each targeting a new <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>.</p></li>
 </ol>
-<p>Because the engine is just a composed model, an engine defined in your own
-package composes purely via the search path — nothing lands in dau-build unless
-you extend the packaged set.</p>
+<p>Because the engine is a composed model, an engine defined in your own
+package composes through the search path alone. Nothing lands in dau-build
+unless you extend the packaged set.</p>
 </section>
 <section id="try-it-without-packaging">
 <h2>Try it without packaging<a class="headerlink" href="#try-it-without-packaging" title="Link to this heading">¶</a></h2>
-<p>To test a config overlay before packaging it, point the CLI at a directory with
-<code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>:</p>
+<p>To test a config overlay before packaging it, point the CLI at a directory
+with <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span>--config-dir<span class="w"> </span>./my-configs<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/&lt;category&gt;/&lt;name&gt;<span class="w"> </span>model.some_field<span class="o">=</span>value
 </pre></div>
 </div>
-<p>The overlay’s groups merge into the tree for that run, and its <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models
-can come from any importable package. This is the quickest way to iterate on a new
-task config before wiring up the entry point.</p>
+<p>The overlay’s groups merge into the tree for that run, and its <code class="docutils literal notranslate"><span class="pre">_target_</span></code>
+models can come from any importable package. This is the quickest way to
+iterate on a new task config before wiring up the entry point.</p>
 </section>
 </section>
 
@@ -397,7 +396,7 @@ task config before wiring up the entry point.</p>
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">How to program a bitstream on dpv1</div>
+                <div class="title">How to program a bitstream on a board</div>
                 
               </div>
             </a>

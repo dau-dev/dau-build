@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to extend dau-build" href="extend-dau-build.html"><link rel="prev" title="How to run a build end to end" href="run-a-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>How to program a bitstream on dpv1 - dau-build v0.14.0</title>
+        <title>How to program a bitstream on a board - dau-build v0.14.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
@@ -244,36 +244,40 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section class="tex2jax_ignore mathjax_ignore" id="how-to-program-a-bitstream-on-dpv1">
-<h1>How to program a bitstream on dpv1<a class="headerlink" href="#how-to-program-a-bitstream-on-dpv1" title="Link to this heading">¶</a></h1>
-<p>This guide programs and validates a bitstream on a dpv1 board (a NiteFury
-XC7A200T reached over a PCIe/Thunderbolt link) using the <code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> task. It
-covers the three situations you hit most: programming a fresh build, validating
-an already-built bitstream, and recovering a device that a bad image has wedged.</p>
-<p><code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> composes an ordered sequence of hardware-session steps — JTAG
-detect, endpoint remove, program, PCIe rescan, endpoint check, optional injected
-smoke command — and runs them in the order the board actually needs. Like the build tasks it is
-plan-first: without <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> it prints the plan; with it, it runs on the
-host. Run these on the machine physically attached to the board.</p>
+          <section class="tex2jax_ignore mathjax_ignore" id="how-to-program-a-bitstream-on-a-board">
+<h1>How to program a bitstream on a board<a class="headerlink" href="#how-to-program-a-bitstream-on-a-board" title="Link to this heading">¶</a></h1>
+<p>This guide programs and validates a bitstream on an attached board with the
+<code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> task. The examples are written against a NiteFury-class
+XC7A200T card reached over a PCIe/Thunderbolt link, which is where the
+plans were developed; the same plans run on any board whose platform
+definition records its host-access facts. The guide covers the three
+situations you hit most: programming a fresh build, validating an
+already-built bitstream, and recovering a device that a bad image has hung.</p>
+<p><code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> composes an ordered sequence of hardware-session steps (JTAG
+detect, endpoint remove, program, PCIe rescan, endpoint check, an optional
+injected smoke command) and runs them in the order the board needs. Like the
+build tasks it is plan-first: without <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> it prints the plan; with
+it, it runs on the host. Run these on the machine physically attached to the
+board.</p>
 <p>The named plans are <code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code>, <code class="docutils literal notranslate"><span class="pre">build-and-program</span></code>,
-<code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">thunderbolt-hold</span></code>, and
-<code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
+<code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>, <code class="docutils literal notranslate"><span class="pre">sram-program</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">thunderbolt-hold</span></code>
+and <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
-<p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns, and
-JTAG cable) is board/host configuration, not code defaults: compose
+<p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
+JTAG cable) is board and host configuration, not a code default. Compose
 <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code> so the plan takes the board’s
-<code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts (or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly). Steps
-that need an unset fact refuse to render.</p>
+<code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts, or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly. A
+step that needs an unset fact refuses to render.</p>
 <blockquote>
-<div><p><strong>Programming can wedge the PCIe link.</strong> Removing and reprogramming an endpoint
-while the host holds it can hang a rescan hard enough to need a power cycle. On
-a host where that is a risk, arm a watchdog / auto-reboot before you run any
-<code class="docutils literal notranslate"><span class="pre">execute=true</span></code> plan, so a wedge recovers itself.</p>
+<div><p><strong>Programming can hang the PCIe link.</strong> Removing and reprogramming an
+endpoint while the host holds it can hang a rescan hard enough to need a
+power cycle. On a host where that is a risk, arm a watchdog or auto-reboot
+before any <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> plan, so a hang recovers itself.</p>
 </div></blockquote>
 <section id="preview-a-plan-before-running-it">
 <h2>Preview a plan before running it<a class="headerlink" href="#preview-a-plan-before-running-it" title="Link to this heading">¶</a></h2>
-<p>Always look at the sequence first. Omit <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> and the task prints the
-ordered steps without touching the board:</p>
+<p>Look at the sequence first. Without <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> the task prints the
+ordered steps and does not touch the board.</p>
 <p>The plan is a config group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>); its own fields are
 <code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
@@ -285,13 +289,14 @@ ordered steps without touching the board:</p>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado
 </pre></div>
 </div>
-<p>Read the printed steps. When they look right, re-run the same command with
+<p>Read the printed steps. When they look right, run the same command with
 <code class="docutils literal notranslate"><span class="pre">model.execute=true</span></code> appended.</p>
 </section>
 <section id="program-a-fresh-build">
 <h2>Program a fresh build<a class="headerlink" href="#program-a-fresh-build" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code> stages the shell, runs the Vivado overlay build, then
-programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the host:</p>
+<p><code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code> stages the shell, runs the Vivado overlay build,
+then programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the
+host:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
@@ -302,28 +307,28 @@ programs and verifies the device. Add <code class="docutils literal notranslate"
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-<p>The plan holds runtime power management, writes the overlay/build Tcl, runs the
-Vivado build, detects the JTAG chain, removes the stale endpoint, programs the
-volatile bitstream, performs the ordered bridge-then-global PCIe rescan, retries
-the endpoint check, runs the injected smoke command (if one is configured), and
-finally releases power management. If any step fails, the release step still
-runs.</p>
+<p>The plan holds runtime power management, writes the overlay and build Tcl,
+runs the Vivado build, detects the JTAG chain, removes the stale endpoint,
+programs the volatile bitstream, rescans PCIe (bridge first, then global),
+retries the endpoint check, runs the injected smoke command if one is
+configured, and releases power management. If a step fails, the release
+step still runs.</p>
 <p>The smoke step is injectable: <code class="docutils literal notranslate"><span class="pre">plan.smoke_command=&lt;command&gt;</span></code> runs after the
 endpoint check, and the plan omits the step when no command is configured.
-dau-build itself ships no smoke payload — the DAU driver smoke (which asserts
-the DAU magic register and prints <code class="docutils literal notranslate"><span class="pre">DAU_SMOKE_OK</span></code>) is injected by the private
+dau-build ships no smoke payload of its own; the DAU driver smoke, which
+asserts the DAU magic register and prints <code class="docutils literal notranslate"><span class="pre">DAU_SMOKE_OK</span></code>, comes from the
 <code class="docutils literal notranslate"><span class="pre">dau</span></code> package’s config overlay.</p>
 <p>If you already have a bitstream and only want to program it, use
-<code class="docutils literal notranslate"><span class="pre">plan=plans/build-and-program</span></code> with <code class="docutils literal notranslate"><span class="pre">model.bitstream=&lt;path&gt;</span></code> instead — it skips
-staging and the Vivado build.</p>
+<code class="docutils literal notranslate"><span class="pre">plan=plans/build-and-program</span></code> with <code class="docutils literal notranslate"><span class="pre">model.bitstream=&lt;path&gt;</span></code> instead. It
+skips staging and the Vivado build.</p>
 </section>
 <section id="validate-an-already-built-bitstream">
 <h2>Validate an already-built bitstream<a class="headerlink" href="#validate-an-already-built-bitstream" title="Link to this heading">¶</a></h2>
 <p>To program a specific bitstream and run the endpoint check without building
-anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>. The driver smoke is injected, not built in:
-pass <code class="docutils literal notranslate"><span class="pre">plan.smoke_command=&lt;cmd&gt;</span></code> (or use a package-provided plan that injects
-one, e.g. the private dau package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>); with no
-command the plan ends at the endpoint check:</p>
+anything, use <code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>. The driver smoke is injected, not built
+in: pass <code class="docutils literal notranslate"><span class="pre">plan.smoke_command=&lt;cmd&gt;</span></code>, or use a package-provided plan that
+injects one (the <code class="docutils literal notranslate"><span class="pre">dau</span></code> package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>, for
+example). With no command the plan ends at the endpoint check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
@@ -333,15 +338,15 @@ command the plan ends at the endpoint check:</p>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-<p>The XDMA kernel module must already be loaded; for a Vivado shell checkout it
-lives at <code class="docutils literal notranslate"><span class="pre">sw/xdma/xdma.ko</span></code> in the seed or work directory.</p>
+<p>The XDMA kernel module must already be loaded. For a Vivado shell checkout
+it is at <code class="docutils literal notranslate"><span class="pre">sw/xdma/xdma.ko</span></code> in the seed or work directory.</p>
 </section>
-<section id="recover-a-wedged-device">
-<h2>Recover a wedged device<a class="headerlink" href="#recover-a-wedged-device" title="Link to this heading">¶</a></h2>
-<p>If a bad image has left the endpoint dead, do <strong>not</strong> rescan first — a rescan
-against a resident dead image is what hangs. The <code class="docutils literal notranslate"><span class="pre">recovery</span></code> plan does the steps in
-the safe order: hold power management, remove the endpoint via sysfs, program a
-known-good volatile bitstream, then rescan and re-check:</p>
+<section id="recover-a-hung-device">
+<h2>Recover a hung device<a class="headerlink" href="#recover-a-hung-device" title="Link to this heading">¶</a></h2>
+<p>If a bad image has left the endpoint dead, do not rescan first: a rescan
+against a resident dead image is what hangs. The <code class="docutils literal notranslate"><span class="pre">recovery</span></code> plan does the
+steps in the safe order: hold power management, remove the endpoint through
+sysfs, program a known-good volatile bitstream, then rescan and re-check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/recovery<span class="w"> </span><span class="se">\</span>
@@ -349,21 +354,21 @@ known-good volatile bitstream, then rescan and re-check:</p>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-<p>This recovers the link without a reboot in most cases. If the endpoint still does
-not reappear, the device needs a power cycle.</p>
+<p>This recovers the link without a reboot in most cases. If the endpoint still
+does not reappear, the device needs a power cycle.</p>
 </section>
 <section id="flash-and-smoke-test-from-a-manifest">
 <h2>Flash and smoke-test from a manifest<a class="headerlink" href="#flash-and-smoke-test-from-a-manifest" title="Link to this heading">¶</a></h2>
-<p>To flash and to run a smoke test against a <code class="docutils literal notranslate"><span class="pre">built</span></code> shell-build manifest, use the
-<code class="docutils literal notranslate"><span class="pre">flash</span></code> and <code class="docutils literal notranslate"><span class="pre">smoke-test</span></code> tasks (these consume the manifest and verify the
-bitstream digest before touching the board):</p>
+<p>To flash, and to run a smoke test, against a <code class="docutils literal notranslate"><span class="pre">built</span></code> shell-build manifest,
+use the <code class="docutils literal notranslate"><span class="pre">flash</span></code> and <code class="docutils literal notranslate"><span class="pre">smoke-test</span></code> tasks. Both consume the manifest and verify
+the bitstream digest before touching the board:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/flash<span class="w"> </span>model.manifest_path<span class="o">=</span>outputs/vivado/shell-build.artifacts.yaml
 dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/smoke-test<span class="w"> </span>model.test<span class="o">=</span>identity
 </pre></div>
 </div>
-<p>Both require <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when given a manifest, and both emit a safe plan
-unless run against real hardware. The smoke <code class="docutils literal notranslate"><span class="pre">test</span></code> is one of <code class="docutils literal notranslate"><span class="pre">identity</span></code>,
-<code class="docutils literal notranslate"><span class="pre">dma-loopback</span></code>, or <code class="docutils literal notranslate"><span class="pre">aggregation</span></code>.</p>
+<p>Both require <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when given a manifest, and both emit a
+plan unless run against real hardware. The smoke <code class="docutils literal notranslate"><span class="pre">test</span></code> is one of
+<code class="docutils literal notranslate"><span class="pre">identity</span></code>, <code class="docutils literal notranslate"><span class="pre">dma-loopback</span></code> or <code class="docutils literal notranslate"><span class="pre">aggregation</span></code>.</p>
 </section>
 </section>
 
@@ -422,11 +427,11 @@ unless run against real hardware. The smoke <code class="docutils literal notran
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">How to program a bitstream on dpv1</a><ul>
+<li><a class="reference internal" href="#">How to program a bitstream on a board</a><ul>
 <li><a class="reference internal" href="#preview-a-plan-before-running-it">Preview a plan before running it</a></li>
 <li><a class="reference internal" href="#program-a-fresh-build">Program a fresh build</a></li>
 <li><a class="reference internal" href="#validate-an-already-built-bitstream">Validate an already-built bitstream</a></li>
-<li><a class="reference internal" href="#recover-a-wedged-device">Recover a wedged device</a></li>
+<li><a class="reference internal" href="#recover-a-hung-device">Recover a hung device</a></li>
 <li><a class="reference internal" href="#flash-and-smoke-test-from-a-manifest">Flash and smoke-test from a manifest</a></li>
 </ul>
 </li>

@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/run-a-build.html">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../how-to/program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="config-groups.html">Config group reference</a></li>
@@ -246,9 +246,9 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="command-reference">
 <h1>Command reference<a class="headerlink" href="#command-reference" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> installs a single console script (entry point
-<code class="docutils literal notranslate"><span class="pre">dau_build.cli:main</span></code>). It runs typed <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s composed from the
-Hydra config tree in <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> installs one console script (entry point <code class="docutils literal notranslate"><span class="pre">dau_build.cli:main</span></code>). It
+runs typed <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s composed from the Hydra config tree in
+<code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build [--config-dir DIR] [--explain] &lt;overrides ...&gt;
 </pre></div>
 </div>
@@ -261,13 +261,13 @@ Hydra config tree in <code class="docutils literal notranslate"><span class="pre
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code></p></td>
-<td><p>A user config overlay directory. Its groups are merged into the tree (open registration).</p></td>
+<td><p>A user config overlay directory. Its groups are merged into the tree.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--explain</span></code></p></td>
 <td><p>Print the fully resolved config as YAML and exit without running.</p></td>
 </tr>
 <tr class="row-even"><td><p>overrides</p></td>
-<td><p>Hydra overrides — see below.</p></td>
+<td><p>Hydra overrides, described below.</p></td>
 </tr>
 </tbody>
 </table>
@@ -297,53 +297,54 @@ Hydra config tree in <code class="docutils literal notranslate"><span class="pre
 <td><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code></p></td>
-<td><p>a field on the selected task/step model</p></td>
+<td><p>a field on the selected task or step model</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">model.output_root=out</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Task, step, and group option names are <strong>path-style</strong>, mirroring the config
-tree (<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>).
-Short names (<code class="docutils literal notranslate"><span class="pre">task=simulate</span></code>) are not accepted.</p>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> raises an error if no <code class="docutils literal notranslate"><span class="pre">task=</span></code>/<code class="docutils literal notranslate"><span class="pre">step=</span></code> is selected (nothing populates
-<code class="docutils literal notranslate"><span class="pre">model</span></code>).</p>
-<p>The full set of task and step names and their fields is in the
-<a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The config groups selectable with
-<code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the
+<p>Task, step and group option names are paths into the config tree
+(<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>).
+Short names such as <code class="docutils literal notranslate"><span class="pre">task=simulate</span></code> are not accepted.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> exits with an error if neither <code class="docutils literal notranslate"><span class="pre">task=</span></code> nor <code class="docutils literal notranslate"><span class="pre">step=</span></code> is given, since
+nothing then populates <code class="docutils literal notranslate"><span class="pre">model</span></code>.</p>
+<p>The task and step names and their fields are in the
+<a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The groups selectable with
+<code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
 <section id="examples">
 <h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
-<p>Inspect, build, and validate a spec or generated bundle:</p>
+<p>Inspect, build and validate a spec or generated bundle:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  model.spec_path=examples/identity/dau-build.yaml
 dau-build task=tasks/spec/build     model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
 dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
 </pre></div>
 </div>
-<p>Select a config group — here the Yosys synthesis backend instead of the default
+<p>Select a config group, here the yosys synthesis backend instead of the default
 Vivado engine:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.output_root=out
 </pre></div>
 </div>
-<p>Inspect what a set of overrides composes to, without running:</p>
+<p>Show what a set of overrides composes to, without running:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=tasks/build/synthesize spec=specs/identity backend=backends/yosys
 </pre></div>
 </div>
-<p>Run a low-level step (development/plumbing; user-facing workflows use tasks):</p>
+<p>Run a low-level step. Steps are plumbing for development; the user-facing
+workflows are tasks:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build step=steps/validate model.spec_path=examples/identity/dau-build.yaml
 </pre></div>
 </div>
 </section>
-<section id="open-registration-and-cross-package-composition">
-<h2>Open registration and cross-package composition<a class="headerlink" href="#open-registration-and-cross-package-composition" title="Link to this heading">¶</a></h2>
-<p>The Hydra search path is active, so config groups registered by other installed
-packages (through their own <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point) compose uniformly
-alongside the packaged ones — no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay needed. For example,
-with the private <code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span></code> resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree. A
-<code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code> overlay adds ad-hoc task configs (and new <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models
-from any importable package) the same way. See
-<a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>.</p>
+<section id="composition-across-packages">
+<h2>Composition across packages<a class="headerlink" href="#composition-across-packages" title="Link to this heading">¶</a></h2>
+<p>The Hydra search path is active, so config groups registered by other
+installed packages (through their own <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point)
+compose alongside the packaged ones with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay. With the
+<code class="docutils literal notranslate"><span class="pre">dau</span></code> package installed, for example, <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span></code>
+resolves a task defined in <code class="docutils literal notranslate"><span class="pre">dau</span></code>’s config tree. A <code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">DIR</span></code> overlay
+adds ad-hoc task configs (and new <code class="docutils literal notranslate"><span class="pre">_target_</span></code> models from any importable
+package) the same way. See <a class="reference internal" href="../how-to/extend-dau-build.html"><span class="std std-doc">Extending dau-build</span></a>.</p>
 </section>
 </section>
 
@@ -405,7 +406,7 @@ from any importable package) the same way. See
 <li><a class="reference internal" href="#">Command reference</a><ul>
 <li><a class="reference internal" href="#overrides">Overrides</a></li>
 <li><a class="reference internal" href="#examples">Examples</a></li>
-<li><a class="reference internal" href="#open-registration-and-cross-package-composition">Open registration and cross-package composition</a></li>
+<li><a class="reference internal" href="#composition-across-packages">Composition across packages</a></li>
 </ul>
 </li>
 </ul>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to program a bitstream on dpv1" href="program-hardware.html"><link rel="prev" title="Build the identity example" href="../tutorial/first-build.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="How to program a bitstream on a board" href="program-hardware.html"><link rel="prev" title="Build the identity example" href="../tutorial/first-build.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>How to run a build end to end - dau-build v0.14.0</title>
@@ -200,7 +200,7 @@
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../tutorial/first-build.html">Build the identity example</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">How to run a build end to end</a></li>
-<li class="toctree-l1"><a class="reference internal" href="program-hardware.html">How to program a bitstream on dpv1</a></li>
+<li class="toctree-l1"><a class="reference internal" href="program-hardware.html">How to program a bitstream on a board</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
@@ -246,40 +246,40 @@
         <article role="main" id="furo-main-content">
           <section class="tex2jax_ignore mathjax_ignore" id="how-to-run-a-build-end-to-end">
 <h1>How to run a build end to end<a class="headerlink" href="#how-to-run-a-build-end-to-end" title="Link to this heading">¶</a></h1>
-<p>This guide takes a design from a build spec to a validated, ready-to-run Vivado
-build. It follows the plan-first flow: everything up to the actual synthesis is
-composed and checked on your development machine, and only the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>
-step needs a Vivado host.</p>
-<p>The stages are <strong>synthesize → stage → build → validate</strong>, then hand off to
-<a class="reference internal" href="program-hardware.html"><span class="std std-doc">programming the board</span></a>. This guide is the Vivado bitstream
-flow, so every backend-specific command below is a <code class="docutils literal notranslate"><span class="pre">vivado</span></code> command. For a fast
-open-source synthesis check that runs anywhere, select the yosys engine on the
-synthesize task instead (<code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>; see the
+<p>This guide takes a design from a build spec to a validated Vivado build that
+is ready to run. It follows the plan-first flow: everything up to the
+synthesis itself is composed and checked on your development machine, and
+only the <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> step needs a Vivado host.</p>
+<p>The stages are synthesize, stage, build, validate, and then
+<a class="reference internal" href="program-hardware.html"><span class="std std-doc">programming the board</span></a>. This is the Vivado bitstream
+flow, so every backend-specific command below is a <code class="docutils literal notranslate"><span class="pre">vivado</span></code> command. For a
+fast open-source synthesis check that runs anywhere, select the yosys engine
+on the synthesize task instead (<code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>; see the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>).</p>
 <p>Field lists for each task are in the <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.
-To see the full resolved config for any command before running it, add <code class="docutils literal notranslate"><span class="pre">--explain</span></code>
-(e.g. <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">--explain</span> <span class="pre">task=tasks/build/synthesize</span> <span class="pre">...</span></code>).</p>
+To see the full resolved config for any command before running it, add
+<code class="docutils literal notranslate"><span class="pre">--explain</span></code> (for example <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">--explain</span> <span class="pre">task=tasks/build/synthesize</span> <span class="pre">...</span></code>).</p>
 <section id="synthesize-the-handoff">
 <h2>Synthesize the handoff<a class="headerlink" href="#synthesize-the-handoff" title="Link to this heading">¶</a></h2>
-<p>Generate the DAU top, artifact bundle, and the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;stem&gt;.manifest</span></code> backend
-handoff. This writes a manifest at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does <strong>not</strong> invoke
-Vivado:</p>
+<p>Generate the DAU top, the artifact bundle, and the <code class="docutils literal notranslate"><span class="pre">vivado/&lt;stem&gt;.manifest</span></code>
+backend handoff. This writes a manifest at <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> and does
+not invoke Vivado:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/synthesize<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.output_root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
-<p>If you keep your spec in a file rather than a config group, drop <code class="docutils literal notranslate"><span class="pre">spec=</span></code> and pass
-<code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code> instead. To attach a specific board and backend to the
-resolved config, add <code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span> <span class="pre">backend=backends/vivado</span></code>.</p>
+<p>If your spec is a file rather than a config group, drop <code class="docutils literal notranslate"><span class="pre">spec=</span></code> and pass
+<code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code> instead. To attach a specific board and backend to
+the resolved config, add <code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span> <span class="pre">backend=backends/vivado</span></code>.</p>
 </section>
 <section id="stage-the-vivado-work-directory">
 <h2>Stage the Vivado work directory<a class="headerlink" href="#stage-the-vivado-work-directory" title="Link to this heading">¶</a></h2>
-<p>Staging copies a read-only Vivado shell seed into a writable work directory and
-writes the overlay Tcl, guarded build Tcl, backend manifest, and command plan —
-still without running Vivado.</p>
-<p>For a full project dry-run that also records checkout roots and the
+<p>Staging copies a read-only Vivado shell seed into a writable work directory
+and writes the overlay Tcl, the guarded build Tcl, the backend manifest and
+the command plan, still without running Vivado.</p>
+<p>For a full project dry run that also records checkout roots and the
 stage/build/validate command contract, use <code class="docutils literal notranslate"><span class="pre">stage-vivado-project</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/stage/stage-vivado-project<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
@@ -290,48 +290,47 @@ stage/build/validate command contract, use <code class="docutils literal notrans
 </pre></div>
 </div>
 <p>If you only need the overlay artifacts, use <code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-overlay</span></code>
-instead (it requires <code class="docutils literal notranslate"><span class="pre">model.work_root</span></code> and <code class="docutils literal notranslate"><span class="pre">model.dau_core_root</span></code>). To fold a DAU
-artifact bundle into the overlay, add <code class="docutils literal notranslate"><span class="pre">model.dau_artifact_bundle=&lt;bundle.yaml&gt;</span></code>. If
-your Vivado runs through a wrapper that only accepts a Tcl source path, add
-<code class="docutils literal notranslate"><span class="pre">model.vivado_invocation=source-only</span></code>, and if that wrapper mounts the current
+(it requires <code class="docutils literal notranslate"><span class="pre">model.work_root</span></code> and <code class="docutils literal notranslate"><span class="pre">model.dau_core_root</span></code>). To fold a DAU
+artifact bundle into the overlay, add <code class="docutils literal notranslate"><span class="pre">model.dau_artifact_bundle=&lt;bundle.yaml&gt;</span></code>.
+If your Vivado runs through a wrapper that only accepts a Tcl source path, add
+<code class="docutils literal notranslate"><span class="pre">model.vivado_invocation=source-only</span></code>; if that wrapper mounts the current
 directory in a container, also add <code class="docutils literal notranslate"><span class="pre">model.vivado_mount_root=/path/to/dau</span></code>.</p>
 </section>
 <section id="validate-before-you-synthesize">
 <h2>Validate before you synthesize<a class="headerlink" href="#validate-before-you-synthesize" title="Link to this heading">¶</a></h2>
-<p>Check that the staged plan is internally consistent — manifest, overlay Tcl,
-build Tcl, command plan, and planned output paths all agree — without needing
-Xilinx tools:</p>
+<p>Check that the staged plan agrees with itself (manifest, overlay Tcl, build
+Tcl, command plan and planned output paths) without Xilinx tools:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/validate/validate-vivado-artifacts<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.project_manifest_path<span class="o">=</span>dau-vivado.project
 </pre></div>
 </div>
-<p>Do this on your development machine before moving to the Vivado host. A failure
-here is cheap; a failure an hour into synthesis is not.</p>
+<p>Do this on your development machine before moving to the Vivado host. A
+failure here costs seconds; a failure an hour into synthesis does not.</p>
 </section>
 <section id="build-on-the-vivado-host">
 <h2>Build on the Vivado host<a class="headerlink" href="#build-on-the-vivado-host" title="Link to this heading">¶</a></h2>
-<p>On the machine with Vivado, run the generated overlay/build command and let it
-validate the artifact bundle. This is the step that spends real synthesis time,
-so it is gated behind <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>:</p>
+<p>On the machine with Vivado, run the generated overlay/build command and let
+it validate the artifact bundle. This step spends real synthesis time, so it
+needs <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/build-vivado-artifacts<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.artifact_stem<span class="o">=</span>dau-vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-<p>Once the bitstream, resource report, timing report, and Vivado log exist, this
-moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code>. Downstream
-flashing and smoke-testing require <code class="docutils literal notranslate"><span class="pre">built</span></code>.</p>
-<p>Treat the Vivado machine as an ordinary Linux host: SSH in, <code class="docutils literal notranslate"><span class="pre">rsync</span></code> the checkouts
-or generated work directory you need, <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> the DAU packages there, and
-run the same CLIs. dau-build does not wrap host orchestration.</p>
+<p>Once the bitstream, resource report, timing report and Vivado log exist,
+this moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code>.
+Flashing and smoke testing downstream require <code class="docutils literal notranslate"><span class="pre">built</span></code>.</p>
+<p>Treat the Vivado machine as an ordinary Linux host: SSH in, <code class="docutils literal notranslate"><span class="pre">rsync</span></code> the
+checkouts or the generated work directory you need, <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> the DAU
+packages there, and run the same CLIs. dau-build does not wrap host
+orchestration.</p>
 </section>
 <section id="next">
 <h2>Next<a class="headerlink" href="#next" title="Link to this heading">¶</a></h2>
 <p>With a <code class="docutils literal notranslate"><span class="pre">built</span></code> bitstream, continue to
-<a class="reference internal" href="program-hardware.html"><span class="std std-doc">Program a bitstream on dpv1</span></a> to program and validate it on
-hardware.</p>
+<a class="reference internal" href="program-hardware.html"><span class="std std-doc">Program a bitstream on a board</span></a>.</p>
 </section>
 </section>
 
@@ -345,7 +344,7 @@ hardware.</p>
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">How to program a bitstream on dpv1</div>
+                <div class="title">How to program a bitstream on a board</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
