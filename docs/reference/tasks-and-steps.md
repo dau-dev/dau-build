@@ -66,6 +66,13 @@ delegates to the synthesis engine composed from the `backend` group (default
 Mode: **run**. The engine models are in the
 [config group reference](config-groups.md).
 
+### `tasks/build/render-cores`: `RenderCoresTask`
+
+Renders the HDL of generated cores (those whose registry entry names a
+generator) from their configured operating points, into `output_root`.
+Required: `cores` (registry paths, `/dau-core/<name>`), `output_root`.
+Mode: **run**.
+
 ### `tasks/build/synthesize-cores`: `SynthesizeCoresTask`
 
 Characterizes cores one at a time, out of context, through the registry. It
@@ -144,18 +151,6 @@ dau-build has no board defaults, so a step that needs an unset fact fails to
 render. Required: `plan`, `work_root`. Mode: **plan** (pass `execute=true` on
 the hardware host). The plan models are in the
 [config group reference](config-groups.md).
-
-### `tasks/flash/flash`: `FlashTask`
-
-Produces a flashing plan for a bitstream. Requires `build_status=built` when
-it consumes a `manifest_path`. Default `tool: openFPGAloader`,
-`mode: volatile`. Mode: **run** (produces a plan).
-
-### `tasks/flash/smoke-test`: `SmokeTestTask`
-
-Produces a smoke-test plan or validation. Requires `build_status=built` when
-it consumes a `manifest_path`. Required: `test`. Mode: **run** (produces a
-plan).
 
 ## Steps
 

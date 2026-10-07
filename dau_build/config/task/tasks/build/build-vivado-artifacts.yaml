@@ -11,5 +11,5 @@ artifact_stem: dau-vivado
 manifest_path: null
 command_plan_path: null
 project_manifest_path: null
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+vivado_settings: null  # this host's settings64.sh; null runs vivado from PATH
 execute: false

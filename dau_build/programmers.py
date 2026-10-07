@@ -4,7 +4,7 @@ A ``Programmer`` is the FPGA-programming counterpart to the ``backend``
 group's ``SynthesisEngine`` — a polymorphic, fully hydra-configurable
 model selected from the ``programmer`` config group
 (``programmer=programmers/openfpgaloader``). The hardware-plan step helpers
-and ``FlashTask`` delegate to ``detect_step``/``program_step``; there is no
+delegate to ``detect_step``/``program_step``; there is no
 programmer ``Literal``, string→type table, or dispatch ``if``.
 
 The default programmer follows a board's ``PlatformDefinition.program_method``
@@ -109,7 +109,7 @@ class VivadoHwServerProgrammer(Programmer):
     a persistent SPI write must be asked for explicitly."""
 
     name: str = "vivado-hwserver"
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
 
     def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
         if mode != "persistent":

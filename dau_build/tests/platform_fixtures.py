@@ -33,5 +33,8 @@ def probe_platform(**overrides: object) -> PlatformDefinition:
     The cached resolution is frozen and shared, so overrides go through
     ``model_copy`` and callers can never mutate the fixture for each other.
     """
-    platform = _resolved()
+    # the packaged example declares every hardware value a placeholder, so
+    # require_measured refuses it; the tests that drive fake tools against it
+    # take a copy that claims to be measured, and say so here
+    platform = _resolved().model_copy(update={"placeholders": ()})
     return platform.model_copy(update=dict(overrides)) if overrides else platform

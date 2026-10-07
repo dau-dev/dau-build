@@ -25,6 +25,7 @@ the public build layer stays independent of the private one.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -114,11 +115,13 @@ def publish_inventory(
     source = bitstreams[0]
 
     status = manifest.metadata.get("build_status")
-    if status is not None and status != "built":
+    if status != "built":
         raise ValueError(f"refusing to publish a bitstream whose build_status is {status!r}, not 'built'")
     wns = manifest.metadata.get("wns_ns")
-    if wns is not None and float(wns) < 0.0:
-        raise ValueError(f"refusing to publish a bitstream that missed timing (wns_ns={wns})")
+    if wns is None:
+        raise ValueError("refusing to publish a bitstream whose manifest records no wns_ns; a published image proves it closed timing")
+    if not math.isfinite(float(wns)) or float(wns) < 0.0:
+        raise ValueError(f"refusing to publish a bitstream that missed timing or recorded no finite slack (wns_ns={wns})")
 
     metadata = {key: manifest.metadata[key] for key in PUBLISHED_METADATA_KEYS if key in manifest.metadata}
     capabilities = _capabilities_from_contract(contract) if contract else ()

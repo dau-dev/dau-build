@@ -70,7 +70,7 @@ dau-build task=tasks/validate/validate-vivado-artifacts \
 ```
 
 Do this on your development machine before moving to the Vivado host. A
-failure here costs seconds; a failure an hour into synthesis does not.
+failure here is cheap; the same failure partway through synthesis is not.
 
 ## Build on the Vivado host
 

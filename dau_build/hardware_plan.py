@@ -218,7 +218,7 @@ def local_build_and_program_plan(
     dau_utils_root: Path | None = None,
     smoke_command: str | None = None,
     python: str = "python3",
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    vivado_settings: Path | None = None,
     overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[ToolStep, ...]:
     overlay_path = _work_path(config.work_root, overlay_tcl)
@@ -263,7 +263,7 @@ def stage_vivado_overlay_plan(
     resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
     vivado_log_path: Path = Path("vivado.log"),
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    vivado_settings: Path | None = None,
     overlay_definition: VivadoOverlayDefinition | None = None,
 ) -> tuple[ToolStep, ...]:
     artifacts = generate_vivado_backend_artifacts(
@@ -323,7 +323,7 @@ def stage_vivado_project_plan(
     resource_summary_path: Path = Path("reports/dau_utilization.rpt"),
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt"),
     vivado_log_path: Path = Path("vivado.log"),
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    vivado_settings: Path | None = None,
     overlay_definition: VivadoOverlayDefinition | None = None,
     stage_task_name: str | None = None,
 ) -> tuple[ToolStep, ...]:
@@ -422,7 +422,7 @@ def flash_plan(
     *,
     dau_utils_root: Path | None = None,
     python: str = "python3",
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh"),
+    vivado_settings: Path | None = None,
 ) -> tuple[ToolStep, ...]:
     steps = [
         thunderbolt_hold_step(config, dau_utils_root=dau_utils_root, python=python),
@@ -524,7 +524,7 @@ def vivado_overlay_build_step(
     *,
     overlay_tcl: Path,
     build_tcl: Path = Path("scripts/dau_build.tcl"),
-    vivado_settings: Path,
+    vivado_settings: Path | None,
 ) -> ToolStep:
     script = vivado_overlay_build_script(
         work_root=config.work_root,
@@ -578,7 +578,7 @@ def _smoke_steps(smoke_command: str | None) -> tuple[ToolStep, ...]:
     return () if smoke_command is None else (hardware_smoke_step(smoke_command),)
 
 
-def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path) -> ToolStep:
+def flash_step(config: HardwareToolchainConfig, *, vivado_settings: Path | None) -> ToolStep:
     # a persistent write through the composed programmer (Vivado hw_server for
     # a flash board, openFPGALoader -f for a JTAG board) — the selector, not a
     # hardcoded backend. An SPI-boot board (spi_boot_buswidth set) always
@@ -703,7 +703,9 @@ def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
 
 
 def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -> ToolStep:
-    """Arm the forced-reboot deadman over the risky PCIe window. The
+    """Arm the forced-reboot deadman over the risky PCIe window (the default
+    timeout is policy: long enough for a reprogram and rescan, short enough
+    that a wedged host comes back without anyone present). The
     matching disarm step runs ONLY on plan success: the executor stops on
     the first failure and never reaches it, so a wedge self-recovers by
     reboot to the SPI-resident design (timeout is SECONDS)."""
@@ -813,11 +815,31 @@ def _work_path(work_root: Path, path: Path) -> Path:
     return work_root / path
 
 
+def _refuse_unsafe_sync(source: Path, destination: Path) -> None:
+    """``rsync --delete`` into the wrong place removes whatever is there. The
+    two roots must be distinct, not nested, and neither the filesystem root
+    nor a home directory."""
+    # Path("") is Path("."): an unset root is the current directory, and an
+    # rsync --delete into it empties whatever the command runs from
+    if source == Path(".") or destination == Path("."):
+        raise ValueError("shell staging needs both a source_shell_root and a work_root; an empty or '.' path is refused")
+    src = source.expanduser().resolve()
+    dst = destination.expanduser().resolve()
+    if src == dst:
+        raise ValueError(f"shell staging source and work root are the same directory: {src}")
+    if src in dst.parents or dst in src.parents:
+        raise ValueError(f"shell staging refuses nested roots: {src} and {dst}")
+    for name, path in (("source_shell_root", src), ("work_root", dst)):
+        if path == Path(path.anchor) or path == Path.home().resolve():
+            raise ValueError(f"shell staging refuses {name}={path}: a filesystem root or home directory")
+
+
 def _directory_argument(path: Path) -> str:
     return str(path).rstrip("/") + "/"
 
 
 def _stage_shell_script(*, source_shell_root: Path, work_root: Path) -> str:
+    _refuse_unsafe_sync(source_shell_root, work_root)
     argv = ["rsync", "-a", "--delete", "--delete-excluded"]
     for pattern in SHELL_STAGE_EXCLUDES:
         argv.extend(("--exclude", pattern))
@@ -924,6 +946,8 @@ class HardwarePlan(BaseModel):
     delegates to ``compose`` — there is no plan ``Literal`` or dict-of-lambdas
     dispatch."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
 
     def compose(self, config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
@@ -997,7 +1021,7 @@ class FlashPlan(HardwarePlan):
     name: str = "flash"
     dau_utils_root: Path | None = None
     python: str = "python3"
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
 
     def compose(self, config):
         return flash_plan(config, dau_utils_root=self.dau_utils_root, python=self.python, vivado_settings=self.vivado_settings)
@@ -1028,7 +1052,7 @@ class LocalBuildAndProgramPlan(HardwarePlan):
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     smoke_command: str | None = None
     python: str = "python3"
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
     overlay_definition: VivadoOverlayDefinition | None = None
 
     def compose(self, config):

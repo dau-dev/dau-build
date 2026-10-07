@@ -234,7 +234,9 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     assert board.budget.lut == 41000
     assert board.host_link.pcie_lanes == 1
     # the packaged example board still resolves alongside the overlay
-    assert resolve_platform("platforms/example/probe", config_dir=str(overlay)) == probe_platform()
+    assert resolve_platform("platforms/example/probe", config_dir=str(overlay)) == probe_platform(
+        placeholders=resolve_platform("platforms/example/probe").placeholders
+    )
 
 
 def _probe_with(**overrides: object) -> PlatformDefinition:
@@ -292,3 +294,35 @@ def test_bram_tier_capacity_coheres_with_the_budget() -> None:
     platform = probe_platform()
     bram = next(t for t in platform.storage_tiers if t.technology == "bram")
     assert bram.capacity_bytes <= platform.budget.bram36 * 4608
+
+
+def test_the_example_platform_is_refused_for_hardware_work() -> None:
+    """Every hardware fact on the fictional board is invented, so it must not
+    build or program; config-only generation stays open. The test fixture
+    clears the placeholders on purpose, so this resolves the config itself."""
+    from dau_build.config import resolve_platform
+    from dau_build.platforms import PlaceholderPlatformError, require_measured
+
+    probe = resolve_platform("platforms/example/probe")
+    assert probe.placeholders
+    with pytest.raises(PlaceholderPlatformError, match="placeholder values"):
+        require_measured(probe)
+
+
+def test_host_access_checks_pci_syntax_and_privilege_tokens() -> None:
+    from pydantic import ValidationError
+
+    from dau_build.platforms import HostAccess
+
+    ok = HostAccess(
+        pci_id="10EE:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0",), runtime_pm_patterns=(), privilege_prefix=("sudo", "-n")
+    )
+    assert ok.pci_id == "10ee:7011"
+    with pytest.raises(ValidationError, match="vendor:device hex"):
+        HostAccess(pci_id="xilinx", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=())
+    with pytest.raises(ValidationError, match="dddd:bb:dd.f"):
+        HostAccess(pci_id="10ee:7011", endpoint_bdf="04:00.0", rescan_bdfs=(), runtime_pm_patterns=())
+    with pytest.raises(ValidationError, match="rescan_bdfs"):
+        HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0; rm -rf /",), runtime_pm_patterns=())
+    with pytest.raises(ValidationError, match="plain argv tokens"):
+        HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=(), privilege_prefix=("sudo;", "true"))

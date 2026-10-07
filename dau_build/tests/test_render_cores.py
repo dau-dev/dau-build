@@ -102,7 +102,7 @@ def test_nothing_generated_leaves_the_environment_untouched(tmp_path: Path, monk
 def test_a_provider_that_cannot_render_is_refused(tmp_path: Path) -> None:
     """Declaring a generator the installed provider cannot render must fail
     loudly, not silently synthesize whatever file happens to be there."""
-    with pytest.raises(BuildStepError, match="too old for generated cores"):
+    with pytest.raises(BuildStepError, match="offers no render"):
         render_generated_cores([_GeneratorWithoutRender("c")], root=tmp_path)
 
 

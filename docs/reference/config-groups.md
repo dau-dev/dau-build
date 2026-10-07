@@ -58,9 +58,9 @@ Packaged options (`task=<path>`):
 tasks/build/build-shell-project
 tasks/build/build-vivado-artifacts
 tasks/build/overlay-build
+tasks/build/render-cores
 tasks/build/synthesize
-tasks/flash/flash
-tasks/flash/smoke-test
+tasks/build/synthesize-cores
 tasks/hardware/hardware-plan
 tasks/sim/simulate
 tasks/spec/build
@@ -224,6 +224,7 @@ pydantic enforces them rather than a runtime check.
 | `plans/local-build-and-program` | `LocalBuildAndProgramPlan` | `dau_core_root` (from `host=` or `plan.dau_core_root=`), `source_shell_root`, `dau_utils_root`, `overlay_tcl`, `smoke_command`, `python`, `vivado_settings` |
 | `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `smoke_command`, `dau_utils_root`, `python`                                                                                                                 |
 | `plans/flash`                   | `FlashPlan`                | `dau_utils_root`, `python`, `vivado_settings`                                                                                                               |
+| `plans/sram-program`            | `SramProgramPlan`          | `deadman_timeout_s`, `verify_command`                                                                                                                       |
 | `plans/recovery`                | `RecoveryPlan`             | none                                                                                                                                                        |
 | `plans/thunderbolt-hold`        | `ThunderboltHoldPlan`      | none                                                                                                                                                        |
 | `plans/thunderbolt-release`     | `ThunderboltReleasePlan`   | none                                                                                                                                                        |

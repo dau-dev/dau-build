@@ -278,13 +278,8 @@ class SynthesizeCoresTask(BuildCallableModel):
             spec = definition.parameters[name]
             _validate_override(definition.name, name, value, spec)
             # a tool takes the integer, never the spelling: `-generic
-            # FIELD_WIDTH=int32` is not something vivado can elaborate.
-            # Transition gate: only a parameter declared an element type can
-            # carry a spelling, and a core registry predating element types
-            # declares none, so this asks the parameter rather than the
-            # package version. It stops being a gate when the field is
-            # everywhere, at which case the getattr can simply go.
-            values[name] = spec.normalize(value) if getattr(spec, "element_type", False) else value
+            # FIELD_WIDTH=int32` is not something vivado can elaborate
+            values[name] = spec.normalize(value)
         return values
 
     def _sources_for(self, definition) -> tuple[Path, ...]:

@@ -58,7 +58,7 @@ class VivadoBackendRequest(BaseModel):
     resource_summary_path: Path = Path("reports/dau_utilization.rpt")
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
     vivado_log_path: Path = Path("vivado.log")
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
     vivado_executable: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
@@ -115,7 +115,7 @@ class VivadoProjectGenerationRequest(BaseModel):
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
     vivado_log_path: Path = Path("vivado.log")
     xdma_module_path: Path = Path("sw/xdma/xdma.ko")
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
     vivado_executable: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
@@ -469,7 +469,7 @@ def vivado_backend_manifest(request: VivadoBackendRequest, *, artifact_bundle: A
         ("register_map_version", request.register_map_version),
         ("stream_protocol_version", request.stream_protocol_version),
         ("operator_set", ",".join(request.operator_set)),
-        ("vivado_settings", request.vivado_settings.as_posix()),
+        ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings.as_posix()),
         ("vivado_executable", request.vivado_executable),
         ("vivado_invocation", request.vivado_invocation),
         ("vivado_mount_root", "" if request.resolved_vivado_mount_root is None else request.resolved_vivado_mount_root.as_posix()),
@@ -511,7 +511,7 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
         ("register_map_version", request.register_map_version),
         ("stream_protocol_version", request.stream_protocol_version),
         ("operator_set", ",".join(request.operator_set)),
-        ("vivado_settings", request.vivado_settings.as_posix()),
+        ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings.as_posix()),
         ("vivado_executable", request.vivado_executable),
         ("vivado_invocation", request.vivado_invocation),
         ("vivado_mount_root", "" if request.vivado_mount_root is None else request.vivado_mount_root.resolve(strict=False).as_posix()),
@@ -555,9 +555,11 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         ("overlay_tcl", request.overlay_tcl),
         ("manifest_path", request.backend_request.resolved_manifest_path),
         ("command_plan_path", request.backend_request.resolved_command_plan_path),
-        ("vivado_settings", request.vivado_settings),
         ("vivado", request.vivado_executable),
     ]
+    if request.vivado_settings is not None:
+        # an absent settings file is absent on replay too; "" would compose to Path(".")
+        overrides.append(("vivado_settings", request.vivado_settings))
     if request.vivado_invocation != "standard":
         overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
@@ -581,9 +583,10 @@ def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str
         ("manifest_path", request.backend_request.resolved_manifest_path),
         ("command_plan_path", request.backend_request.resolved_command_plan_path),
         ("project_manifest_path", request.resolved_project_manifest_path),
-        ("vivado_settings", request.vivado_settings),
         ("vivado", request.vivado_executable),
     ]
+    if request.vivado_settings is not None:
+        overrides.append(("vivado_settings", request.vivado_settings))
     if request.vivado_invocation != "standard":
         overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
@@ -650,7 +653,7 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
         "vivado_invocation",
         "vivado_mount_root",
     )
-    optional_empty_keys = {"vivado_mount_root"}
+    optional_empty_keys = {"vivado_mount_root", "vivado_settings"}
     for key in required_keys:
         if key not in manifest or key not in optional_empty_keys and not manifest[key]:
             errors.append(f"manifest missing required key: {key}")
@@ -749,7 +752,7 @@ def _validate_project_manifest_contract(
         "build_command",
         "validate_command",
     )
-    optional_empty_keys = {"dau_utils_root", "dau_build_manifest", "dau_top_sv", "dau_artifact_bundle", "vivado_mount_root"}
+    optional_empty_keys = {"dau_utils_root", "dau_build_manifest", "dau_top_sv", "dau_artifact_bundle", "vivado_mount_root", "vivado_settings"}
     for key in required_keys:
         if key not in project_manifest:
             errors.append(f"project manifest missing required key: {key}")
@@ -847,9 +850,11 @@ def _validate_project_manifest_commands(
         ("--overlay-tcl", overlay_tcl),
         ("--manifest-path", manifest_path.as_posix()),
         ("--command-plan-path", command_plan_path.as_posix()),
-        ("--vivado-settings", vivado_settings),
         ("--vivado", vivado_executable),
     ]
+    if vivado_settings:
+        # recorded only when the host named one; an absent settings file is absent on replay too
+        stage_required_options.append(("--vivado-settings", vivado_settings))
     if dau_artifact_bundle:
         stage_required_options.append(("--dau-artifact-bundle", dau_artifact_bundle))
     if vivado_invocation != "standard":
@@ -878,9 +883,10 @@ def _validate_project_manifest_commands(
         ("--manifest-path", manifest_path.as_posix()),
         ("--command-plan-path", command_plan_path.as_posix()),
         ("--project-manifest-path", project_manifest_path),
-        ("--vivado-settings", vivado_settings),
         ("--vivado", vivado_executable),
     ]
+    if vivado_settings:
+        build_required_options.append(("--vivado-settings", vivado_settings))
     validate_required_options = [
         ("--work-root", work_root),
         ("--manifest-path", manifest_path.as_posix()),
@@ -1291,7 +1297,7 @@ def project_build_script(
     *,
     work_root: Path,
     project_tcl: Path,
-    vivado_settings: Path,
+    vivado_settings: Path | None,
     vivado_executable: str,
     vivado_invocation: str = "standard",
     vivado_mount_root: Path | None = None,
@@ -1301,13 +1307,7 @@ def project_build_script(
     vivado_command = _vivado_source_command(vivado_executable=vivado_executable, tcl_path=command_tcl, vivado_invocation=vivado_invocation)
     if vivado_invocation == "source-only":
         return " && ".join((f"cd {shlex.quote(str(command_root))}", vivado_command))
-    return " && ".join(
-        (
-            f"cd {shlex.quote(str(work_root))}",
-            f". {shlex.quote(str(vivado_settings))}",
-            vivado_command,
-        )
-    )
+    return " && ".join((f"cd {shlex.quote(str(work_root))}", *_source_settings(vivado_settings), vivado_command))
 
 
 def _lane_placement_tcl(lane_placements: tuple[tuple[str, str], ...]) -> str:
@@ -1397,7 +1397,7 @@ def overlay_build_script(
     work_root: Path,
     overlay_tcl: Path,
     build_tcl: Path = Path("scripts/dau_build.tcl"),
-    vivado_settings: Path,
+    vivado_settings: Path | None,
     vivado_executable: str,
     vivado_invocation: str = "standard",
     vivado_mount_root: Path | None = None,
@@ -1413,7 +1413,7 @@ def overlay_build_script(
     return " && ".join(
         (
             f"cd {shlex.quote(str(work_root))}",
-            f". {shlex.quote(str(vivado_settings))}",
+            *_source_settings(vivado_settings),
             overlay_command,
             shlex.join(("rm", "-f", "Top.v")),
             build_command,
@@ -1426,7 +1426,7 @@ def overlay_command_plan_text(
     work_root: Path,
     overlay_tcl: Path,
     build_tcl: Path = Path("scripts/dau_build.tcl"),
-    vivado_settings: Path,
+    vivado_settings: Path | None,
     vivado_executable: str,
     vivado_invocation: str = "standard",
     vivado_mount_root: Path | None = None,
@@ -1440,19 +1440,18 @@ def overlay_command_plan_text(
     )
 
 
-def flash_script(*, work_root: Path, vivado_settings: Path, vivado_executable: str, vivado_invocation: str = "standard") -> str:
+def _source_settings(vivado_settings: Path | None) -> tuple[str, ...]:
+    """The `. settings64.sh` line when a host names one; none means vivado is on PATH."""
+    return () if vivado_settings is None else (f". {shlex.quote(str(vivado_settings))}",)
+
+
+def flash_script(*, work_root: Path, vivado_settings: Path | None, vivado_executable: str, vivado_invocation: str = "standard") -> str:
     flash_command = _vivado_source_command(
         vivado_executable=vivado_executable, tcl_path=Path("scripts/flash.tcl"), vivado_invocation=vivado_invocation
     )
     if vivado_invocation == "source-only":
         return " && ".join((f"cd {shlex.quote(str(work_root))}", flash_command))
-    return " && ".join(
-        (
-            f"cd {shlex.quote(str(work_root))}",
-            f". {shlex.quote(str(vivado_settings))}",
-            flash_command,
-        )
-    )
+    return " && ".join((f"cd {shlex.quote(str(work_root))}", *_source_settings(vivado_settings), flash_command))
 
 
 def _vivado_source_command(*, vivado_executable: str, tcl_path: Path, vivado_invocation: str) -> str:

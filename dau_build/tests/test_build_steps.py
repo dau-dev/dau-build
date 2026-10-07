@@ -39,8 +39,6 @@ def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
         "tasks/build/render-cores",
         "tasks/build/synthesize",
         "tasks/build/synthesize-cores",
-        "tasks/flash/flash",
-        "tasks/flash/smoke-test",
         "tasks/hardware/hardware-plan",
         "tasks/sim/simulate",
         "tasks/spec/build",

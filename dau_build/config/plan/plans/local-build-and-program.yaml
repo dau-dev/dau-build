@@ -9,5 +9,5 @@ dau_utils_root: ${oc.select:host.dau_utils_root,null}
 overlay_tcl: scripts/dau_overlay.tcl
 smoke_command: null
 python: python3
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+vivado_settings: null  # this host's settings64.sh; null runs vivado from PATH
 overlay_definition: null

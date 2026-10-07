@@ -13,19 +13,16 @@ description = "Build tools for dau"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 version = "0.14.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = []
 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
@@ -35,6 +32,9 @@ dependencies = [
     "dau-sim>=0.2.0",
     "dau-utils",
     "hydra-core",
+    # the search-path bridge that honours hydra.lernaplugins entry points
+    "lerna>=2.0.4",
+    "omegaconf",
     "pydantic",
     "pyslang",
     "pyyaml",
