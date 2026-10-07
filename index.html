@@ -251,16 +251,23 @@
 <p>Build tools for dau</p>
 <p><a class="reference external" href="https://github.com/dau-dev/dau-build/actions/workflows/build.yaml"><img alt="Build Status" src="https://github.com/dau-dev/dau-build/actions/workflows/build.yaml/badge.svg?branch=main&amp;event=push" /></a>
 <a class="reference external" href="https://codecov.io/gh/dau-dev/dau-build"><img alt="codecov" src="https://codecov.io/gh/dau-dev/dau-build/branch/main/graph/badge.svg" /></a>
-<a class="reference external" href="https://github.com/dau-dev/dau-build"><img alt="License" src="https://img.shields.io/github/license/dau-dev/dau-build" /></a>
-<a class="reference external" href="https://pypi.python.org/pypi/dau-build"><img alt="PyPI" src="https://img.shields.io/pypi/v/dau-build.svg" /></a></p>
+<a class="reference external" href="https://github.com/dau-dev/dau-build"><img alt="License" src="https://img.shields.io/github/license/dau-dev/dau-build" /></a></p>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> turns a declarative FPGA build spec into the files a build needs: generated SystemVerilog, <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundles, backend handoff manifests, Vivado Tcl, and ordered hardware command plans. Every operation is a typed <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code> composed from the Hydra config tree in <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. The whole pipeline composes, inspects and tests on a development machine; the steps that need Vivado, a JTAG cable or a PCIe bus run only when you pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> turns a declarative FPGA build spec into the files a build needs: generated SystemVerilog, <code class="docutils literal notranslate"><span class="pre">artlink.manifest/v0</span></code> artifact bundles, backend handoff manifests, Vivado Tcl, and ordered hardware command plans. The operations are typed <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s composed from the Hydra config tree in <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code>. The whole pipeline composes, inspects and tests on a development machine; the steps that need Vivado, a JTAG cable or a PCIe bus run only when you pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>.</p>
 <p>Two synthesis engines are supported: Vivado for the FPGA bitstream flow, and yosys for open-source synthesis that runs in CI. The config plumbing does not depend on either, so more can be added.</p>
 <p>Other packages extend dau-build by composition rather than by editing it. A package registers its own config tree on the shared Hydra search path through a <code class="docutils literal notranslate"><span class="pre">hydra.lernaplugins</span></code> entry point, and its task, design and board groups then compose through this CLI without dau-build importing the package. The core registry arrives the same way: <code class="docutils literal notranslate"><span class="pre">dau-core</span></code> publishes each hardware building block as a <code class="docutils literal notranslate"><span class="pre">CoreDefinition</span></code> at <code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code>, and the <code class="docutils literal notranslate"><span class="pre">synthesize-cores</span></code> task resolves cores from that registry to characterize them one at a time, out of context. Without a synthesis host it stages the Tcl and a command plan; with <code class="docutils literal notranslate"><span class="pre">model.execute=true</span></code> on a machine that has Vivado it runs the synthesis and reports any drift from the resource and timing envelope the registry records:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/build/synthesize-cores<span class="w">   </span><span class="s1">'model.cores=[/dau-core/int32-predicate-filter]'</span><span class="w">   </span>model.output_root<span class="o">=</span>outputs/ooc<span class="w"> </span>model.part<span class="o">=</span>xc7a200tfbg484-2
 </pre></div>
 </div>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
+<p>Python 3.11 or later. There is no package index release yet; install from a clone or straight from GitHub:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/dau-dev/dau-build.git
+</pre></div>
+</div>
+<p>For development, clone and run <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">develop</span></code>. Vivado and yosys are needed only for the steps that run them; everything else composes, generates and tests without them.</p>
 </section>
 <section id="quickstart">
 <h2>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h2>
@@ -281,10 +288,6 @@ dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</
 <li><p><strong>Reference</strong>: <a class="reference internal" href="docs/reference/commands.html"><span class="std std-doc">Commands</span></a> · <a class="reference internal" href="docs/reference/config-groups.html"><span class="std std-doc">Config groups</span></a> · <a class="reference internal" href="docs/reference/tasks-and-steps.html"><span class="std std-doc">Task and step catalog</span></a>.</p></li>
 <li><p><strong>Explanation</strong>: <a class="reference internal" href="docs/explanation/architecture.html"><span class="std std-doc">Architecture</span></a>, on Hydra composition, ccflow evaluation, the search-path extension model, and the state of backend support.</p></li>
 </ul>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This library was generated using <a class="reference external" href="https://copier.readthedocs.io/en/stable/">copier</a> from the <a class="reference external" href="https://github.com/python-project-templates/base">Base Python Project Template repository</a>.</p>
-</div>
 </section>
 </section>
 

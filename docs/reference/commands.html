@@ -323,7 +323,7 @@ dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-ide
 </div>
 <p>Select a config group, here the yosys synthesis backend instead of the default
 Vivado engine:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.output_root=out
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.module=dau_identity_top model.output_root=out
 </pre></div>
 </div>
 <p>Show what a set of overrides composes to, without running:</p>

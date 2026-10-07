@@ -307,6 +307,13 @@ yosys and fails the task if synthesis fails. The engine is configurable:
 <p>Mode: <strong>run</strong>. The engine models are in the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
+<section id="tasks-build-render-cores-rendercorestask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/build/render-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">RenderCoresTask</span></code><a class="headerlink" href="#tasks-build-render-cores-rendercorestask" title="Link to this heading">¶</a></h3>
+<p>Renders the HDL of generated cores (those whose registry entry names a
+generator) from their configured operating points, into <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.
+Required: <code class="docutils literal notranslate"><span class="pre">cores</span></code> (registry paths, <code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code>), <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.
+Mode: <strong>run</strong>.</p>
+</section>
 <section id="tasks-build-synthesize-cores-synthesizecorestask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code><a class="headerlink" href="#tasks-build-synthesize-cores-synthesizecorestask" title="Link to this heading">¶</a></h3>
 <p>Characterizes cores one at a time, out of context, through the registry. It
@@ -385,18 +392,6 @@ dau-build has no board defaults, so a step that needs an unset fact fails to
 render. Required: <code class="docutils literal notranslate"><span class="pre">plan</span></code>, <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Mode: <strong>plan</strong> (pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on
 the hardware host). The plan models are in the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
-</section>
-<section id="tasks-flash-flash-flashtask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code>: <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code><a class="headerlink" href="#tasks-flash-flash-flashtask" title="Link to this heading">¶</a></h3>
-<p>Produces a flashing plan for a bitstream. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when
-it consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Default <code class="docutils literal notranslate"><span class="pre">tool:</span> <span class="pre">openFPGAloader</span></code>,
-<code class="docutils literal notranslate"><span class="pre">mode:</span> <span class="pre">volatile</span></code>. Mode: <strong>run</strong> (produces a plan).</p>
-</section>
-<section id="tasks-flash-smoke-test-smoketesttask">
-<h3><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code>: <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code><a class="headerlink" href="#tasks-flash-smoke-test-smoketesttask" title="Link to this heading">¶</a></h3>
-<p>Produces a smoke-test plan or validation. Requires <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when
-it consumes a <code class="docutils literal notranslate"><span class="pre">manifest_path</span></code>. Required: <code class="docutils literal notranslate"><span class="pre">test</span></code>. Mode: <strong>run</strong> (produces a
-plan).</p>
 </section>
 </section>
 <section id="steps">
@@ -522,6 +517,7 @@ the spec from <code class="docutils literal notranslate"><span class="pre">spec_
 <li><a class="reference internal" href="#tasks-spec-validate-validatetask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/validate</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-sim-simulate-simulatetask"><code class="docutils literal notranslate"><span class="pre">tasks/sim/simulate</span></code>: <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-synthesize-synthesizetask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code></a></li>
+<li><a class="reference internal" href="#tasks-build-render-cores-rendercorestask"><code class="docutils literal notranslate"><span class="pre">tasks/build/render-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">RenderCoresTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-synthesize-cores-synthesizecorestask"><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize-cores</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeCoresTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-build-shell-project-buildshellprojecttask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-shell-project</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildShellProjectTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code></a></li>
@@ -531,8 +527,6 @@ the spec from <code class="docutils literal notranslate"><span class="pre">spec_
 <li><a class="reference internal" href="#tasks-stage-stage-vivado-project-vivadoprojectstagetask"><code class="docutils literal notranslate"><span class="pre">tasks/stage/stage-vivado-project</span></code>: <code class="docutils literal notranslate"><span class="pre">VivadoProjectStageTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-validate-validate-vivado-artifacts-validatevivadoartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/validate/validate-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">ValidateVivadoArtifactsTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-hardware-hardware-plan-hardwareplantask"><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code>: <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-flash-flash-flashtask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/flash</span></code>: <code class="docutils literal notranslate"><span class="pre">FlashTask</span></code></a></li>
-<li><a class="reference internal" href="#tasks-flash-smoke-test-smoketesttask"><code class="docutils literal notranslate"><span class="pre">tasks/flash/smoke-test</span></code>: <code class="docutils literal notranslate"><span class="pre">SmokeTestTask</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#steps">Steps</a></li>

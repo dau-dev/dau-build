@@ -359,9 +359,9 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>tasks/build/build-shell-project
 tasks/build/build-vivado-artifacts
 tasks/build/overlay-build
+tasks/build/render-cores
 tasks/build/synthesize
-tasks/flash/flash
-tasks/flash/smoke-test
+tasks/build/synthesize-cores
 tasks/hardware/hardware-plan
 tasks/sim/simulate
 tasks/spec/build
@@ -574,15 +574,19 @@ pydantic enforces them rather than a runtime check.</p>
 <td><p><code class="docutils literal notranslate"><span class="pre">FlashPlan</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_utils_root</span></code>, <code class="docutils literal notranslate"><span class="pre">python</span></code>, <code class="docutils literal notranslate"><span class="pre">vivado_settings</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/recovery</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/sram-program</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SramProgramPlan</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">deadman_timeout_s</span></code>, <code class="docutils literal notranslate"><span class="pre">verify_command</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/recovery</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">RecoveryPlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-hold</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-hold</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltHoldPlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-release</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-release</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltReleasePlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>

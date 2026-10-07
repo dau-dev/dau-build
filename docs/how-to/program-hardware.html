@@ -247,10 +247,9 @@
           <section class="tex2jax_ignore mathjax_ignore" id="how-to-program-a-bitstream-on-a-board">
 <h1>How to program a bitstream on a board<a class="headerlink" href="#how-to-program-a-bitstream-on-a-board" title="Link to this heading">¶</a></h1>
 <p>This guide programs and validates a bitstream on an attached board with the
-<code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> task. The examples are written against a NiteFury-class
-XC7A200T card reached over a PCIe/Thunderbolt link, which is where the
-plans were developed; the same plans run on any board whose platform
-definition records its host-access facts. The guide covers the three
+<code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> task. The plans run on any board whose platform definition
+records its host-access facts; the examples use a PCIe card behind a bridge,
+the topology the plans were developed on. The guide covers the three
 situations you hit most: programming a fresh build, validating an
 already-built bitstream, and recovering a device that a bad image has hung.</p>
 <p><code class="docutils literal notranslate"><span class="pre">hardware-plan</span></code> composes an ordered sequence of hardware-session steps (JTAG
@@ -264,15 +263,20 @@ board.</p>
 and <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
 <p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
-JTAG cable) is board and host configuration, not a code default. Compose
+JTAG cable) is board and host configuration, not a code default. The packaged
+example board (<code class="docutils literal notranslate"><span class="pre">platforms/example/probe</span></code>) is a fiction whose every hardware
+value is a placeholder, so it previews plans and refuses <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>; the
+commands below name your own board. Compose
 <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code> so the plan takes the board’s
 <code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts, or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly. A
 step that needs an unset fact refuses to render.</p>
 <blockquote>
 <div><p><strong>Programming can hang the PCIe link.</strong> Removing and reprogramming an
 endpoint while the host holds it can hang a rescan hard enough to need a
-power cycle. On a host where that is a risk, arm a watchdog or auto-reboot
-before any <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> plan, so a hang recovers itself.</p>
+power cycle. <code class="docutils literal notranslate"><span class="pre">sram-program</span></code> arms the forced-reboot deadman over that window
+and disarms it only on success; prefer it for any reprogram, and on a host
+where a hang is a risk arm the deadman yourself before any other
+<code class="docutils literal notranslate"><span class="pre">execute=true</span></code> plan.</p>
 </div></blockquote>
 <section id="preview-a-plan-before-running-it">
 <h2>Preview a plan before running it<a class="headerlink" href="#preview-a-plan-before-running-it" title="Link to this heading">¶</a></h2>
@@ -281,7 +285,7 @@ ordered steps and does not touch the board.</p>
 <p>The plan is a config group (<code class="docutils literal notranslate"><span class="pre">plan=plans/&lt;name&gt;</span></code>); its own fields are
 <code class="docutils literal notranslate"><span class="pre">plan.&lt;field&gt;=</span></code> overrides and the shared toolchain fields are <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/&lt;vendor&gt;/&lt;board&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -298,7 +302,7 @@ ordered steps and does not touch the board.</p>
 then programs and verifies the device. Add <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run it on the
 host:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/&lt;vendor&gt;/&lt;board&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/local-build-and-program<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.source_shell_root<span class="o">=</span>/path/to/vivado-shell-seed<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_core_root<span class="o">=</span>/path/to/dau-core<span class="w"> </span><span class="se">\</span>
@@ -330,7 +334,7 @@ in: pass <code class="docutils literal notranslate"><span class="pre">plan.smoke
 injects one (the <code class="docutils literal notranslate"><span class="pre">dau</span></code> package’s <code class="docutils literal notranslate"><span class="pre">plans/dpv1-validate-bitstream</span></code>, for
 example). With no command the plan ends at the endpoint check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/&lt;vendor&gt;/&lt;board&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
@@ -348,7 +352,7 @@ against a resident dead image is what hangs. The <code class="docutils literal n
 steps in the safe order: hold power management, remove the endpoint through
 sysfs, program a known-good volatile bitstream, then rescan and re-check:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/example/probe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/&lt;vendor&gt;/&lt;board&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/recovery<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
@@ -356,19 +360,6 @@ sysfs, program a known-good volatile bitstream, then rescan and re-check:</p>
 </div>
 <p>This recovers the link without a reboot in most cases. If the endpoint still
 does not reappear, the device needs a power cycle.</p>
-</section>
-<section id="flash-and-smoke-test-from-a-manifest">
-<h2>Flash and smoke-test from a manifest<a class="headerlink" href="#flash-and-smoke-test-from-a-manifest" title="Link to this heading">¶</a></h2>
-<p>To flash, and to run a smoke test, against a <code class="docutils literal notranslate"><span class="pre">built</span></code> shell-build manifest,
-use the <code class="docutils literal notranslate"><span class="pre">flash</span></code> and <code class="docutils literal notranslate"><span class="pre">smoke-test</span></code> tasks. Both consume the manifest and verify
-the bitstream digest before touching the board:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/flash<span class="w"> </span>model.manifest_path<span class="o">=</span>outputs/vivado/shell-build.artifacts.yaml
-dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/flash/smoke-test<span class="w"> </span>model.test<span class="o">=</span>identity
-</pre></div>
-</div>
-<p>Both require <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code> when given a manifest, and both emit a
-plan unless run against real hardware. The smoke <code class="docutils literal notranslate"><span class="pre">test</span></code> is one of
-<code class="docutils literal notranslate"><span class="pre">identity</span></code>, <code class="docutils literal notranslate"><span class="pre">dma-loopback</span></code> or <code class="docutils literal notranslate"><span class="pre">aggregation</span></code>.</p>
 </section>
 </section>
 
@@ -432,7 +423,6 @@ plan unless run against real hardware. The smoke <code class="docutils literal n
 <li><a class="reference internal" href="#program-a-fresh-build">Program a fresh build</a></li>
 <li><a class="reference internal" href="#validate-an-already-built-bitstream">Validate an already-built bitstream</a></li>
 <li><a class="reference internal" href="#recover-a-hung-device">Recover a hung device</a></li>
-<li><a class="reference internal" href="#flash-and-smoke-test-from-a-manifest">Flash and smoke-test from a manifest</a></li>
 </ul>
 </li>
 </ul>

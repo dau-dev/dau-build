@@ -1,10 +1,9 @@
 # How to program a bitstream on a board
 
 This guide programs and validates a bitstream on an attached board with the
-`hardware-plan` task. The examples are written against a NiteFury-class
-XC7A200T card reached over a PCIe/Thunderbolt link, which is where the
-plans were developed; the same plans run on any board whose platform
-definition records its host-access facts. The guide covers the three
+`hardware-plan` task. The plans run on any board whose platform definition
+records its host-access facts; the examples use a PCIe card behind a bridge,
+the topology the plans were developed on. The guide covers the three
 situations you hit most: programming a fresh build, validating an
 already-built bitstream, and recovering a device that a bad image has hung.
 
@@ -21,15 +20,20 @@ and `thunderbolt-release`. Full field lists are in the
 [task catalog](../reference/tasks-and-steps.md).
 
 Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
-JTAG cable) is board and host configuration, not a code default. Compose
+JTAG cable) is board and host configuration, not a code default. The packaged
+example board (`platforms/example/probe`) is a fiction whose every hardware
+value is a placeholder, so it previews plans and refuses `execute=true`; the
+commands below name your own board. Compose
 `platform=platforms/<vendor>/<board>` so the plan takes the board's
 `host_access` facts, or set the `model.<field>=` overrides explicitly. A
 step that needs an unset fact refuses to render.
 
 > **Programming can hang the PCIe link.** Removing and reprogramming an
 > endpoint while the host holds it can hang a rescan hard enough to need a
-> power cycle. On a host where that is a risk, arm a watchdog or auto-reboot
-> before any `execute=true` plan, so a hang recovers itself.
+> power cycle. `sram-program` arms the forced-reboot deadman over that window
+> and disarms it only on success; prefer it for any reprogram, and on a host
+> where a hang is a risk arm the deadman yourself before any other
+> `execute=true` plan.
 
 ## Preview a plan before running it
 
@@ -41,7 +45,7 @@ The plan is a config group (`plan=plans/<name>`); its own fields are
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -60,7 +64,7 @@ host:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -96,7 +100,7 @@ example). With no command the plan ends at the endpoint check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/validate-bitstream \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
@@ -116,7 +120,7 @@ sysfs, program a known-good volatile bitstream, then rescan and re-check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/recovery \
   model.work_root=outputs/vivado \
   model.execute=true
@@ -124,18 +128,3 @@ dau-build task=tasks/hardware/hardware-plan \
 
 This recovers the link without a reboot in most cases. If the endpoint still
 does not reappear, the device needs a power cycle.
-
-## Flash and smoke-test from a manifest
-
-To flash, and to run a smoke test, against a `built` shell-build manifest,
-use the `flash` and `smoke-test` tasks. Both consume the manifest and verify
-the bitstream digest before touching the board:
-
-```bash
-dau-build task=tasks/flash/flash model.manifest_path=outputs/vivado/shell-build.artifacts.yaml
-dau-build task=tasks/flash/smoke-test model.test=identity
-```
-
-Both require `build_status=built` when given a manifest, and both emit a
-plan unless run against real hardware. The smoke `test` is one of
-`identity`, `dma-loopback` or `aggregation`.
