@@ -114,10 +114,12 @@ def publish_inventory(
     source = bitstreams[0]
 
     status = manifest.metadata.get("build_status")
-    if status is not None and status != "built":
+    if status != "built":
         raise ValueError(f"refusing to publish a bitstream whose build_status is {status!r}, not 'built'")
     wns = manifest.metadata.get("wns_ns")
-    if wns is not None and float(wns) < 0.0:
+    if wns is None:
+        raise ValueError("refusing to publish a bitstream whose manifest records no wns_ns; a published image proves it closed timing")
+    if float(wns) < 0.0:
         raise ValueError(f"refusing to publish a bitstream that missed timing (wns_ns={wns})")
 
     metadata = {key: manifest.metadata[key] for key in PUBLISHED_METADATA_KEYS if key in manifest.metadata}

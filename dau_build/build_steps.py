@@ -5,7 +5,7 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Literal, TypeVar
 
 from ccflow import BaseModel, CallableModel, Flow, NullContext, ResultBase
-from pydantic import Field, ValidationError, field_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from dau_build.hardware_plan import (
     HardwarePlan,
@@ -57,6 +57,8 @@ BuildCallableModelType = TypeVar("BuildCallableModelType", bound="BuildCallableM
 
 
 class BuildCallableModel(CallableModel):
+    model_config = ConfigDict(frozen=True)
+
     _STRINGIFY_SEPARATOR: ClassVar[str] = ","
 
     @classmethod
@@ -313,6 +315,8 @@ class Simulator(BaseModel):
     simulator.profile=...``); ``SimulateTask`` delegates to ``simulate`` —
     there is no simulator ``Literal`` or dispatch ``if`` on the task."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
@@ -470,6 +474,8 @@ class SynthesisEngine(BaseModel):
     delegates to ``synthesize`` — there is no engine ``Literal`` or dispatch
     ``if``."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     invocation: str = "standard"
 
@@ -588,80 +594,6 @@ def bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
     return bitstream_path
 
 
-class FlashTask(BuildCallableModel):
-    # the programmer is the composed `programmer` group option (a Programmer
-    # model); defaults to openFPGALoader, symmetric to SynthesizeTask's backend
-    programmer: Any = None
-    bitstream: Path | None = None
-    manifest_path: Path | None = None
-    mode: Literal["volatile", "persistent"] = "volatile"
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        programmer = self._programmer()
-        bitstream = self.bitstream
-        manifest_segment = ""
-        if self.manifest_path is not None:
-            if self.manifest_path.suffix in (".yaml", ".yml"):
-                bitstream = bitstream or bitstream_from_shell_build_manifest(self.manifest_path)
-            else:
-                manifest = _read_key_value_manifest(self.manifest_path)
-                _require_built_manifest(self.manifest_path, manifest)
-                # a key=value backend manifest carries no digests: flash
-                # provenance comes from the packaged artlink manifest the
-                # validate step writes beside it (digest-verified below)
-                packaged = self.manifest_path.with_suffix(".artifacts.yaml")
-                if not packaged.is_file():
-                    raise BuildStepError(
-                        f"backend manifest has no packaged artlink manifest: {packaged.as_posix()}; "
-                        "run the validate step (execute=True) to package digested provenance before flashing"
-                    )
-                bitstream = bitstream or bitstream_from_shell_build_manifest(packaged)
-            manifest_segment = f" manifest={self.manifest_path}"
-        if bitstream is None:
-            raise BuildStepError("flash requires bitstream or manifest_path")
-        if not bitstream.is_file():
-            raise BuildStepError(f"bitstream does not exist: {bitstream}")
-        return BuildStepResult(
-            step="flash",
-            message=f"dau-build-flash\ttask=flash programmer={programmer.name} bitstream={bitstream}{manifest_segment} mode={self.mode} status=planned",
-        )
-
-    def _programmer(self):
-        # the composed `programmer` group option; default to openFPGALoader
-        from dau_build.programmers import OpenFpgaLoaderProgrammer, Programmer
-
-        if isinstance(self.programmer, Programmer):
-            return self.programmer
-        if self.programmer is None:
-            return OpenFpgaLoaderProgrammer()
-        raise BuildStepError(f"programmer {getattr(self.programmer, 'name', self.programmer)!r} is not a Programmer")
-
-
-class SmokeTestTask(BuildCallableModel):
-    test: Literal["identity", "dma-loopback", "aggregation"]
-    manifest_path: Path | None = None
-    device: str | None = None
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        device_segment = f" device={self.device}" if self.device else ""
-        manifest_segment = ""
-        if self.manifest_path is not None:
-            manifest = _read_key_value_manifest(self.manifest_path)
-            _require_built_manifest(self.manifest_path, manifest)
-            manifest_segment = (
-                f" manifest={self.manifest_path}"
-                f" register_window_offset={_manifest_required(manifest, 'register_window_offset')}"
-                f" input_buffer={_manifest_required(manifest, 'input_buffer_address')}"
-                f" output_buffer={_manifest_required(manifest, 'output_buffer_address')}"
-            )
-        return BuildStepResult(
-            step="smoke-test",
-            message=f"dau-build-smoke-test\ttask=smoke-test test={self.test}{device_segment}{manifest_segment} status=planned",
-        )
-
-
 class BuildShellProjectTask(BuildCallableModel):
     """Run a generated shell project script through Vivado and package the
     outputs as an artlink shell-build manifest (bitstream digest, reports,
@@ -777,7 +709,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
     resource_summary_path: Path = Path("reports/dau_utilization.rpt")
     timing_summary_path: Path = Path("reports/dau_timing_summary.rpt")
     vivado_log_path: Path = Path("vivado.log")
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
     overlay_definition: VivadoOverlayDefinition | None = None
 
     def stage_steps(self):
@@ -878,7 +810,7 @@ class VivadoOverlayBuildTask(OverlayBuildTask):
     vivado_mount_root: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     build_tcl: Path = Path("scripts/dau_build.tcl")
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
@@ -992,7 +924,7 @@ class BuildVivadoArtifactsTask(BuildOverlayArtifactsTask):
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
     project_manifest_path: Path | None = None
-    vivado_settings: Path = Path("/opt/Xilinx/2025.1/Vivado/settings64.sh")
+    vivado_settings: Path | None = None  # this host's settings64.sh; None runs vivado from PATH without sourcing one
     execute: bool = False
 
     def overlay_build_model(self) -> VivadoOverlayBuildTask:
@@ -1399,52 +1331,3 @@ def _spec_hdl_root(spec) -> Path:
     if not spec.sources:
         raise BuildStepError("spec provides no HDL sources to derive the HDL root from")
     return Path(spec.sources[0]).parent
-
-
-def _read_key_value_manifest(path: Path) -> dict[str, str]:
-    if not path.is_file():
-        raise BuildStepError(f"manifest does not exist: {path}")
-    manifest: dict[str, str] = {}
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            raise BuildStepError(f"manifest line {line_number} is missing '=': {path}")
-        key, value = line.split("=", 1)
-        if not key:
-            raise BuildStepError(f"manifest line {line_number} has an empty key: {path}")
-        manifest[key] = value
-    return manifest
-
-
-def _manifest_required(manifest: Mapping[str, str], key: str) -> str:
-    value = manifest.get(key)
-    if not value:
-        raise BuildStepError(f"manifest missing required key: {key}")
-    return value
-
-
-def _manifest_path(root: Path, manifest: Mapping[str, str], key: str) -> Path:
-    value = Path(_manifest_required(manifest, key))
-    if value.is_absolute():
-        return value
-    return root / value
-
-
-def _require_built_manifest(manifest_path: Path, manifest: Mapping[str, str]) -> None:
-    build_status = manifest.get("build_status") or "<missing>"
-    if build_status != "built":
-        raise BuildStepError(f"manifest {manifest_path} is not built: build_status={build_status}; expected built")
-
-    missing: list[str] = []
-    for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log"):
-        try:
-            artifact_path = _manifest_path(manifest_path.parent, manifest, key)
-        except BuildStepError as exc:
-            missing.append(str(exc))
-            continue
-        if not artifact_path.is_file():
-            missing.append(f"missing {key}: {artifact_path}")
-    if missing:
-        raise BuildStepError(f"manifest {manifest_path} is built but incomplete: {'; '.join(missing)}")

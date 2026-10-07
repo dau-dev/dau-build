@@ -81,7 +81,7 @@ dau-build-artifacts-valid	manifest=outputs/identity/dau-identity.manifest top_sv
 ```
 
 The `-valid` label means the bundle passed. A missing file fails here rather
-than an hour into a Vivado run.
+than partway through a Vivado run.
 
 ## Step 4: run a simulation check
 

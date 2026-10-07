@@ -1,10 +1,9 @@
 # How to program a bitstream on a board
 
 This guide programs and validates a bitstream on an attached board with the
-`hardware-plan` task. The examples are written against a NiteFury-class
-XC7A200T card reached over a PCIe/Thunderbolt link, which is where the
-plans were developed; the same plans run on any board whose platform
-definition records its host-access facts. The guide covers the three
+`hardware-plan` task. The plans run on any board whose platform definition
+records its host-access facts; the examples use a PCIe card behind a bridge,
+the topology the plans were developed on. The guide covers the three
 situations you hit most: programming a fresh build, validating an
 already-built bitstream, and recovering a device that a bad image has hung.
 
@@ -28,8 +27,10 @@ step that needs an unset fact refuses to render.
 
 > **Programming can hang the PCIe link.** Removing and reprogramming an
 > endpoint while the host holds it can hang a rescan hard enough to need a
-> power cycle. On a host where that is a risk, arm a watchdog or auto-reboot
-> before any `execute=true` plan, so a hang recovers itself.
+> power cycle. `sram-program` arms the forced-reboot deadman over that window
+> and disarms it only on success; prefer it for any reprogram, and on a host
+> where a hang is a risk arm the deadman yourself before any other
+> `execute=true` plan.
 
 ## Preview a plan before running it
 
@@ -124,18 +125,3 @@ dau-build task=tasks/hardware/hardware-plan \
 
 This recovers the link without a reboot in most cases. If the endpoint still
 does not reappear, the device needs a power cycle.
-
-## Flash and smoke-test from a manifest
-
-To flash, and to run a smoke test, against a `built` shell-build manifest,
-use the `flash` and `smoke-test` tasks. Both consume the manifest and verify
-the bitstream digest before touching the board:
-
-```bash
-dau-build task=tasks/flash/flash model.manifest_path=outputs/vivado/shell-build.artifacts.yaml
-dau-build task=tasks/flash/smoke-test model.test=identity
-```
-
-Both require `build_status=built` when given a manifest, and both emit a
-plan unless run against real hardware. The smoke `test` is one of
-`identity`, `dma-loopback` or `aggregation`.

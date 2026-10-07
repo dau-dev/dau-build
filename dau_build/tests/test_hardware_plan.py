@@ -41,7 +41,8 @@ def _run_plan(plan: str, *, plan_fields=(), **model_values):
     return run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=[f"plan=plans/{plan}", "platform=platforms/example/probe", *plan_fields],
+        # the example board declares placeholders; the plan runner tests drive fake tools, so they clear them
+        overrides=[f"plan=plans/{plan}", "platform=platforms/example/probe", "platform.placeholders=[]", *plan_fields],
         model_values=model_values,
     )
 
@@ -817,7 +818,7 @@ def test_local_build_and_program_plan_stages_overlay_programs_and_runs_injected_
     assert "base64 -d > /repo/projects/vivado-shell/scripts/dau_build.tcl" in steps[2].argv[2]
     assert steps[3].argv[0:2] == ("bash", "-lc")
     assert "cd /repo/projects/vivado-shell" in steps[3].argv[2]
-    assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[3].argv[2]
+    assert ". /opt" not in steps[3].argv[2]  # no host names a settings path by default
     assert "vivado -mode batch -source project.tcl" not in steps[3].argv[2]
     assert "vivado -mode batch -source scripts/dau_overlay.tcl" in steps[3].argv[2]
     assert "rm -f Top.v" in steps[3].argv[2]
@@ -1068,7 +1069,7 @@ def test_flash_plan_routes_through_the_program_method_selector() -> None:
     assert [step.name for step in steps] == ["thunderbolt-hold", "flash", "thunderbolt-release"]
     assert steps[1].argv[0:2] == ("bash", "-lc")
     assert "cd /repo/projects/vivado-shell" in steps[1].argv[2]
-    assert ". /opt/Xilinx/2025.1/Vivado/settings64.sh" in steps[1].argv[2]
+    assert ". /opt" not in steps[1].argv[2]
     assert "vivado -mode batch -source scripts/flash.tcl" in steps[1].argv[2]
 
     # a JTAG board flashes persistently through openFPGALoader (-f)
@@ -1964,3 +1965,17 @@ def test_execute_without_a_device_runs_unserialized(tmp_path) -> None:
     marker = tmp_path / "ran"
     code = execute_plan_steps((ToolStep("t", ("sh", "-c", f"touch {marker}")),))
     assert code == 0 and marker.exists()
+
+
+def test_shell_staging_refuses_an_rsync_that_would_delete_the_wrong_tree(tmp_path: Path) -> None:
+    from dau_build.hardware_plan import _stage_shell_script
+
+    source = tmp_path / "shell"
+    source.mkdir()
+    assert "rsync -a --delete" in _stage_shell_script(source_shell_root=source, work_root=tmp_path / "work")
+    with pytest.raises(ValueError, match="same directory"):
+        _stage_shell_script(source_shell_root=source, work_root=source)
+    with pytest.raises(ValueError, match="nested roots"):
+        _stage_shell_script(source_shell_root=source, work_root=source / "inner")
+    with pytest.raises(ValueError, match="filesystem root or home"):
+        _stage_shell_script(source_shell_root=source, work_root=Path.home())

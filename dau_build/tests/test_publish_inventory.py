@@ -144,3 +144,13 @@ def test_write_published_inventory_round_trips(tmp_path: Path) -> None:
     reloaded = load_artifact_manifest(destination)
     assert len(reloaded.artifacts) == 1
     assert {capability.name for capability in reloaded.artifacts[0].provides} == {"int32-example-sort", "int32-example-sum"}
+
+
+def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) -> None:
+    """A published image claims it closed timing; a manifest that recorded
+    neither the status nor the slack cannot make that claim."""
+    manifest = _private_manifest(tmp_path)
+    for missing in ("wns_ns", "build_status"):
+        metadata = {k: v for k, v in manifest.metadata.items() if k != missing}
+        with pytest.raises(ValueError, match=missing):
+            publish_inventory(manifest.model_copy(update={"metadata": metadata}), contract=_CONTRACT)

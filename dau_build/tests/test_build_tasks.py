@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
 from ccflow import CallableModel
 
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
@@ -101,7 +101,7 @@ def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_pat
     assert (output_root / "vivado" / "dau-identity.manifest").is_file()
 
 
-def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_smoke_tasks(tmp_path: Path) -> None:
+def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle(tmp_path: Path) -> None:
     spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
     output_root = tmp_path / "out"
 
@@ -128,94 +128,6 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle_for_flash_and_s
     assert backend_manifest["input_buffer_address"] == "0x0000000000000000"
     assert backend_manifest["output_buffer_address"] == "0x0000000000100000"
 
-    bitstream = _write_built_backend_outputs(output_root / "vivado", backend_manifest_path)
-    flash_result = execute_override_task(("task=tasks/flash/flash", f"manifest_path={backend_manifest_path}"))
-    smoke_result = execute_override_task(("task=tasks/flash/smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
-
-    assert flash_result == BuildStepResult(
-        step="flash",
-        message=f"dau-build-flash\ttask=flash programmer=openfpgaloader bitstream={bitstream} manifest={backend_manifest_path} mode=volatile status=planned",
-    )
-    assert smoke_result == BuildStepResult(
-        step="smoke-test",
-        message=(
-            f"dau-build-smoke-test\ttask=smoke-test test=aggregation manifest={backend_manifest_path} "
-            "register_window_offset=0x00001000 input_buffer=0x0000000000000000 output_buffer=0x0000000000100000 status=planned"
-        ),
-    )
-
-
-def test_manifest_driven_flash_rejects_planned_backend_manifest(tmp_path: Path) -> None:
-    spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
-    output_root = tmp_path / "out"
-    execute_override_task(
-        (
-            "task=tasks/build/synthesize",
-            "module=stream_doubler",
-            f"spec_path={spec_path}",
-            f"output_root={output_root}",
-        )
-    )
-
-    backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
-
-    with pytest.raises(BuildStepError, match="is not built: build_status=planned; expected built"):
-        execute_override_task(("task=tasks/flash/flash", f"manifest_path={backend_manifest_path}"))
-
-
-def test_manifest_driven_smoke_rejects_incomplete_built_backend_manifest(tmp_path: Path) -> None:
-    spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
-    output_root = tmp_path / "out"
-    execute_override_task(
-        (
-            "task=tasks/build/synthesize",
-            "module=stream_doubler",
-            f"spec_path={spec_path}",
-            f"output_root={output_root}",
-        )
-    )
-
-    backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
-    backend_manifest_path.write_text(
-        backend_manifest_path.read_text(encoding="utf-8").replace("build_status=planned", "build_status=built"),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(BuildStepError, match="is built but incomplete: missing bitstream:"):
-        execute_override_task(("task=tasks/flash/smoke-test", "test=aggregation", f"manifest_path={backend_manifest_path}"))
-
-
-def test_execute_override_task_plans_openfpgaloader_flash(tmp_path: Path) -> None:
-    bitstream = tmp_path / "Top_wrapper.bit"
-    bitstream.write_bytes(b"bit")
-
-    # default programmer (openFPGALoader)
-    result = execute_override_task(("task=tasks/flash/flash", f"bitstream={bitstream}"))
-
-    assert result == BuildStepResult(
-        step="flash",
-        message=f"dau-build-flash\ttask=flash programmer=openfpgaloader bitstream={bitstream} mode=volatile status=planned",
-    )
-
-
-def test_flash_task_composes_the_programmer_group(tmp_path: Path) -> None:
-    from dau_build.config import run_request_config
-
-    bitstream = tmp_path / "Top_wrapper.bit"
-    bitstream.write_bytes(b"bit")
-
-    # programmer=programmers/<name> composes the adapter into the flash task
-    result = run_request_config(
-        "task",
-        "tasks/flash/flash",
-        overrides=["programmer=programmers/vivado-hwserver"],
-        model_values={"bitstream": bitstream},
-    )
-    assert result == BuildStepResult(
-        step="flash",
-        message=f"dau-build-flash\ttask=flash programmer=vivado-hwserver bitstream={bitstream} mode=volatile status=planned",
-    )
-
 
 def _write_minimal_built_backend_manifest(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
@@ -232,53 +144,6 @@ def _write_minimal_built_backend_manifest(root: Path) -> Path:
         encoding="utf-8",
     )
     return manifest_path
-
-
-def test_flash_refuses_backend_manifest_without_packaged_provenance(tmp_path: Path) -> None:
-    # a key=value backend manifest alone carries no digests: flash must
-    # demand the packaged artlink manifest the validate step writes
-    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
-
-    with pytest.raises(BuildStepError, match="no packaged artlink manifest"):
-        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
-
-
-def test_flash_refuses_backend_manifest_bitstream_digest_mismatch(tmp_path: Path) -> None:
-    from dau_build.shell_build import write_overlay_build_manifest
-
-    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
-    write_overlay_build_manifest(tmp_path, manifest_path, name="dau-vivado")
-    (tmp_path / "Top_wrapper.bit").write_bytes(b"replaced-after-build")
-
-    with pytest.raises(BuildStepError, match="digest mismatch"):
-        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
-
-
-def test_flash_refuses_packaged_manifest_without_bitstream_digest(tmp_path: Path) -> None:
-    # digest is optional in the artlink model: a packaged manifest whose
-    # bitstream artifact carries none must be refused, not silently trusted
-    import yaml
-
-    from dau_build.shell_build import write_overlay_build_manifest
-
-    manifest_path = _write_minimal_built_backend_manifest(tmp_path)
-    packaged = write_overlay_build_manifest(tmp_path, manifest_path, name="dau-vivado")
-    data = yaml.safe_load(packaged.read_text(encoding="utf-8"))
-    for artifact in data["artifacts"]:
-        artifact.pop("digest", None)
-    packaged.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-    with pytest.raises(BuildStepError, match="no digest"):
-        execute_override_task(("task=tasks/flash/flash", f"manifest_path={manifest_path}"))
-
-
-def test_execute_override_task_plans_identity_smoke_test() -> None:
-    result = execute_override_task(("task=tasks/flash/smoke-test", "test=identity"))
-
-    assert result == BuildStepResult(
-        step="smoke-test",
-        message="dau-build-smoke-test\ttask=smoke-test test=identity status=planned",
-    )
 
 
 def test_hardware_plan_task_via_plan_group() -> None:
@@ -548,26 +413,6 @@ def _write_arrow_lite_aggregator_spec(tmp_path: Path) -> Path:
 
 def _read_manifest(path: Path) -> dict[str, str]:
     return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
-
-
-def _write_built_backend_outputs(build_root: Path, manifest_path: Path) -> Path:
-    manifest = _read_manifest(manifest_path)
-    paths = {key: build_root / manifest[key] for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log")}
-    paths["bitstream"].parent.mkdir(parents=True, exist_ok=True)
-    paths["bitstream"].write_bytes(b"bit")
-    for key in ("resource_summary", "timing_summary", "vivado_log"):
-        paths[key].parent.mkdir(parents=True, exist_ok=True)
-        paths[key].write_text("built\n", encoding="utf-8")
-    manifest_path.write_text(
-        manifest_path.read_text(encoding="utf-8").replace("build_status=planned", "build_status=built"),
-        encoding="utf-8",
-    )
-    # mirror the validate step: package the digested artlink manifest beside
-    # the key=value handoff (flash provenance consumes the packaged form)
-    from dau_build.shell_build import write_overlay_build_manifest
-
-    write_overlay_build_manifest(build_root, manifest_path, name="dau-vivado")
-    return paths["bitstream"]
 
 
 def _write_backend_artifacts(artifacts) -> None:

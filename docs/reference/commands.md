@@ -51,7 +51,7 @@ Select a config group, here the yosys synthesis backend instead of the default
 Vivado engine:
 
 ```text
-dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.output_root=out
+dau-build task=tasks/build/synthesize spec=specs/identity backend=backends/yosys model.module=dau_identity_top model.output_root=out
 ```
 
 Show what a set of overrides composes to, without running:

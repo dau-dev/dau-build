@@ -53,10 +53,7 @@ def render_generated_cores(definitions, *, root: Path) -> tuple[Path, ...]:
             continue
         render = getattr(definition, "render", None)
         if render is None:
-            raise BuildStepError(
-                f"core {getattr(definition, 'name', '?')!r} declares a generator but the core provider "
-                "offers no render(); the installed dau-core is too old for generated cores"
-            )
+            raise BuildStepError(f"core {getattr(definition, 'name', '?')!r} declares a generator but the core provider offers no render()")
         written.append(render(into=target))
     if written:
         os.environ[RENDER_ROOT_ENV] = str(target)

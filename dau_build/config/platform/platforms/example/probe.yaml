@@ -14,6 +14,9 @@
 # build a real design against this board.
 _target_: dau_build.platforms.PlatformDefinition
 name: probe
+# every hardware-derived value below is invented, so require_measured refuses
+# this board for any build or program step; config-only generation stays open
+placeholders: [part, platform_id, budget, lane_placements, constraints_xdc, memory, host_link, host_access]
 part: xc7k325tffg676-2
 platform_id: PRBE
 program_method: jtag

@@ -122,11 +122,9 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
     base = {
         "build-shell-project": (f"model.output_root={tmp_path / 'shell'}",),
         "build-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
-        "flash": (),
         "hardware-plan": ("model.plan=thunderbolt-release", f"model.work_root={tmp_path / 'work'}"),
         "overlay-build": (f"model.work_root={tmp_path / 'work'}",),
         "simulate": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top"),
-        "smoke-test": ("model.test=identity",),
         "inspect": (),
         "build": (f"model.output_root={tmp_path / 'artifacts'}",),
         "validate": (),

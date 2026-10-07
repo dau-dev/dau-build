@@ -12,8 +12,8 @@ dau-build turns a declarative description of an FPGA build into concrete
 artifacts: generated SystemVerilog, artifact bundles, backend handoff
 manifests, Tcl scripts and command plans. Everything the tool does is a typed
 `ccflow.CallableModel` (a `SimulateTask`, a `SynthesizeTask`, a
-`BuildVivadoArtifactsTask`, and so on), and every one of those models is
-built from configuration rather than constructed by hand in Python.
+`BuildVivadoArtifactsTask`, and so on), and the models a user runs are
+composed from configuration rather than constructed by hand in Python.
 
 That configuration is a Hydra config tree under `dau_build/config`. Running
 the tool is always the same two-phase act: compose a config from groups and
@@ -106,7 +106,7 @@ steps that are privileged and hard to undo (running Vivado, programming over
 JTAG, rescanning PCIe) happen only on explicit opt-in, on the machine that has
 the hardware. The validators (`validate-vivado-artifacts`) check that a plan
 agrees with itself (manifest, Tcl, command plan and output paths) before
-anyone spends an hour of synthesis on it.
+anyone spends a synthesis run on it.
 
 ## Board, platform and backend are three separate things
 
@@ -114,8 +114,8 @@ These three groups are easy to confuse. They answer different questions.
 
 - **`platform`** (`PlatformDefinition`) is the hardware board as data: the
   part number, the resource budget, the memory, and the host link including
-  the full XDMA personality. For dpv1 the personality is the 47 proven
-  bring-up XCI parameters, quoted verbatim and in order, so the generated
+  the full XDMA personality: the complete set of user-set XCI parameters a
+  board's bring-up proved, quoted verbatim and in order, so the generated
   Vivado `CONFIG.*` block matches the known-good core byte for byte. A
   hand-picked subset of those parameters leaves the device memory-dead on
   hardware, which is why the definition insists on all of them. `fits()`

@@ -8,5 +8,5 @@ vivado_invocation: standard
 vivado_mount_root: null
 overlay_tcl: scripts/dau_overlay.tcl
 build_tcl: scripts/dau_build.tcl
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+vivado_settings: null  # this host's settings64.sh; null runs vivado from PATH
 execute: false

@@ -52,7 +52,7 @@ except ImportError:
         SyntaxTree,
         WildcardPortConnectionSyntax,
     )
-from typing_extensions import Self
+from typing import Self
 
 __all__ = (
     "ContinuousAssignment",

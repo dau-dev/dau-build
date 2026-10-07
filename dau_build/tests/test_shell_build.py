@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from dau_build.build_steps import BuildShellProjectTask, BuildStepError, FlashTask
+from dau_build.build_steps import BuildShellProjectTask
 from dau_build.packaging import load_artifact_manifest
 from dau_build.shell_build import (
     SHELL_BUILD_MANIFEST_NAME,
@@ -16,7 +16,6 @@ from dau_build.shell_build import (
     parse_shell_build_console,
     run_shell_project_build,
     shell_build_manifest,
-    write_shell_build_manifest,
 )
 
 
@@ -138,41 +137,6 @@ def test_task_execute_refuses_a_placeholder_platform(tmp_path: Path) -> None:
     assert "status=planned" in planned.message
     built = BuildShellProjectTask(output_root=output_root, vivado=str(_fake_vivado(tmp_path)), platform=probe_platform(), execute=True)(None)
     assert "status=built" in built.message
-
-
-def test_flash_task_resolves_and_verifies_shell_build_manifest(tmp_path: Path) -> None:
-    output_root = _fake_shell_output(tmp_path)
-    manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "built"})
-
-    result = FlashTask(manifest_path=manifest_path)(None)
-    assert "dau_mm_job.bit" in result.message
-
-    # a tampered bitstream must be refused
-    (output_root / "dau_mm_job.bit").write_bytes(b"tampered")
-    with pytest.raises(BuildStepError, match="digest mismatch"):
-        FlashTask(manifest_path=manifest_path)(None)
-
-
-def test_flash_task_delegates_to_the_composed_programmer(tmp_path: Path) -> None:
-    # FlashTask composes a Programmer from the `programmer` group (no string
-    # tool dispatch): the default is openFPGALoader, an explicit adapter wins,
-    # and a non-Programmer value is refused
-    from dau_build.programmers import VivadoHwServerProgrammer
-
-    output_root = _fake_shell_output(tmp_path)
-    manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "built"})
-
-    assert "programmer=openfpgaloader" in FlashTask(manifest_path=manifest_path)(None).message
-    assert "programmer=vivado-hwserver" in FlashTask(programmer=VivadoHwServerProgrammer(), manifest_path=manifest_path)(None).message
-    with pytest.raises(BuildStepError, match="is not a Programmer"):
-        FlashTask(programmer="nonesuch", manifest_path=manifest_path)(None)
-
-
-def test_flash_task_rejects_unbuilt_manifest(tmp_path: Path) -> None:
-    output_root = _fake_shell_output(tmp_path)
-    manifest_path = write_shell_build_manifest(output_root, name="dpv1-test", metadata={"build_status": "failed"})
-    with pytest.raises(BuildStepError, match="not built"):
-        FlashTask(manifest_path=manifest_path)(None)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="stub executables require posix")

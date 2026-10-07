@@ -24,6 +24,6 @@ command_plan_path: null
 resource_summary_path: reports/dau_utilization.rpt
 timing_summary_path: reports/dau_timing_summary.rpt
 vivado_log_path: vivado.log
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+vivado_settings: null  # this host's settings64.sh; null runs vivado from PATH
 overlay_definition: null
 execute: false

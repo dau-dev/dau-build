@@ -4,4 +4,4 @@
 # hw_server flash.tcl path (the flash plan).
 _target_: dau_build.programmers.VivadoHwServerProgrammer
 name: vivado-hwserver
-vivado_settings: /opt/Xilinx/2025.1/Vivado/settings64.sh
+vivado_settings: null  # this host's settings64.sh; null runs vivado from PATH

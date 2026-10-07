@@ -19,6 +19,7 @@ public/private wall.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal, Protocol
@@ -27,11 +28,14 @@ from ccflow import BaseModel
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
+_PCI_ID = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{4}")
+_BDF = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
+_ARGV_TOKEN = re.compile(r"[A-Za-z0-9_./=:,+@-]+")
 
 
 class XdmaPersonality(BaseModel):
     """The XDMA endpoint's complete set of ``value_src=user`` XCI
-    parameters, applied verbatim — the dpv1 bring-up proved a hand-picked
+    parameters, applied verbatim — a board bring-up proved a hand-picked
     subset leaves the core memory-dead (BARs enumerate, reads all ones), so
     the personality is the *complete* customization. ``to_tcl_config``
     emits the Vivado ``CONFIG.*`` block the shell project Tcl is built with;
@@ -225,11 +229,36 @@ class HostAccess(BaseModel):
     # Empty (the default) = already privileged, or an unprivileged host.
     privilege_prefix: tuple[str, ...] = ()
 
-    @field_validator("pci_id", "endpoint_bdf")
+    @field_validator("pci_id")
     @classmethod
-    def _nonempty(cls, value: str, info) -> str:
-        if not value:
-            raise ValueError(f"host access {info.field_name} must be non-empty")
+    def _pci_id_syntax(cls, value: str) -> str:
+        if not _PCI_ID.fullmatch(value):
+            raise ValueError(f"host access pci_id must be vendor:device hex (e.g. 10ee:7011), got {value!r}")
+        return value.lower()
+
+    @field_validator("endpoint_bdf", "reset_bridge_bdf")
+    @classmethod
+    def _bdf_syntax(cls, value: str | None) -> str | None:
+        if value is not None and not _BDF.fullmatch(value):
+            raise ValueError(f"host access BDF must be dddd:bb:dd.f (e.g. 0000:04:00.0), got {value!r}")
+        return value
+
+    @field_validator("rescan_bdfs")
+    @classmethod
+    def _bdfs_syntax(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        bad = [bdf for bdf in value if not _BDF.fullmatch(bdf)]
+        if bad:
+            raise ValueError(f"host access rescan_bdfs must be dddd:bb:dd.f, got {bad}")
+        return value
+
+    @field_validator("privilege_prefix")
+    @classmethod
+    def _argv_tokens(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        # the prefix is spliced into argv ahead of sysfs and setpci commands; a
+        # token with shell syntax in it is not a privilege wrapper
+        bad = [token for token in value if not _ARGV_TOKEN.fullmatch(token)]
+        if bad:
+            raise ValueError(f"host access privilege_prefix must be plain argv tokens (an executable and flags), got {bad}")
         return value
 
 
