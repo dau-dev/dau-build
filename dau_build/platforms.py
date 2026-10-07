@@ -389,12 +389,20 @@ class PlatformDefinition(BaseModel):
 
 class ResourceUse(Protocol):
     """Anything carrying a placed-resource count — dau-core's
-    ``ResourceEnvelope`` (and ``estimated_resources(spec)``) satisfies it."""
+    ``ResourceEnvelope`` (and ``estimated_resources(spec)``) satisfies it.
+    Read-only, so a frozen model qualifies."""
 
-    lut: int
-    ff: int
-    bram36: float
-    dsp: int
+    @property
+    def lut(self) -> int: ...
+
+    @property
+    def ff(self) -> int: ...
+
+    @property
+    def bram36(self) -> float: ...
+
+    @property
+    def dsp(self) -> int: ...
 
 
 class FitReport(BaseModel):
