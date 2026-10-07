@@ -20,7 +20,10 @@ and `thunderbolt-release`. Full field lists are in the
 [task catalog](../reference/tasks-and-steps.md).
 
 Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
-JTAG cable) is board and host configuration, not a code default. Compose
+JTAG cable) is board and host configuration, not a code default. The packaged
+example board (`platforms/example/probe`) is a fiction whose every hardware
+value is a placeholder, so it previews plans and refuses `execute=true`; the
+commands below name your own board. Compose
 `platform=platforms/<vendor>/<board>` so the plan takes the board's
 `host_access` facts, or set the `model.<field>=` overrides explicitly. A
 step that needs an unset fact refuses to render.
@@ -42,7 +45,7 @@ The plan is a config group (`plan=plans/<name>`); its own fields are
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -61,7 +64,7 @@ host:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/local-build-and-program \
   plan.source_shell_root=/path/to/vivado-shell-seed \
   plan.dau_core_root=/path/to/dau-core \
@@ -97,7 +100,7 @@ example). With no command the plan ends at the endpoint check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/validate-bitstream \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
@@ -117,7 +120,7 @@ sysfs, program a known-good volatile bitstream, then rescan and re-check:
 
 ```bash
 dau-build task=tasks/hardware/hardware-plan \
-  platform=platforms/example/probe \
+  platform=platforms/<vendor>/<board> \
   plan=plans/recovery \
   model.work_root=outputs/vivado \
   model.execute=true

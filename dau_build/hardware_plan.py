@@ -819,10 +819,12 @@ def _refuse_unsafe_sync(source: Path, destination: Path) -> None:
     """``rsync --delete`` into the wrong place removes whatever is there. The
     two roots must be distinct, not nested, and neither the filesystem root
     nor a home directory."""
+    # Path("") is Path("."): an unset root is the current directory, and an
+    # rsync --delete into it empties whatever the command runs from
+    if source == Path(".") or destination == Path("."):
+        raise ValueError("shell staging needs both a source_shell_root and a work_root; an empty or '.' path is refused")
     src = source.expanduser().resolve()
     dst = destination.expanduser().resolve()
-    if not str(source).strip() or not str(destination).strip():
-        raise ValueError("shell staging needs both a source_shell_root and a work_root")
     if src == dst:
         raise ValueError(f"shell staging source and work root are the same directory: {src}")
     if src in dst.parents or dst in src.parents:

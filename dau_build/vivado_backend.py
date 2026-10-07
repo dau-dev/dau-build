@@ -555,9 +555,11 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         ("overlay_tcl", request.overlay_tcl),
         ("manifest_path", request.backend_request.resolved_manifest_path),
         ("command_plan_path", request.backend_request.resolved_command_plan_path),
-        ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings),
         ("vivado", request.vivado_executable),
     ]
+    if request.vivado_settings is not None:
+        # an absent settings file is absent on replay too; "" would compose to Path(".")
+        overrides.append(("vivado_settings", request.vivado_settings))
     if request.vivado_invocation != "standard":
         overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
@@ -581,9 +583,10 @@ def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str
         ("manifest_path", request.backend_request.resolved_manifest_path),
         ("command_plan_path", request.backend_request.resolved_command_plan_path),
         ("project_manifest_path", request.resolved_project_manifest_path),
-        ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings),
         ("vivado", request.vivado_executable),
     ]
+    if request.vivado_settings is not None:
+        overrides.append(("vivado_settings", request.vivado_settings))
     if request.vivado_invocation != "standard":
         overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
@@ -847,9 +850,11 @@ def _validate_project_manifest_commands(
         ("--overlay-tcl", overlay_tcl),
         ("--manifest-path", manifest_path.as_posix()),
         ("--command-plan-path", command_plan_path.as_posix()),
-        ("--vivado-settings", vivado_settings),
         ("--vivado", vivado_executable),
     ]
+    if vivado_settings:
+        # recorded only when the host named one; an absent settings file is absent on replay too
+        stage_required_options.append(("--vivado-settings", vivado_settings))
     if dau_artifact_bundle:
         stage_required_options.append(("--dau-artifact-bundle", dau_artifact_bundle))
     if vivado_invocation != "standard":
@@ -878,9 +883,10 @@ def _validate_project_manifest_commands(
         ("--manifest-path", manifest_path.as_posix()),
         ("--command-plan-path", command_plan_path.as_posix()),
         ("--project-manifest-path", project_manifest_path),
-        ("--vivado-settings", vivado_settings),
         ("--vivado", vivado_executable),
     ]
+    if vivado_settings:
+        build_required_options.append(("--vivado-settings", vivado_settings))
     validate_required_options = [
         ("--work-root", work_root),
         ("--manifest-path", manifest_path.as_posix()),

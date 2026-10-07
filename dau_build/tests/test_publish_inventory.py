@@ -154,3 +154,5 @@ def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) 
         metadata = {k: v for k, v in manifest.metadata.items() if k != missing}
         with pytest.raises(ValueError, match=missing):
             publish_inventory(manifest.model_copy(update={"metadata": metadata}), contract=_CONTRACT)
+    with pytest.raises(ValueError, match="finite"):
+        publish_inventory(manifest.model_copy(update={"metadata": {**manifest.metadata, "wns_ns": float("nan")}}), contract=_CONTRACT)

@@ -1979,3 +1979,5 @@ def test_shell_staging_refuses_an_rsync_that_would_delete_the_wrong_tree(tmp_pat
         _stage_shell_script(source_shell_root=source, work_root=source / "inner")
     with pytest.raises(ValueError, match="filesystem root or home"):
         _stage_shell_script(source_shell_root=source, work_root=Path.home())
+    with pytest.raises(ValueError, match="empty or '.' path"):
+        _stage_shell_script(source_shell_root=source, work_root=Path(""))
