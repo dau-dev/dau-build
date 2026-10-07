@@ -77,28 +77,23 @@ def _registered_point(definition, *, part: str | None, clock_period_ns: float | 
     as no comparison, which rolls up as ``envelope_drift=none``. A drift
     report that cannot see drift is worse than no drift report.
 
-    A LEGACY scalar envelope carries no coordinates at all, so the registry
-    refuses to answer for one; it stays comparable here against a build that
-    used the declared defaults, which is the only claim it supports.
+    A core with no recorded points has nothing to compare against.
     """
-    registered = definition.resources
-    if isinstance(registered, (list, tuple)):
-        # every axis must match. A missing clock is NOT a wildcard: once a
-        # tile carries both an 8 ns and a 10 ns point for the same part and
-        # params, a wildcard silently picks whichever was written first and
-        # reports drift against the wrong one.
-        if params is None or clock_period_ns is None or part is None:
-            return None
-        try:
-            return definition.resource_measurement(part=part, clock_ns=clock_period_ns, params=params)
-        except LookupError:
-            # the registry's own "unmeasured coordinate" refusal: this run
-            # measured something nobody recorded, which is not drift
-            return None
-    # a scalar envelope declares one shape: it is comparable only against a
-    # build that used the declared defaults
-    defaults = {name: spec.default for name, spec in definition.parameters.items()}
-    return registered if params is None or dict(params) == defaults else None
+    if not definition.resources:
+        return None
+    # every axis must match. A missing clock is NOT a wildcard: once a
+    # tile carries both an 8 ns and a 10 ns point for the same part and
+    # params, a wildcard silently picks whichever was written first and
+    # reports drift against the wrong one. (An UNCLOCKED point answers for
+    # any clock by the registry's own rule; that is the registry's call.)
+    if params is None or clock_period_ns is None or part is None:
+        return None
+    try:
+        return definition.resource_measurement(part=part, clock_ns=clock_period_ns, params=params)
+    except LookupError:
+        # the registry's own "unmeasured coordinate" refusal: this run
+        # measured something nobody recorded, which is not drift
+        return None
 
 
 def core_registry():

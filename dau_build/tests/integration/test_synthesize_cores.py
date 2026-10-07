@@ -390,9 +390,10 @@ def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
 
     spellings = set()
     for definition in loaded_cores().values():
-        points = definition.resources if isinstance(definition.resources, (list, tuple)) else ()
+        points = definition.resources or ()
         for point in points:
-            if not 6.6 < point.clock_ns < 6.7:
+            # an unclocked (combinational) point has no spelling to check
+            if point.clock_ns is None or not 6.6 < point.clock_ns < 6.7:
                 continue
             spellings.add(point.clock_ns)
             for spelling in (6.667, 6.66667, 1000.0 / 150.0):
