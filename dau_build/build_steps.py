@@ -555,7 +555,7 @@ class SynthesizeTask(ModuleSelectionModel):
         raise BuildStepError(f"backend {getattr(self.backend, 'name', self.backend)!r} is not a synthesis engine")
 
 
-def _bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
+def bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
     """Resolve and verify the bitstream from an artlink shell-build
     manifest: build_status must be built and the file must match its
     recorded digest — a flashed bitstream is identified by provenance,
@@ -603,7 +603,7 @@ class FlashTask(BuildCallableModel):
         manifest_segment = ""
         if self.manifest_path is not None:
             if self.manifest_path.suffix in (".yaml", ".yml"):
-                bitstream = bitstream or _bitstream_from_shell_build_manifest(self.manifest_path)
+                bitstream = bitstream or bitstream_from_shell_build_manifest(self.manifest_path)
             else:
                 manifest = _read_key_value_manifest(self.manifest_path)
                 _require_built_manifest(self.manifest_path, manifest)
@@ -616,7 +616,7 @@ class FlashTask(BuildCallableModel):
                         f"backend manifest has no packaged artlink manifest: {packaged.as_posix()}; "
                         "run the validate step (execute=True) to package digested provenance before flashing"
                     )
-                bitstream = bitstream or _bitstream_from_shell_build_manifest(packaged)
+                bitstream = bitstream or bitstream_from_shell_build_manifest(packaged)
             manifest_segment = f" manifest={self.manifest_path}"
         if bitstream is None:
             raise BuildStepError("flash requires bitstream or manifest_path")
