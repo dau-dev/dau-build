@@ -172,12 +172,13 @@ class HardwareToolchainConfig(BaseModel):
 
     def required_host_access(self, field_name: str) -> str | tuple[str, ...]:
         """A host-access fact a plan step needs; unset means the caller
-        composed no board/host configuration (dau-build carries none)."""
+        composed no host configuration (dau-build carries none, and a board
+        option alone has none)."""
         value = getattr(self, field_name)
         if value is None:
             raise ValueError(
-                f"{field_name} is unset: hardware access is board/host configuration — "
-                f"compose platform=platforms/<vendor>/<board> with host_access (or set {field_name}=...)"
+                f"{field_name} is unset: hardware access is host configuration — "
+                f"compose platform=platforms/<vendor>/<board>-<host> with host_access (or set {field_name}=...)"
             )
         return value
 

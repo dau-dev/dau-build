@@ -841,8 +841,8 @@ class HardwarePlanTask(BuildCallableModel):
             require_measured(self.platform)
             if self.platform.host_access is None:
                 raise BuildStepError(
-                    f"platform {self.platform.name!r} declares no host_access; add the board's measured "
-                    "access facts to its platform config (or run without platform=) before executing hardware plans"
+                    f"platform {self.platform.name!r} declares no host_access; compose the host option that extends "
+                    "the board with this host's access facts (or run without platform=) before executing hardware plans"
                 )
         bitstream_path = self._bitstream_for(plan)
         config = HardwareToolchainConfig.for_platform(
