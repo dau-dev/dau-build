@@ -322,9 +322,13 @@ endpoint check, and the plan omits the step when no command is configured.
 dau-build ships no smoke payload of its own; the DAU driver smoke, which
 asserts the DAU magic register and prints <code class="docutils literal notranslate"><span class="pre">DAU_SMOKE_OK</span></code>, comes from the
 <code class="docutils literal notranslate"><span class="pre">dau</span></code> package’s config overlay.</p>
-<p>If you already have a bitstream and only want to program it, use
-<code class="docutils literal notranslate"><span class="pre">plan=plans/build-and-program</span></code> with <code class="docutils literal notranslate"><span class="pre">model.bitstream=&lt;path&gt;</span></code> instead. It
-skips staging and the Vivado build.</p>
+<p>If the shell is already built and you only want to program it, use
+<code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code> with the build’s manifest (below). A plan that programs
+an existing image takes it from a built manifest, never from a bare path:
+the task checks the manifest records <code class="docutils literal notranslate"><span class="pre">build_status=built</span></code>, verifies the
+bitstream’s digest and programs a snapshot of the verified bytes under
+<code class="docutils literal notranslate"><span class="pre">&lt;work_root&gt;/flash/</span></code>. Only <code class="docutils literal notranslate"><span class="pre">plan=plans/recovery</span></code> accepts <code class="docutils literal notranslate"><span class="pre">model.bitstream=&lt;path&gt;</span></code>,
+because the image it loads is the board’s fallback, not a build under test.</p>
 </section>
 <section id="validate-an-already-built-bitstream">
 <h2>Validate an already-built bitstream<a class="headerlink" href="#validate-an-already-built-bitstream" title="Link to this heading">¶</a></h2>
@@ -338,7 +342,7 @@ example). With no command the plan ends at the endpoint check:</p>
 <span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/validate-bitstream<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>plan.dau_utils_root<span class="o">=</span>/path/to/dau-utils<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.work_root<span class="o">=</span>outputs/vivado<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>model.bitstream<span class="o">=</span>/path/to/Top_wrapper.bit<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.manifest<span class="o">=</span>outputs/shell/shell-build.artifacts.yaml<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
