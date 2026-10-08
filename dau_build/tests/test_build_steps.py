@@ -12,6 +12,7 @@ from dau_build.build_steps import (
     available_task_names,
 )
 from dau_build.cli import main
+from dau_build.tests.spec_option import write_spec_option
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
@@ -40,19 +41,20 @@ def test_task_dispatch_uses_ccflow_callable_models() -> None:
 @pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
 def test_simulate_task_can_run_a_verilator_testbench(tmp_path: Path) -> None:
     pytest.importorskip("dau_sim.integrations.verilator")
-    spec_path = _write_counter_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _counter_spec_text(), stem="counter")
     testbench_path = _write_counter_testbench(tmp_path)
     work_dir = tmp_path / "verilator-work"
 
     result = _run(
         "task=tasks/sim/simulate",
-        f"model.spec_path={spec_path}",
+        spec,
         "model.module=counter",
         f"model.output_root={work_dir}",
         "simulator=simulators/verilator",
         f"simulator.testbench_path={testbench_path}",
         "simulator.top_module=counter_tb",
         "simulator.expect_stdout=DAU_BUILD_COUNTER_TB_OK",
+        config_dir=config_dir,
     )
 
     assert result.step == "simulate"
@@ -82,15 +84,15 @@ def test_a_task_without_a_spec_is_refused() -> None:
 
 
 def test_the_entrypoint_prints_the_task_result(tmp_path: Path, capsys) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
 
-    exit_code = main(["task=tasks/spec/validate", f"model.spec_path={spec_path}"])
+    exit_code = main(["--config-dir", config_dir, "task=tasks/spec/validate", spec])
 
     assert exit_code == 0
-    assert capsys.readouterr().out.splitlines() == [f"dau-build-spec-valid\tspec={spec_path}"]
+    assert capsys.readouterr().out.splitlines() == ["dau-build-spec-valid\tspec=identity-pipeline"]
 
 
-def _run(*overrides):
+def _run(*overrides, config_dir: str | None = None):
     """Compose and run a task the way the CLI does: Hydra overrides only."""
     from ccflow.utils.hydra import cfg_run
 
@@ -98,65 +100,55 @@ def _run(*overrides):
 
     if len(overrides) == 1 and isinstance(overrides[0], tuple):
         overrides = overrides[0]
-    return cfg_run(compose_config(list(overrides)).cfg)
+    return cfg_run(compose_config(list(overrides), config_dir=config_dir).cfg)
 
 
-def _write_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: identity-pipeline",
-                "top_name: dau_identity_top",
-                "platform: vivado-xdma",
-                "shell: xdma-ddr",
-                "artifact_stem: dau-identity",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - identity",
-                "sources:",
-                f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
-                "modules:",
-                "  - ff",
-                "backend: none",
-                "",
-            )
-        ),
-        encoding="utf-8",
+def _spec_text() -> str:
+    return "\n".join(
+        (
+            "name: identity-pipeline",
+            "top_name: dau_identity_top",
+            "platform: vivado-xdma",
+            "shell: xdma-ddr",
+            "artifact_stem: dau-identity",
+            'register_map_version: "0.1"',
+            'stream_protocol_version: "0.1"',
+            "clock: clk",
+            "reset: reset",
+            "operators:",
+            "  - identity",
+            "sources:",
+            f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
+            "modules:",
+            "  - ff",
+            "backend: none",
+            "",
+        )
     )
-    return spec_path
 
 
-def _write_counter_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "counter-dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: counter-pipeline",
-                "top_name: counter_top",
-                "platform: sim",
-                "shell: unit-test",
-                "artifact_stem: dau-counter",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - counter",
-                "sources:",
-                f"  - {(Path(__file__).parent / 'sv' / 'counter.sv').as_posix()}",
-                "modules:",
-                "  - counter",
-                "backend: none",
-                "",
-            )
-        ),
-        encoding="utf-8",
+def _counter_spec_text() -> str:
+    return "\n".join(
+        (
+            "name: counter-pipeline",
+            "top_name: counter_top",
+            "platform: sim",
+            "shell: unit-test",
+            "artifact_stem: dau-counter",
+            'register_map_version: "0.1"',
+            'stream_protocol_version: "0.1"',
+            "clock: clk",
+            "reset: reset",
+            "operators:",
+            "  - counter",
+            "sources:",
+            f"  - {(Path(__file__).parent / 'sv' / 'counter.sv').as_posix()}",
+            "modules:",
+            "  - counter",
+            "backend: none",
+            "",
+        )
     )
-    return spec_path
 
 
 def _write_counter_testbench(tmp_path: Path) -> Path:

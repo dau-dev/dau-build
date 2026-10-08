@@ -10,7 +10,6 @@ from dau_build.config import model_overrides, run_request_config
 from dau_build.yosys_backend import YosysBackendRequest, _parse_cell_count, run_yosys_synthesis, yosys_script_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_IDENTITY_SPEC = _REPO_ROOT / "examples" / "identity" / "dau-build.yaml"
 
 
 def _slang_available() -> bool:
@@ -86,7 +85,8 @@ def test_synthesize_task_yosys_engine_runs_real_synthesis(tmp_path: Path) -> Non
         "tasks/build/synthesize",
         overrides=[
             "backend=backends/yosys",
-            *model_overrides({"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)}),
+            "spec=specs/identity",
+            *model_overrides({"module": "identity", "output_root": str(tmp_path)}),
         ],
     )
     assert result.step == "synthesize"
@@ -104,7 +104,8 @@ def test_synthesize_task_yosys_slang_frontend_via_hydra_override(tmp_path: Path)
         overrides=[
             "backend=backends/yosys",
             "backend.frontend=slang",
-            *model_overrides({"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)}),
+            "spec=specs/identity",
+            *model_overrides({"module": "identity", "output_root": str(tmp_path)}),
         ],
     )
     assert result.step == "synthesize"

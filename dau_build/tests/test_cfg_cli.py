@@ -42,11 +42,11 @@ def test_profile_only_simulate_falls_back_to_manifest_registry() -> None:
 
 
 def test_cfg_explain_prints_resolved_config(capsys) -> None:
-    exit_code = main(["--explain", "task=tasks/build/synthesize", "model.spec_path=spec.yaml", "model.module=m", "model.output_root=out"])
+    exit_code = main(["--explain", "task=tasks/build/synthesize", "spec=specs/identity", "model.module=m", "model.output_root=out"])
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "_target_: dau_build.build_steps.SynthesizeTask" in captured.out
-    assert "spec_path: spec.yaml" in captured.out
+    assert "name: identity-pipeline" in captured.out
     assert "callable: /model" in captured.out
 
 
@@ -62,7 +62,6 @@ def test_cfg_cli_open_registration_via_config_dir_overlay(tmp_path: Path, capsys
             (
                 "# @package model",
                 "_target_: dau_build.build_steps.SimulateTask",
-                "spec_path: null",
                 "module: ''",
                 "simulator:",
                 "  _target_: dau_build.build_steps.VerilatorSimulator",

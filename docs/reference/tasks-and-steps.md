@@ -25,8 +25,8 @@ hardware. Pass `execute=true` to run the privileged action. Tasks marked
 ### `tasks/spec/inspect`: `InspectTask`
 
 Prints the resolved build-spec summary (each source, metadata file and binary
-asset with the manifest it came from). Reads the spec from `spec_path` or a
-composed `spec=` group. Mode: **run**.
+asset with the manifest it came from). Reads the composed `spec=` group.
+Mode: **run**.
 
 ### `tasks/spec/build`: `BuildArtifactsTask`
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import ConfigDict, Field, StringConstraints
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
@@ -89,17 +89,6 @@ class BuildSpec(BaseModel):
     artifact_manifests: tuple[_NonEmptyStr, ...] = ()
     backend: str = "none"
     base_dir: Path = Path(".")
-
-    @classmethod
-    def from_file(cls, path: Path) -> BuildSpec:
-        """Parse a spec yaml file into a ``BuildSpec`` (sources resolve
-        against the file's directory) via pydantic validation — the same
-        validation the Hydra ``spec=`` group gets. File input for the CLI/tests."""
-        raw = _load_yaml_mapping(path)
-        try:
-            return cls.model_validate({**raw, "base_dir": path.parent})
-        except ValidationError as exc:
-            raise DauBuildSpecError(f"invalid build spec {path.as_posix()}: {exc}") from exc
 
     def resolve(self) -> DauBuildSpec:
         if self.backend not in SUPPORTED_BACKENDS:
@@ -326,12 +315,6 @@ def validate_dau_build_artifact_bundle(manifest_path: Path, *, root: Path | None
     if not _artifact_manifest_includes_generated_top(artifact_manifest, Path(manifest["top_sv"])):
         raise DauBuildSpecError(f"artifact manifest does not include generated top: {manifest['top_sv']}")
     return top_sv_path
-
-
-def _load_yaml_mapping(path: Path) -> dict[str, Any]:
-    from dau_build.packaging import load_yaml_mapping
-
-    return load_yaml_mapping(path, description="build spec", error_type=DauBuildSpecError)
 
 
 def _contract_version_to_u32(version: str) -> int:

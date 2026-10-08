@@ -8,6 +8,7 @@ from ccflow import CallableModel
 
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask
 from dau_build.cli import main
+from dau_build.tests.spec_option import write_spec_option
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
@@ -16,45 +17,45 @@ _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 def test_simulate_task_composes_with_the_default_simulator(tmp_path: Path) -> None:
     assert issubclass(SimulateTask, CallableModel)
 
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
 
     # default simulator is svparser (no simulator= group override)
-    result = _run(("task=tasks/sim/simulate", "model.module=dau_identity_top", f"model.spec_path={spec_path}"))
+    result = _run(("task=tasks/sim/simulate", "model.module=dau_identity_top", spec), config_dir=config_dir)
 
     assert result == BuildStepResult(
         step="simulate",
-        message=f"dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec={spec_path} status=validated",
+        message="dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec=identity-pipeline status=validated",
     )
 
 
 def test_simulate_task_composes_with_the_cocotb_simulator(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
 
     # the simulator is the composed simulator group
-    result = _run("task=tasks/sim/simulate", "simulator=simulators/cocotb", "model.module=dau_identity_top", f"model.spec_path={spec_path}")
+    result = _run("task=tasks/sim/simulate", "simulator=simulators/cocotb", "model.module=dau_identity_top", spec, config_dir=config_dir)
 
     assert result == BuildStepResult(
         step="simulate",
-        message=f"dau-build-simulate\ttask=simulate simulator=cocotb module=dau_identity_top spec={spec_path} status=validated",
+        message="dau-build-simulate\ttask=simulate simulator=cocotb module=dau_identity_top spec=identity-pipeline status=validated",
     )
 
 
 def test_simulate_task_requires_selected_module_to_match_spec(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
 
     with pytest.raises(BuildStepError, match="module 'missing' is not provided by spec"):
-        _run(("task=tasks/sim/simulate", "model.module=missing", f"model.spec_path={spec_path}"))
+        _run(("task=tasks/sim/simulate", "model.module=missing", spec), config_dir=config_dir)
 
 
 def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
     output_root = tmp_path / "artifacts"
 
-    inspect = _run(("task=tasks/spec/inspect", f"model.spec_path={spec_path}"))
+    inspect = _run(("task=tasks/spec/inspect", spec), config_dir=config_dir)
     assert inspect.step == "inspect"
     assert "name=identity-pipeline" in inspect.message
 
-    build = _run(("task=tasks/spec/build", f"model.spec_path={spec_path}", f"model.output_root={output_root}"))
+    build = _run(("task=tasks/spec/build", spec, f"model.output_root={output_root}"), config_dir=config_dir)
     manifest_path = output_root / "dau-identity.manifest"
     assert build == BuildStepResult(
         step="build",
@@ -69,21 +70,22 @@ def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
 
 
 def test_synthesize_task_maps_the_engine_to_a_backend_handoff(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
     output_root = tmp_path / "out"
 
     result = _run(
         (
             "task=tasks/build/synthesize",
             "model.module=dau_identity_top",
-            f"model.spec_path={spec_path}",
+            spec,
             f"model.output_root={output_root}",
-        )
+        ),
+        config_dir=config_dir,
     )
 
     assert result.step == "synthesize"
     assert result.message.startswith(
-        f"dau-build-synthesize\ttask=synthesize engine=vivado module=dau_identity_top spec={spec_path} "
+        f"dau-build-synthesize\ttask=synthesize engine=vivado module=dau_identity_top spec=identity-pipeline "
         f"output_root={output_root} manifest={output_root / 'dau-identity.manifest'} "
         f"top_sv={output_root / 'generated' / 'dau_identity_top.sv'} "
     )
@@ -96,16 +98,17 @@ def test_synthesize_task_maps_the_engine_to_a_backend_handoff(tmp_path: Path) ->
 
 
 def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle(tmp_path: Path) -> None:
-    spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _arrow_lite_aggregator_spec_text())
     output_root = tmp_path / "out"
 
     synthesize_result = _run(
         (
             "task=tasks/build/synthesize",
             "model.module=stream_doubler",
-            f"model.spec_path={spec_path}",
+            spec,
             f"model.output_root={output_root}",
-        )
+        ),
+        config_dir=config_dir,
     )
 
     backend_manifest_path = output_root / "vivado" / "dau-int32-arrow-lite.manifest"
@@ -366,13 +369,13 @@ def test_a_built_overlay_manifest_with_negative_slack_is_refused(tmp_path: Path)
 
 
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
-    spec_path = _write_spec(tmp_path)
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
 
-    exit_code = main(["task=tasks/sim/simulate", "model.module=dau_identity_top", f"model.spec_path={spec_path}"])
+    exit_code = main(["--config-dir", config_dir, "task=tasks/sim/simulate", "model.module=dau_identity_top", spec])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
-        f"dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec={spec_path} status=validated"
+        "dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec=identity-pipeline status=validated"
     ]
 
 
@@ -404,7 +407,7 @@ def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
     assert pyproject["project"]["entry-points"]["hydra.lernaplugins"]["dau-build"] == "pkg:dau_build.config"
 
 
-def _run(*overrides):
+def _run(*overrides, config_dir: str | None = None):
     """Compose and run a task the way the CLI does: Hydra overrides only."""
     from ccflow.utils.hydra import cfg_run
 
@@ -412,65 +415,55 @@ def _run(*overrides):
 
     if len(overrides) == 1 and isinstance(overrides[0], tuple):
         overrides = overrides[0]
-    return cfg_run(compose_config(list(overrides)).cfg)
+    return cfg_run(compose_config(list(overrides), config_dir=config_dir).cfg)
 
 
-def _write_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: identity-pipeline",
-                "top_name: dau_identity_top",
-                "platform: vivado-xdma",
-                "shell: xdma-ddr",
-                "artifact_stem: dau-identity",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - identity",
-                "sources:",
-                f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
-                "modules:",
-                "  - ff",
-                "backend: none",
-                "",
-            )
-        ),
-        encoding="utf-8",
+def _spec_text() -> str:
+    return "\n".join(
+        (
+            "name: identity-pipeline",
+            "top_name: dau_identity_top",
+            "platform: vivado-xdma",
+            "shell: xdma-ddr",
+            "artifact_stem: dau-identity",
+            'register_map_version: "0.1"',
+            'stream_protocol_version: "0.1"',
+            "clock: clk",
+            "reset: reset",
+            "operators:",
+            "  - identity",
+            "sources:",
+            f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
+            "modules:",
+            "  - ff",
+            "backend: none",
+            "",
+        )
     )
-    return spec_path
 
 
-def _write_arrow_lite_aggregator_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "arrow-lite-dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: arrow-lite-aggregation-pipeline",
-                "top_name: dau_int32_arrow_lite_top",
-                "platform: vivado-xdma",
-                "shell: xdma-ddr",
-                "artifact_stem: dau-int32-arrow-lite",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: rst",
-                "operators:",
-                "  - int32-arrow-lite-aggregation",
-                "sources:",
-                f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
-                "modules:",
-                "  - stream_doubler",
-                "backend: vivado",
-                "",
-            )
-        ),
-        encoding="utf-8",
+def _arrow_lite_aggregator_spec_text() -> str:
+    return "\n".join(
+        (
+            "name: arrow-lite-aggregation-pipeline",
+            "top_name: dau_int32_arrow_lite_top",
+            "platform: vivado-xdma",
+            "shell: xdma-ddr",
+            "artifact_stem: dau-int32-arrow-lite",
+            'register_map_version: "0.1"',
+            'stream_protocol_version: "0.1"',
+            "clock: clk",
+            "reset: rst",
+            "operators:",
+            "  - int32-arrow-lite-aggregation",
+            "sources:",
+            f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
+            "modules:",
+            "  - stream_doubler",
+            "backend: vivado",
+            "",
+        )
     )
-    return spec_path
 
 
 def _read_manifest(path: Path) -> dict[str, str]:

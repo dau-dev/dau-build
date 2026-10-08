@@ -17,7 +17,7 @@ tab-separated `label⇥key=value` status lines, so a leading word such as
 Start by looking at what the example declares:
 
 ```bash
-dau-build task=tasks/spec/inspect model.spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/spec/inspect spec=specs/identity
 ```
 
 **Output**, a summary line and then the resolved inputs:
@@ -40,7 +40,7 @@ Nothing has been generated yet.
 Generate the build outputs into a fresh directory:
 
 ```bash
-dau-build task=tasks/spec/build model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
+dau-build task=tasks/spec/build spec=specs/identity model.output_root=outputs/identity
 ```
 
 **Output**, the two headline artifacts it wrote:
@@ -90,19 +90,19 @@ default simulator, `svparser`, parses and checks the module without an
 external simulator:
 
 ```bash
-dau-build task=tasks/sim/simulate model.module=dau_identity_top model.spec_path=examples/identity/dau-build.yaml
+dau-build task=tasks/sim/simulate spec=specs/identity model.module=dau_identity_top
 ```
 
 **Output:**
 
 ```text
-dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
+dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=identity-pipeline status=validated
 ```
 
 `status=validated` means the module checked out against the build spec. As
 in the earlier steps, `task=tasks/sim/simulate` selected a task from the
-config tree and the `model.module=` and `model.spec_path=` overrides
-supplied its fields.
+config tree, `spec=specs/identity` composed the build spec and the
+`model.module=` override supplied the module.
 
 ## What you have done
 
