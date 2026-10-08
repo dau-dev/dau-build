@@ -147,7 +147,8 @@ Produces a live hardware-session command sequence for the plan composed from
 the `plan` group (`plan=plans/<name>`). The task owns the shared toolchain
 fields (`work_root`, `bitstream`, `vivado`, `jtag_cable` and so on); each plan
 owns its own fields (`plan.dau_core_root`, for example). Host access composes
-from the `platform` group's `host_access` (`platform=platforms/<vendor>/<board>`).
+from the `platform` group's `host_access`, which a host option extending the
+board sets (`platform=platforms/<vendor>/<board>-<host>` from a `--config-dir`).
 dau-build has no board defaults, so a step that needs an unset fact fails to
 render. Required: `plan`, `work_root`. Mode: **plan** (pass `execute=true` on
 the hardware host). The plan models are in the

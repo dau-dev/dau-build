@@ -177,7 +177,9 @@ known-good core byte for byte.
   config-only generation stays open.
 - `host_access` (`HostAccess`: `pci_id`, `endpoint_bdf`, `rescan_bdfs`,
   `runtime_pm_patterns`, `runtime_pm_executable`, `jtag_cable`): the bench
-  host's measured access facts. `HardwarePlanTask` composes its toolchain
+  host's measured access facts. A board option leaves this unset; a host
+  option extending the board (`platforms/<vendor>/<board>-<host>`, composed
+  from a `--config-dir`) sets it. `HardwarePlanTask` composes its toolchain
   config from these when `platform=` is selected; explicit task fields take
   precedence.
 

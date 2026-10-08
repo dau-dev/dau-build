@@ -263,11 +263,15 @@ board.</p>
 and <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
 <p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
-JTAG cable) is board and host configuration, not a code default. The packaged
+JTAG cable) is host configuration, not a code default and not a board fact. A
+board option describes the card; the host that holds the card gets its own
+platform option that extends the board option with <code class="docutils literal notranslate"><span class="pre">host_access</span></code> and the
+trained link (<code class="docutils literal notranslate"><span class="pre">host_link.expected_link_width</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>), kept
+wherever that host’s facts live and composed with <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>. The packaged
 example board (<code class="docutils literal notranslate"><span class="pre">platforms/example/probe</span></code>) is a fiction whose every hardware
 value is a placeholder, so it previews plans and refuses <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>; the
 commands below name your own board. Compose
-<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code> so the plan takes the board’s
+<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code> so the plan takes that host’s
 <code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts, or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly. A
 step that needs an unset fact refuses to render.</p>
 <blockquote>

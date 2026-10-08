@@ -507,7 +507,9 @@ board. <code class="docutils literal notranslate"><span class="pre">require_meas
 config-only generation stays open.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>, <code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>,
 <code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>): the bench
-host’s measured access facts. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain
+host’s measured access facts. A board option leaves this unset; a host
+option extending the board (<code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code>, composed
+from a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>) sets it. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain
 config from these when <code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected; explicit task fields take
 precedence.</p></li>
 </ul>
