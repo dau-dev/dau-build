@@ -278,8 +278,13 @@ def test_parse_reports_carries_the_digest_of_the_hdl_it_read(tmp_path: Path) -> 
 
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, resolve=loaded_cores().get)
     assert report.measured_from == definition.hdl_closure_digest(loaded_cores().get)
-    # nothing stamped yet: no comparison, which is not the same as a match
-    assert report.registered_measured_from_matches is None
+    if definition.measured_from is None:
+        # nothing stamped: no comparison, which is not the same as a match
+        assert report.registered_measured_from_matches is None
+    else:
+        # the registry was stamped from this very closure, so the digests agree
+        assert definition.measured_from == report.measured_from
+        assert report.registered_measured_from_matches is True
 
 
 def test_parse_reports_flags_a_stamp_that_disagrees_with_the_hdl(tmp_path: Path) -> None:
