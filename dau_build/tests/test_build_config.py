@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from ccflow import BaseModel
 from pydantic import ValidationError
@@ -13,9 +11,6 @@ from dau_build.build_config import (
     OperatorConfig,
     ResolvedBuildConfig,
 )
-from dau_build.build_spec import BuildSpec
-
-_EXAMPLE_SPEC = Path(__file__).resolve().parents[2] / "examples" / "identity" / "dau-build.yaml"
 
 
 def test_config_models_are_pydantic() -> None:
@@ -36,9 +31,8 @@ def test_memory_config_rejects_negative() -> None:
     assert MemoryConfig().host_staging_bytes == 0  # defaults are valid
 
 
-@pytest.mark.skipif(not _EXAMPLE_SPEC.is_file(), reason="example spec not present")
 def test_resolve_build_config_is_a_view_over_the_spec() -> None:
-    spec = BuildSpec.from_file(_EXAMPLE_SPEC).resolve()
+    spec = _identity_spec().resolve()
     resolved = ResolvedBuildConfig.from_spec(spec)
     assert isinstance(resolved, ResolvedBuildConfig)
     assert isinstance(resolved.board, BoardConfig) and isinstance(resolved.memory, MemoryConfig)
@@ -49,3 +43,12 @@ def test_resolve_build_config_is_a_view_over_the_spec() -> None:
     assert resolved.to_text().splitlines()[0] == "dau-build-resolved-config"
     # a task may select the synthesis engine
     assert ResolvedBuildConfig.from_spec(spec, backend_name="vivado").backend.name == "vivado"
+
+
+def _identity_spec():
+    """The packaged ``spec=specs/identity`` option, composed as the CLI would."""
+    from hydra.utils import instantiate
+
+    from dau_build.config import compose_config
+
+    return instantiate(compose_config(["spec=specs/identity"]).cfg.spec)

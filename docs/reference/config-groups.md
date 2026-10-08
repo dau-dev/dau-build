@@ -33,21 +33,20 @@ Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
 other groups use their singular key (`# @package board`, and so on).
 
-| Group       | `@package` key | Instantiated model                        | Selects                                                          |
-| ----------- | -------------- | ----------------------------------------- | ---------------------------------------------------------------- |
-| `task`      | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                         |
-| `step`      | `model`        | a `…Step` `ccflow.CallableModel`          | A lower-level plumbing operation.                                |
-| `spec`      | `spec`         | `dau_build.build_spec.BuildSpec`          | A composed build spec (Hydra-native alternative to `spec_path`). |
-| `board`     | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                                     |
-| `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                            |
-| `driver`    | `driver`       | `dau_build.build_config.DriverConfig`     | The host driver (OS + transport) in the resolved config.         |
-| `memory`    | `memory`       | `dau_build.build_config.MemoryConfig`     | The build-time staging buffers in the resolved config.           |
-| `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                          |
-| `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                           |
-| `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).                  |
-| `host`      | `host`         | `dau_build.build_config.HostConfig`       | The build host's source checkout roots (none packaged).          |
-| `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.                      |
-| `callable`  | none           | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.                 |
+| Group       | `@package` key | Instantiated model                        | Selects                                                  |
+| ----------- | -------------- | ----------------------------------------- | -------------------------------------------------------- |
+| `task`      | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                 |
+| `spec`      | `spec`         | `dau_build.build_spec.BuildSpec`          | The build spec a task works on.                          |
+| `board`     | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                             |
+| `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                    |
+| `driver`    | `driver`       | `dau_build.build_config.DriverConfig`     | The host driver (OS + transport) in the resolved config. |
+| `memory`    | `memory`       | `dau_build.build_config.MemoryConfig`     | The build-time staging buffers in the resolved config.   |
+| `simulator` | `simulator`    | a `Simulator` (e.g. `VerilatorSimulator`) | The simulator (used by `SimulateTask`).                  |
+| `platform`  | `platform`     | `dau_build.platforms.PlatformDefinition`  | The full physical platform definition.                   |
+| `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).          |
+| `host`      | `host`         | `dau_build.build_config.HostConfig`       | The build host's source checkout roots (none packaged).  |
+| `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.              |
+| `callable`  | none           | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.         |
 
 ## `task`
 
@@ -76,10 +75,11 @@ Fields per task are in the [task catalog](tasks-and-steps.md).
 ## `spec`
 
 `spec=specs/identity` composes `dau_build.build_spec.BuildSpec` into the `spec`
-key. Tasks and steps read it through `spec: ${oc.select:spec,null}`, so a
-composed `spec=` is an alternative to `model.spec_path=<file>`. The packaged
-`specs/identity` option has `base_dir: examples/identity`, so it resolves only
-when run from the dau-build repository root.
+key; tasks read it through `spec: ${oc.select:spec,null}`, and it is the only
+way a task receives a spec. Your own spec is an option in a `--config-dir`
+overlay (`<dir>/spec/specs/<name>.yaml` with the `_target_` and the fields).
+The packaged `specs/identity` option has `base_dir: examples/identity`, so it
+resolves only when run from the dau-build repository root.
 
 ## `board`
 

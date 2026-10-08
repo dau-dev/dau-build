@@ -70,14 +70,13 @@ class BuildCallableModel(CallableModel):
         return str(value)
 
 
-class SpecPathModel(BuildCallableModel):
-    # `spec` is composed by the Hydra `spec=` group (a BuildSpec); `spec_path`
-    # is file input for the CLI/tests. `board`/`backend` are composed by the
-    # `board=`/`backend=` groups (BoardConfig/BackendConfig) and win over the
-    # spec-derived defaults. Typed Any, not the models, so importing
+class SpecTaskModel(BuildCallableModel):
+    # `spec` is composed by the Hydra `spec=` group (a BuildSpec): a packaged
+    # option, or one in a --config-dir overlay. `board`/`backend` are composed
+    # by the `board=`/`backend=` groups (BoardConfig/BackendConfig) and win
+    # over the spec-derived defaults. Typed Any, not the models, so importing
     # build_steps stays light — build_spec pulls the SV-parser stack (F51).
     spec: Any = None
-    spec_path: Path | None = None
     board: Any = None
     backend: Any = None
     driver: Any = None
@@ -87,23 +86,20 @@ class SpecPathModel(BuildCallableModel):
         return _resolve_build_config(spec, board=self.board, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory)
 
     def load_spec(self):
-        build_spec = self.spec
-        if build_spec is None:
-            if self.spec_path is None:
-                raise BuildStepError("a spec is required: pass spec=<name> or spec_path=<file>")
-            build_spec = _build_spec_api().BuildSpec.from_file(self.spec_path)
-        return build_spec.resolve()
+        if self.spec is None:
+            raise BuildStepError("a spec is required: pass spec=specs/<name> (a packaged option, or one in a --config-dir overlay)")
+        return self.spec.resolve()
 
     @property
     def spec_base_dir(self) -> Path:
-        return Path(self.spec.base_dir) if self.spec is not None else self.spec_path.parent
+        return Path(self.spec.base_dir)
 
     @property
     def spec_label(self) -> str:
-        return self.spec.name if self.spec is not None else str(self.spec_path)
+        return self.spec.name
 
 
-class ModuleSelectionModel(SpecPathModel):
+class ModuleSelectionModel(SpecTaskModel):
     module: str
 
     def load_spec_and_validate_module(self):
@@ -115,13 +111,13 @@ class ModuleSelectionModel(SpecPathModel):
         return spec
 
 
-class InspectTask(SpecPathModel):
+class InspectTask(SpecTaskModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
         return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
 
 
-class BuildArtifactsTask(SpecPathModel):
+class BuildArtifactsTask(SpecTaskModel):
     output_root: Path
 
     @Flow.call
@@ -130,7 +126,7 @@ class BuildArtifactsTask(SpecPathModel):
         return BuildStepResult(step="build", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
 
 
-class ValidateTask(SpecPathModel):
+class ValidateTask(SpecTaskModel):
     # validates a generated artifact bundle when manifest_path is given,
     # otherwise validates the spec
     manifest_path: Path | None = None
@@ -255,9 +251,8 @@ class VerilatorSimulator(Simulator):
 
 
 class SimulateTask(ModuleSelectionModel):
-    # spec_path/module are optional for profile-only Verilator runs, where a
+    # spec/module are optional for profile-only Verilator runs, where a
     # registered profile already carries its sources and top module
-    spec_path: Path | None = None
     module: str = ""
     output_root: Path | None = None
     # the simulator is the composed `simulator` group option; default svparser
@@ -275,7 +270,7 @@ class SimulateTask(ModuleSelectionModel):
         raise BuildStepError(f"simulator {getattr(self.simulator, 'name', self.simulator)!r} is not a simulator")
 
     def _no_spec(self) -> bool:
-        return self.spec is None and self.spec_path is None
+        return self.spec is None
 
     def sim_output_root(self) -> Path:
         return self.output_root or self.spec_base_dir / ".dau-build-sim"
@@ -288,7 +283,7 @@ class SimulateTask(ModuleSelectionModel):
     def require_spec_and_module(self):
         if self._no_spec() or not self.module:
             raise BuildStepError(
-                "task=simulate requires a spec (spec=<name> or spec_path=<file>) and module "
+                "task=simulate requires a spec (spec=specs/<name>) and module "
                 "(or simulator=simulators/verilator with simulator.profile=<name> for a registered profile)"
             )
         return self.load_spec_and_validate_module()

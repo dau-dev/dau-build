@@ -7,7 +7,8 @@ from ccflow.utils.hydra import cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
 from dau_build.build_steps import TASK_MODEL_TYPES, BuildStepResult
-from dau_build.config import load_config
+from dau_build.config import compose_config, load_config
+from dau_build.tests.spec_option import write_spec_option
 
 _CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
@@ -15,7 +16,6 @@ _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 def test_spec_hydra_group_composes_a_buildspec() -> None:
     # the packaged `spec=identity` group composes a BuildSpec into model.spec
-    # — the Hydra-native replacement for a hand-passed spec_path
     result = base_load_config(
         root_config_dir=str(_CONFIG_DIR),
         root_config_name="base",
@@ -45,20 +45,14 @@ def test_packaged_task_configs_instantiate_registered_callable_models(tmp_path: 
 
 
 def test_packaged_base_config_runs_selected_callable_with_ccflow_cfg_run(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-    result = base_load_config(
-        root_config_dir=str(_CONFIG_DIR),
-        root_config_name="base",
-        overrides=["task=tasks/sim/simulate", f"model.spec_path={spec_path}", "model.module=dau_identity_top"],
-        basepath=str(_CONFIG_DIR),
-        debug=False,
-    )
+    config_dir, spec = write_spec_option(tmp_path, _spec_text())
+    result = compose_config(["task=tasks/sim/simulate", spec, "model.module=dau_identity_top"], config_dir=config_dir)
 
     output = cfg_run(result.cfg)
 
     assert output == BuildStepResult(
         step="simulate",
-        message=f"dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec={spec_path} status=validated",
+        message="dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec=identity-pipeline status=validated",
     )
 
 
@@ -77,7 +71,7 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
         "build-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
         "hardware-plan": ("model.plan=thunderbolt-release", f"model.work_root={tmp_path / 'work'}"),
         "overlay-build": (f"model.work_root={tmp_path / 'work'}",),
-        "simulate": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top"),
+        "simulate": ("model.module=dau_identity_top",),
         "inspect": (),
         "build": (f"model.output_root={tmp_path / 'artifacts'}",),
         "validate": (),
@@ -89,7 +83,7 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
             f"model.dau_core_root={tmp_path / 'dau-core'}",
             f"model.dau_driver_root={tmp_path / 'dau-driver'}",
         ),
-        "synthesize": ("model.spec_path=placeholder.yaml", "model.module=dau_identity_top", f"model.output_root={tmp_path / 'out'}"),
+        "synthesize": ("model.module=dau_identity_top", f"model.output_root={tmp_path / 'out'}"),
         "synthesize-cores": ("model.cores=[/dau-core/streaming-top-k]", f"model.output_root={tmp_path / 'ooc'}"),
         "render-cores": ("model.cores=[/dau-core/streaming-top-k]", f"model.output_root={tmp_path / 'render'}"),
         "validate-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
@@ -97,33 +91,28 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
     return base[name.split("/")[-1]]
 
 
-def _write_spec(tmp_path: Path) -> Path:
-    spec_path = tmp_path / "dau-build.yaml"
-    spec_path.write_text(
-        "\n".join(
-            (
-                "name: identity-pipeline",
-                "top_name: dau_identity_top",
-                "platform: vivado-xdma",
-                "shell: xdma-ddr",
-                "artifact_stem: dau-identity",
-                'register_map_version: "0.1"',
-                'stream_protocol_version: "0.1"',
-                "clock: clk",
-                "reset: reset",
-                "operators:",
-                "  - identity",
-                "sources:",
-                f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
-                "modules:",
-                "  - ff",
-                "backend: none",
-                "",
-            )
-        ),
-        encoding="utf-8",
+def _spec_text() -> str:
+    return "\n".join(
+        (
+            "name: identity-pipeline",
+            "top_name: dau_identity_top",
+            "platform: vivado-xdma",
+            "shell: xdma-ddr",
+            "artifact_stem: dau-identity",
+            'register_map_version: "0.1"',
+            'stream_protocol_version: "0.1"',
+            "clock: clk",
+            "reset: reset",
+            "operators:",
+            "  - identity",
+            "sources:",
+            f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
+            "modules:",
+            "  - ff",
+            "backend: none",
+            "",
+        )
     )
-    return spec_path
 
 
 def test_nested_board_and_backend_config_groups_compose() -> None:
@@ -176,7 +165,7 @@ def _resolved(overrides: list[str]):
 
 def test_board_and_backend_groups_override_spec_derived_resolved_config() -> None:
     # board=/backend= compose into the task and win over the spec-derived view
-    base = ["task=tasks/spec/inspect", "model.spec_path=examples/identity/dau-build.yaml"]
+    base = ["task=tasks/spec/inspect", "spec=specs/identity"]
     derived = _resolved(base)
     composed = _resolved([*base, "board=boards/example/probe", "backend=backends/vivado"])
     assert derived.board.name == "vivado-xdma"  # spec-derived: board name = platform
@@ -189,7 +178,7 @@ def test_driver_and_memory_config_groups_compose_and_override() -> None:
     resolved = _resolved(
         [
             "task=tasks/spec/inspect",
-            "model.spec_path=examples/identity/dau-build.yaml",
+            "spec=specs/identity",
             "driver=drivers/host",
             "memory=memories/default",
             "memory.host_staging_bytes=4096",

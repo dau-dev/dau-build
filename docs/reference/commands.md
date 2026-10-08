@@ -41,8 +41,8 @@ The task names and their fields are in the
 Inspect, build and validate a spec or generated bundle:
 
 ```text
-dau-build task=tasks/spec/inspect  model.spec_path=examples/identity/dau-build.yaml
-dau-build task=tasks/spec/build     model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
+dau-build task=tasks/spec/inspect  spec=specs/identity
+dau-build task=tasks/spec/build     spec=specs/identity model.output_root=outputs/identity
 dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
 ```
 

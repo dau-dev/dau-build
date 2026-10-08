@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from dau_build.build_spec import BuildSpec, generate_dau_build_artifacts
+from dau_build.build_spec import generate_dau_build_artifacts
 from dau_build.packaging import artifact_modules, load_artifact_manifest
 
 _EXAMPLE_DIR = Path(__file__).parents[2] / "examples" / "identity"
 
 
 def test_identity_example_build_spec_loads_and_generates_artifacts(tmp_path: Path) -> None:
-    spec = BuildSpec.from_file(_EXAMPLE_DIR / "dau-build.yaml").resolve()
+    spec = _identity_spec().resolve()
     artifacts = generate_dau_build_artifacts(spec, output_root=tmp_path / "out")
 
     assert spec.name == "identity-pipeline"
@@ -28,3 +28,12 @@ def test_identity_generated_artifact_bundle_example_is_portable() -> None:
         artifact.path == Path("generated/dau_identity_top.sv") and artifact_modules(artifact) == ("dau_identity_top",)
         for artifact in manifest.artifacts
     )
+
+
+def _identity_spec():
+    """The packaged ``spec=specs/identity`` option, composed as the CLI would."""
+    from hydra.utils import instantiate
+
+    from dau_build.config import compose_config
+
+    return instantiate(compose_config(["spec=specs/identity"]).cfg.spec)
