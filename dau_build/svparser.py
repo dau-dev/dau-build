@@ -6,7 +6,7 @@ from typing import Literal
 
 from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 try:
     from pyslang import (
@@ -248,6 +248,21 @@ class Inout(Port):
     """Bidirectional port."""
 
 
+class InterfacePort(_Base):
+    """A port typed by an interface (``cam_ifc.bench ds``): the interface name
+    and, when given, the modport it is restricted to."""
+
+    interface: str
+    modport: str = Field(default="")
+
+
+class SvParseError(ValueError):
+    """A construct the parser does not implement, or source it cannot read.
+
+    Raised rather than silently skipping, so a module is never reported with
+    fewer ports, wires or links than its source declares."""
+
+
 class Wire(BaseModel):
     """Internal wire/reg/logic/bit declaration within a module body."""
 
@@ -323,6 +338,7 @@ class Module(_Base):
     inputs: list[Input] = Field(default_factory=list)
     outputs: list[Output] = Field(default_factory=list)
     inouts: list[Inout] = Field(default_factory=list)
+    interface_ports: list[InterfacePort] = Field(default_factory=list, description="Ports typed by an interface (and modport)")
 
     modports: list[Modport] = Field(default_factory=list, description="Modport inputs/outputs")
     modules: list[Module] = Field(default_factory=list, description="Sub module instantiations")
@@ -386,9 +402,16 @@ class Module(_Base):
             if not declarations:
                 raise ValueError("no module or interface declaration found")
             root = declarations[-1]
-        if root.kind == SyntaxKind.InterfaceDeclaration:
-            return Interface(name=root.header.name.value, node=root)
-        return Module(name=root.header.name.value, node=root)
+        model = Interface if root.kind == SyntaxKind.InterfaceDeclaration else Module
+        try:
+            return model(name=root.header.name.value, node=root)
+        except ValidationError as error:
+            # parsing runs inside a validator; surface its refusal as what it is
+            for item in error.errors(include_context=True):
+                cause = (item.get("ctx") or {}).get("error")
+                if isinstance(cause, SvParseError):
+                    raise cause from None
+            raise
 
     def to_string(self, indent=""):
         ret = f"\n{indent}{self.__class__.__name__}({self.name})"
@@ -549,8 +572,15 @@ class Module(_Base):
             for port in port_items:
                 if isinstance(port, ImplicitAnsiPortSyntax):
                     if isinstance(port.header, InterfacePortHeaderSyntax):
-                        # TODO
-                        raise NotImplementedError("Modports coming soon")
+                        modport = port.header.modport
+                        self.interface_ports.append(
+                            InterfacePort(
+                                name=port.declarator.name.value,
+                                interface=port.header.nameOrKeyword.valueText,
+                                modport=modport.member.valueText if modport is not None else "",
+                                node=port,
+                            )
+                        )
                     else:
                         direction = port.header.direction.valueText
                         if isinstance(port.header.dataType, ImplicitTypeSyntax):
@@ -587,15 +617,13 @@ class Module(_Base):
                                 )
                             )
                         else:
-                            # TODO: ref ports, etc.
-                            assert False
+                            raise SvParseError(f"{self.name}: port direction {direction!r} is not supported ({str(port).strip()})")
                 elif port.kind == TokenKind.Comma or port.kind in (TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
                     continue
                 else:
-                    assert False
+                    raise SvParseError(f"{self.name}: port form not supported: {str(port).strip()}")
         else:
-            # TODO
-            assert False
+            raise SvParseError(f"{self.name}: non-ANSI port lists are not supported")
 
     def _parse_modules(self):
         for member in self.node.members:
@@ -654,8 +682,8 @@ class Module(_Base):
                 keyword = "wire"
                 try:
                     dimensions = self._parse_dimensions(member.type)
-                except Exception:  # noqa: BLE001  # unparseable net type falls back to scalar
-                    dimensions = Dimensions(dimensions=[1])
+                except Exception as error:
+                    raise SvParseError(f"{self.name}: net declaration not supported: {str(member).strip()}") from error
                 for decl in member.declarators:
                     name = decl.name.value
                     unpacked = ""
@@ -746,8 +774,8 @@ class Module(_Base):
                             val = str(connection.expr[0][0]).strip()
                         link = Link(name=val, connection=val, position=i)
                         mod.links.append(link)
-                    except Exception:  # noqa: BLE001, S110  # skip connections whose expr shape we can't read
-                        pass
+                    except Exception as error:
+                        raise SvParseError(f"{self.name}: port connection not supported: {str(connection).strip()}") from error
             gen_block.modules.append(mod)
             return
         try:
@@ -838,9 +866,9 @@ class Design(BaseModel):
         for f in sorted(path.glob(f"*.{extension}")):
             try:
                 mod = Module.from_file(f)
-                design.modules[mod.name] = mod
-            except Exception:  # noqa: BLE001, S110  # skip files that fail to parse, keep the rest
-                pass
+            except SvParseError as error:
+                raise SvParseError(f"{f}: {error}") from error
+            design.modules[mod.name] = mod
         return design
 
     @classmethod
