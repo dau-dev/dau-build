@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="prev" title="Task and step catalog" href="../reference/tasks-and-steps.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="prev" title="Task catalog" href="../reference/tasks-and-steps.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>Architecture: how dau-build composes work from Hydra config - dau-build v0.14.0</title>
@@ -204,7 +204,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../reference/config-groups.html">Config group reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../reference/tasks-and-steps.html">Task and step catalog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reference/tasks-and-steps.html">Task catalog</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Architecture: how dau-build composes work from Hydra config</a></li>
 </ul>
 
@@ -279,12 +279,11 @@ file’s path relative to the group directory. A file at
 The names are paths because the groups nest. Short aliases are not supported,
 so a name always tells you where its file is.</p>
 <p>Each option file opens with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that decides where
-its content lands in the composed config. Tasks and steps declare
+its content lands in the composed config. Tasks declare
 <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>, so a selected task becomes the <code class="docutils literal notranslate"><span class="pre">model</span></code> that runs. Boards,
 backends, specs and platforms declare their own singular key. The base config
 <code class="docutils literal notranslate"><span class="pre">config/base.yaml</span></code> lists every group as <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>, so nothing is
-selected until you override it, and a run picks exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or
-<code class="docutils literal notranslate"><span class="pre">step=</span></code> to fill <code class="docutils literal notranslate"><span class="pre">model</span></code>. The <a class="reference internal" href="../reference/config-groups.html"><span class="std std-doc">config group reference</span></a>
+selected until you override it, and a run picks <code class="docutils literal notranslate"><span class="pre">task=</span></code> to fill <code class="docutils literal notranslate"><span class="pre">model</span></code>. The <a class="reference internal" href="../reference/config-groups.html"><span class="std std-doc">config group reference</span></a>
 has the full list.</p>
 <p>Because groups are directories and options are files, the config tree is the
 catalog. Adding a task is adding a file; the name-to-class registry is derived
@@ -293,8 +292,8 @@ place to register it.</p>
 </section>
 <section id="the-override-syntax">
 <h2>The override syntax<a class="headerlink" href="#the-override-syntax" title="Link to this heading">¶</a></h2>
-<p>A single <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> command takes three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code> (or
-<code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code>) selects the runnable and composes it into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.
+<p>A single <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> command takes three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code>
+selects the runnable and composes it into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.
 <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code> selects a config group: <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code>,
 <code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And
 <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code> sets a field on the selected model. The <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix
@@ -423,7 +422,7 @@ needs, with yosys as the worked example.</p>
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Task and step catalog</div>
+                <div class="title">Task catalog</div>
                 
               </div>
             </a>

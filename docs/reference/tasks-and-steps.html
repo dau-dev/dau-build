@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Architecture: how dau-build composes work from Hydra config" href="../explanation/architecture.html"><link rel="prev" title="Config group reference" href="config-groups.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>Task and step catalog - dau-build v0.14.0</title>
+        <title>Task catalog - dau-build v0.14.0</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
@@ -204,7 +204,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="commands.html">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="config-groups.html">Config group reference</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Task and step catalog</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Task catalog</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../explanation/architecture.html">Architecture: how dau-build composes work from Hydra config</a></li>
 </ul>
 
@@ -244,20 +244,19 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section class="tex2jax_ignore mathjax_ignore" id="task-and-step-catalog">
-<h1>Task and step catalog<a class="headerlink" href="#task-and-step-catalog" title="Link to this heading">¶</a></h1>
-<p>Tasks and steps are <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s selected from the <code class="docutils literal notranslate"><span class="pre">task</span></code> and <code class="docutils literal notranslate"><span class="pre">step</span></code>
-config groups. This page lists each one, its <code class="docutils literal notranslate"><span class="pre">_target_</span></code> model, its required
+          <section class="tex2jax_ignore mathjax_ignore" id="task-catalog">
+<h1>Task catalog<a class="headerlink" href="#task-catalog" title="Link to this heading">¶</a></h1>
+<p>Tasks are <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code>s selected from the <code class="docutils literal notranslate"><span class="pre">task</span></code> config group. This
+page lists each one, its <code class="docutils literal notranslate"><span class="pre">_target_</span></code> model, its required
 fields (those set to <code class="docutils literal notranslate"><span class="pre">???</span></code> in the config, which you must supply as overrides),
 and its default execution mode.</p>
-<p>The complete field set with defaults for any task or step is self-describing:</p>
+<p>The complete field set with defaults for any task is self-describing:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=&lt;path&gt;
-dau-build --explain step=&lt;path&gt;
 </pre></div>
 </div>
 <p>Fields marked <strong>required</strong> have no default and must be overridden. Field
 overrides take a <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix (<code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code>), because the selected
-task or step is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.</p>
+task is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.</p>
 <p>Tasks whose default mode is <strong>plan</strong> have <code class="docutils literal notranslate"><span class="pre">execute:</span> <span class="pre">false</span></code> and produce plans,
 manifests and staged files without invoking a vendor toolchain or touching
 hardware. Pass <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> to run the privileged action. Tasks marked
@@ -394,65 +393,6 @@ the hardware host). The plan models are in the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
 </section>
 </section>
-<section id="steps">
-<h2>Steps<a class="headerlink" href="#steps" title="Link to this heading">¶</a></h2>
-<p>Steps are lower-level operations over the spec and artifact bundle. All read
-the spec from <code class="docutils literal notranslate"><span class="pre">spec_path</span></code> or a composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> group, and accept optional
-<code class="docutils literal notranslate"><span class="pre">board=</span></code> and <code class="docutils literal notranslate"><span class="pre">backend=</span></code> groups.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Step</p></th>
-<th class="head"><p>Model</p></th>
-<th class="head"><p>Required</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/inspect</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">InspectStep</span></code></p></td>
-<td><p>none</p></td>
-<td><p>Print the resolved spec summary.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/validate</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">ValidateStep</span></code></p></td>
-<td><p>none</p></td>
-<td><p>Validate the spec or bundle.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/explain</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">ExplainStep</span></code></p></td>
-<td><p>none</p></td>
-<td><p>Explain the resolved inputs.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/resolved-config</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">ResolvedConfigStep</span></code></p></td>
-<td><p>none</p></td>
-<td><p>Print the resolved build config (spec + board + backend view).</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/generate</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">GenerateStep</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">output_root</span></code></p></td>
-<td><p>Generate the DAU top and artifacts.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/write</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WriteStep</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">output_root</span></code></p></td>
-<td><p>Write the artifact bundle.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">steps/synthesis</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">SynthesisStep</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">output_root</span></code></p></td>
-<td><p>Produce the synthesis handoff.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">steps/simulate</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">SimulateStep</span></code></p></td>
-<td><p>none</p></td>
-<td><p>Run a simulation (fields prefixed <code class="docutils literal notranslate"><span class="pre">simulate_*</span></code>).</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
 </section>
 
         </article>
@@ -510,7 +450,7 @@ the spec from <code class="docutils literal notranslate"><span class="pre">spec_
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Task and step catalog</a><ul>
+<li><a class="reference internal" href="#">Task catalog</a><ul>
 <li><a class="reference internal" href="#tasks">Tasks</a><ul>
 <li><a class="reference internal" href="#tasks-spec-inspect-inspecttask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/inspect</span></code>: <code class="docutils literal notranslate"><span class="pre">InspectTask</span></code></a></li>
 <li><a class="reference internal" href="#tasks-spec-build-buildartifactstask"><code class="docutils literal notranslate"><span class="pre">tasks/spec/build</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildArtifactsTask</span></code></a></li>
@@ -529,7 +469,6 @@ the spec from <code class="docutils literal notranslate"><span class="pre">spec_
 <li><a class="reference internal" href="#tasks-hardware-hardware-plan-hardwareplantask"><code class="docutils literal notranslate"><span class="pre">tasks/hardware/hardware-plan</span></code>: <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#steps">Steps</a></li>
 </ul>
 </li>
 </ul>

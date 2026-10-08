@@ -204,7 +204,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Command reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="config-groups.html">Config group reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tasks-and-steps.html">Task and step catalog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tasks-and-steps.html">Task catalog</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../explanation/architecture.html">Architecture: how dau-build composes work from Hydra config</a></li>
 </ul>
 
@@ -288,27 +288,23 @@ runs typed <code class="docutils literal notranslate"><span class="pre">ccflow.C
 <td><p>the task to run (populates <code class="docutils literal notranslate"><span class="pre">model</span></code>)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code></p></td>
-<td><p>a low-level step to run (populates <code class="docutils literal notranslate"><span class="pre">model</span></code>)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code></p></td>
 <td><p>a config group option: <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">design=</span></code>, <code class="docutils literal notranslate"><span class="pre">plan=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code></p></td>
-<td><p>a field on the selected task or step model</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code></p></td>
+<td><p>a field on the selected task model</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">model.output_root=out</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Task, step and group option names are paths into the config tree
-(<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">step=steps/inspect</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>).
+<p>Task and group option names are paths into the config tree
+(<code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/yosys</span></code>).
 Short names such as <code class="docutils literal notranslate"><span class="pre">task=simulate</span></code> are not accepted.</p>
-<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> exits with an error if neither <code class="docutils literal notranslate"><span class="pre">task=</span></code> nor <code class="docutils literal notranslate"><span class="pre">step=</span></code> is given, since
-nothing then populates <code class="docutils literal notranslate"><span class="pre">model</span></code>.</p>
-<p>The task and step names and their fields are in the
+<p><code class="docutils literal notranslate"><span class="pre">dau-build</span></code> exits with an error if <code class="docutils literal notranslate"><span class="pre">task=</span></code> is not given, since nothing then
+populates <code class="docutils literal notranslate"><span class="pre">model</span></code>.</p>
+<p>The task names and their fields are in the
 <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>. The groups selectable with
 <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=</span></code> are in the
 <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
@@ -328,11 +324,6 @@ Vivado engine:</p>
 </div>
 <p>Show what a set of overrides composes to, without running:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build --explain task=tasks/build/synthesize spec=specs/identity backend=backends/yosys
-</pre></div>
-</div>
-<p>Run a low-level step. Steps are plumbing for development; the user-facing
-workflows are tasks:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build step=steps/validate model.spec_path=examples/identity/dau-build.yaml
 </pre></div>
 </div>
 </section>

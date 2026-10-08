@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Task and step catalog" href="tasks-and-steps.html"><link rel="prev" title="Command reference" href="commands.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Task catalog" href="tasks-and-steps.html"><link rel="prev" title="Command reference" href="commands.html">
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>Config group reference - dau-build v0.14.0</title>
@@ -204,7 +204,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../how-to/extend-dau-build.html">How to extend dau-build</a></li>
 <li class="toctree-l1"><a class="reference internal" href="commands.html">Command reference</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Config group reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tasks-and-steps.html">Task and step catalog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tasks-and-steps.html">Task catalog</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../explanation/architecture.html">Architecture: how dau-build composes work from Hydra config</a></li>
 </ul>
 
@@ -269,8 +269,7 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 </pre></div>
 </div>
 <p>Every group except <code class="docutils literal notranslate"><span class="pre">callable</span></code> is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
-you override it. A run selects exactly one of <code class="docutils literal notranslate"><span class="pre">task=</span></code> or <code class="docutils literal notranslate"><span class="pre">step=</span></code> to populate
-<code class="docutils literal notranslate"><span class="pre">model</span></code>, and may add <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>,
+you override it. A run selects <code class="docutils literal notranslate"><span class="pre">task=</span></code> to populate <code class="docutils literal notranslate"><span class="pre">model</span></code>, and may add <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>,
 <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, <code class="docutils literal notranslate"><span class="pre">host=</span></code> and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
 <p>Each option file begins with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that places its
 content under that top-level key. Tasks and steps use <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">model</span></code>; the
@@ -373,22 +372,7 @@ tasks/stage/stage-vivado-project
 tasks/validate/validate-vivado-artifacts
 </pre></div>
 </div>
-<p>Fields per task are in the <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>.</p>
-</section>
-<section id="step">
-<h2><code class="docutils literal notranslate"><span class="pre">step</span></code><a class="headerlink" href="#step" title="Link to this heading">¶</a></h2>
-<p>Packaged options (<code class="docutils literal notranslate"><span class="pre">step=&lt;path&gt;</span></code>):</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>steps/explain
-steps/generate
-steps/inspect
-steps/resolved-config
-steps/simulate
-steps/synthesis
-steps/validate
-steps/write
-</pre></div>
-</div>
-<p>Fields per step are in the <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task and step catalog</span></a>.</p>
+<p>Fields per task are in the <a class="reference internal" href="tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
 </section>
 <section id="spec">
 <h2><code class="docutils literal notranslate"><span class="pre">spec</span></code><a class="headerlink" href="#spec" title="Link to this heading">¶</a></h2>
@@ -620,7 +604,7 @@ evaluator (<code class="docutils literal notranslate"><span class="pre">GraphEva
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Task and step catalog</div>
+                <div class="title">Task catalog</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -667,7 +651,6 @@ evaluator (<code class="docutils literal notranslate"><span class="pre">GraphEva
             <ul>
 <li><a class="reference internal" href="#">Config group reference</a><ul>
 <li><a class="reference internal" href="#task"><code class="docutils literal notranslate"><span class="pre">task</span></code></a></li>
-<li><a class="reference internal" href="#step"><code class="docutils literal notranslate"><span class="pre">step</span></code></a></li>
 <li><a class="reference internal" href="#spec"><code class="docutils literal notranslate"><span class="pre">spec</span></code></a></li>
 <li><a class="reference internal" href="#board"><code class="docutils literal notranslate"><span class="pre">board</span></code></a></li>
 <li><a class="reference internal" href="#backend"><code class="docutils literal notranslate"><span class="pre">backend</span></code></a></li>
