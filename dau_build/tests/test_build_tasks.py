@@ -308,6 +308,63 @@ def test_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
     )
 
 
+def test_overlay_build_tcl_records_the_slack_and_names_a_timing_miss() -> None:
+    """The overlay flow used to write build_status=built without reading the
+    timing report; it now records the routed worst slack and writes
+    timing-failed when the slack is negative or unreadable."""
+    from dau_build.vivado_backend import vivado_build_tcl
+
+    text = vivado_build_tcl()
+    assert "set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]" in text
+    assert 'puts $manifest_file "wns_ns=$wns"' in text
+    assert (
+        'if {[string is double -strict $wns] && $wns >= 0} {\n    puts $manifest_file "build_status=built"\n} else {\n    puts $manifest_file "build_status=timing-failed"\n}'
+        in text
+    )
+
+
+def _built_overlay_artifacts(tmp_path: Path, *, status_line: str):
+    artifacts = generate_vivado_backend_artifacts(
+        VivadoBackendRequest(
+            dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
+            build_root=tmp_path,
+            artifact_stem="dau-ci",
+            overlay_tcl=Path("scripts/dau_ci_overlay.tcl"),
+            bitstream_path=Path("artifacts/dau-ci.bit"),
+        )
+    )
+    _write_backend_artifacts(artifacts)
+    for relative in ("artifacts/dau-ci.bit", "reports/dau_utilization.rpt", "reports/dau_timing_summary.rpt", "vivado.log"):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text("x\n")
+    artifacts.manifest_path.write_text(artifacts.manifest_text.replace("build_status=planned", status_line))
+    return artifacts
+
+
+def test_a_timing_failed_overlay_manifest_validates_as_what_it_is(tmp_path: Path) -> None:
+    _built_overlay_artifacts(tmp_path, status_line="wns_ns=-0.301\nbuild_status=timing-failed")
+    result = _run(
+        "task=tasks/validate/validate-vivado-artifacts",
+        f"model.work_root={tmp_path}",
+        "model.manifest_path=dau-ci.manifest",
+        "model.command_plan_path=dau-ci.plan",
+        "model.execute=true",
+    )
+    assert "build_status=timing-failed" in result.message
+
+
+def test_a_built_overlay_manifest_with_negative_slack_is_refused(tmp_path: Path) -> None:
+    _built_overlay_artifacts(tmp_path, status_line="wns_ns=-0.301\nbuild_status=built")
+    with pytest.raises(BuildStepError, match="timing-failed"):
+        _run(
+            "task=tasks/validate/validate-vivado-artifacts",
+            f"model.work_root={tmp_path}",
+            "model.manifest_path=dau-ci.manifest",
+            "model.command_plan_path=dau-ci.plan",
+            "model.execute=true",
+        )
+
+
 def test_dau_build_main_dispatches_public_task_arguments(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 

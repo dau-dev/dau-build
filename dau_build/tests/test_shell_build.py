@@ -44,6 +44,18 @@ def test_parse_console_markers() -> None:
     assert parse_shell_build_console("vivado died\n") == ShellBuildStatus(build_status="unknown")
 
 
+def test_a_timing_miss_is_its_own_status_whatever_marker_printed_it() -> None:
+    """The guard in the generated script prints TIMING_FAILED; a script
+    generated before the guard printed OK with a negative slack, and an
+    unreadable slack proves nothing either way. All three are timing-failed:
+    the number is the proof, not the marker."""
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_TIMING_FAILED wns=-0.525\n") == ShellBuildStatus(build_status="timing-failed", wns_ns=-0.525)
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_OK wns=-0.004\n") == ShellBuildStatus(build_status="timing-failed", wns_ns=-0.004)
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_OK wns=\n") == ShellBuildStatus(build_status="timing-failed", wns_ns=None)
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_OK wns=nan\n") == ShellBuildStatus(build_status="timing-failed", wns_ns=None)
+    assert parse_shell_build_console("DAU_MM_JOB_BUILD_OK wns=0.0\n") == ShellBuildStatus(build_status="built", wns_ns=0.0)
+
+
 def test_manifest_packages_outputs_with_digests(tmp_path: Path) -> None:
     output_root = _fake_shell_output(tmp_path)
     source = tmp_path / "tile.sv"
@@ -80,15 +92,25 @@ def test_run_build_with_stub_vivado(tmp_path: Path) -> None:
     assert (output_root / "dau_mm_job.bit").is_file()
 
 
-def test_run_build_raises_on_failure_marker(tmp_path: Path) -> None:
+def test_run_build_returns_the_failure_status(tmp_path: Path) -> None:
     output_root = tmp_path / "shell"
     output_root.mkdir()
     (output_root / "build_mm_job.tcl").write_text("# generated\n")
     vivado = tmp_path / "fail-vivado"
     vivado.write_text("#!/bin/sh\necho 'DAU_MM_JOB_BUILD_FAILED implementation'\nexit 1\n")
     vivado.chmod(vivado.stat().st_mode | stat.S_IXUSR)
-    with pytest.raises(ShellBuildError, match="implementation"):
-        run_shell_project_build(output_root, vivado_executable=str(vivado))
+    status = run_shell_project_build(output_root, vivado_executable=str(vivado))
+    assert (status.build_status, status.failed_stage, status.return_code) == ("failed", "implementation", 1)
+
+
+def test_an_ok_marker_with_a_bad_exit_is_not_proof(tmp_path: Path) -> None:
+    output_root = tmp_path / "shell"
+    output_root.mkdir()
+    (output_root / "build_mm_job.tcl").write_text("# generated\n")
+    vivado = tmp_path / "odd-vivado"
+    vivado.write_text("#!/bin/sh\necho 'DAU_MM_JOB_BUILD_OK wns=0.1'\nexit 3\n")
+    vivado.chmod(vivado.stat().st_mode | stat.S_IXUSR)
+    assert run_shell_project_build(output_root, vivado_executable=str(vivado)).build_status == "unknown"
 
 
 def test_task_plan_mode_does_not_execute(tmp_path: Path) -> None:
@@ -146,6 +168,43 @@ def test_task_reachable_from_config_tree() -> None:
     assert "tasks/build/build-shell-project" in available_task_names()
 
 
+def test_task_execute_records_a_timing_miss_and_refuses(tmp_path: Path) -> None:
+    """A build that routed but missed timing leaves a bitstream nobody should
+    flash. The task records the manifest as timing-failed (the design cache
+    and the hardware plans read it) and still fails."""
+    from dau_build.build_steps import BuildStepError
+
+    output_root = tmp_path / "shell"
+    output_root.mkdir()
+    (output_root / "build_mm_job.tcl").write_text("# generated\n")
+    vivado = tmp_path / "late-vivado"
+    vivado.write_text("#!/bin/sh\ntouch dau_mm_job.bit\necho 'DAU_MM_JOB_BUILD_TIMING_FAILED wns=-0.525'\nexit 1\n")
+    vivado.chmod(vivado.stat().st_mode | stat.S_IXUSR)
+
+    with pytest.raises(BuildStepError, match="timing-failed") as exc_info:
+        BuildShellProjectTask(output_root=output_root, vivado=str(vivado), manifest_name="dpv1-test", execute=True)(None)
+
+    manifest = load_artifact_manifest(output_root / SHELL_BUILD_MANIFEST_NAME)
+    assert manifest.metadata["build_status"] == "timing-failed"
+    assert manifest.metadata["wns_ns"] == -0.525
+    assert str(output_root / SHELL_BUILD_MANIFEST_NAME) in str(exc_info.value)
+
+
+def test_task_execute_refuses_a_failed_build_with_no_manifest(tmp_path: Path) -> None:
+    from dau_build.build_steps import BuildStepError
+
+    output_root = tmp_path / "shell"
+    output_root.mkdir()
+    (output_root / "build_mm_job.tcl").write_text("# generated\n")
+    vivado = tmp_path / "fail-vivado"
+    vivado.write_text("#!/bin/sh\necho 'DAU_MM_JOB_BUILD_FAILED synthesis'\nexit 1\n")
+    vivado.chmod(vivado.stat().st_mode | stat.S_IXUSR)
+
+    with pytest.raises(BuildStepError, match="synthesis"):
+        BuildShellProjectTask(output_root=output_root, vivado=str(vivado), execute=True)(None)
+    assert not (output_root / SHELL_BUILD_MANIFEST_NAME).exists()
+
+
 def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None:
     from dau_build.shell_build import write_overlay_build_manifest
 
@@ -167,3 +226,8 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     assert roles.count("bitstream") == 1 and "report" in roles and "build-log" in roles
     bitstream = next(a for a in manifest.artifacts if a.role == "bitstream")
     assert bitstream.digest is not None
+
+    # a timing miss is packaged too, as what it is, with the slack as a number
+    kv.write_text("build_status=timing-failed\nwns_ns=-0.117\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    missed = load_artifact_manifest(write_overlay_build_manifest(work, kv, name="dau-vivado"))
+    assert (missed.metadata["build_status"], missed.metadata["wns_ns"]) == ("timing-failed", -0.117)

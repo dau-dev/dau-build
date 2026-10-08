@@ -12,6 +12,7 @@ filename.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -33,7 +34,8 @@ __all__ = (
 )
 
 SHELL_BUILD_MANIFEST_NAME = "shell-build.artifacts.yaml"
-_BUILD_OK_PATTERN = re.compile(r"^DAU_MM_JOB_BUILD_OK wns=(?P<wns>[-0-9.]+)\s*$", re.MULTILINE)
+_BUILD_OK_PATTERN = re.compile(r"^DAU_MM_JOB_BUILD_OK wns=(?P<wns>\S*)\s*$", re.MULTILINE)
+_TIMING_FAILED_PATTERN = re.compile(r"^DAU_MM_JOB_BUILD_TIMING_FAILED wns=(?P<wns>\S*)\s*$", re.MULTILINE)
 _BUILD_FAILED_PATTERN = re.compile(r"^DAU_MM_JOB_BUILD_FAILED (?P<stage>.+?)\s*$", re.MULTILINE)
 
 
@@ -42,9 +44,14 @@ class ShellBuildError(ValueError):
 
 
 class ShellBuildStatus(BaseModel):
-    """The outcome of a shell project build, parsed from the Vivado console."""
+    """The outcome of a shell project build, parsed from the Vivado console.
 
-    build_status: Literal["built", "failed", "unknown"]
+    ``built`` means the bitstream exists and the routed worst slack is a
+    number at or above zero. ``timing-failed`` means the bitstream exists
+    but the slack is negative or could not be read: an image that must not
+    be flashed, and must not be mistaken for one that can."""
+
+    build_status: Literal["built", "timing-failed", "failed", "unknown"]
     wns_ns: float | None = None
     failed_stage: str | None = None
     return_code: int | None = None
@@ -59,7 +66,8 @@ def run_shell_project_build(
 ) -> ShellBuildStatus:
     """Execute the generated project script in batch mode from inside the
     output root (the scripts resolve their artifacts relative to
-    themselves) and return the parsed build status."""
+    themselves) and return the parsed build status, whatever it is; the
+    caller decides what to record and what to refuse."""
     script_path = output_root / script
     if not script_path.is_file():
         raise ShellBuildError(f"shell project script does not exist: {script_path.as_posix()}")
@@ -74,25 +82,45 @@ def run_shell_project_build(
         )
     status = parse_shell_build_console(log_path.read_text(encoding="utf-8"))
     status.return_code = completed.returncode
-    if completed.returncode != 0 or status.build_status != "built":
-        raise ShellBuildError(
-            f"shell build failed (exit {completed.returncode}, status {status.build_status}"
-            + (f", stage {status.failed_stage}" if status.failed_stage else "")
-            + f"): see {log_path.as_posix()}"
-        )
+    if completed.returncode != 0 and status.build_status == "built":
+        # the marker says built but vivado did not exit cleanly: not provable
+        status.build_status = "unknown"
     return status
+
+
+def describe_failure(status: ShellBuildStatus, log_path: Path) -> str:
+    """One line saying why a build is not ``built``."""
+    detail = f"stage {status.failed_stage}" if status.failed_stage else f"wns_ns={status.wns_ns}"
+    return f"shell build {status.build_status} (exit {status.return_code}, {detail}): see {log_path.as_posix()}"
 
 
 def parse_shell_build_console(console_text: str) -> ShellBuildStatus:
     """Extract the build outcome the generated scripts print: the
-    DAU_MM_JOB_BUILD_OK/FAILED marker and the routed worst negative slack."""
+    DAU_MM_JOB_BUILD_OK / BUILD_TIMING_FAILED / BUILD_FAILED marker and the
+    routed worst slack. An OK marker whose slack is negative or unreadable
+    (scripts generated before the timing guard printed one) reads as
+    ``timing-failed`` too: the marker is not the proof, the number is."""
+    timing_failed = _TIMING_FAILED_PATTERN.search(console_text)
+    if timing_failed:
+        return ShellBuildStatus(build_status="timing-failed", wns_ns=_slack(timing_failed.group("wns")))
     ok = _BUILD_OK_PATTERN.search(console_text)
     if ok:
-        return ShellBuildStatus(build_status="built", wns_ns=float(ok.group("wns")))
+        wns = _slack(ok.group("wns"))
+        if wns is None or wns < 0.0:
+            return ShellBuildStatus(build_status="timing-failed", wns_ns=wns)
+        return ShellBuildStatus(build_status="built", wns_ns=wns)
     failed = _BUILD_FAILED_PATTERN.search(console_text)
     if failed:
         return ShellBuildStatus(build_status="failed", failed_stage=failed.group("stage"))
     return ShellBuildStatus(build_status="unknown")
+
+
+def _slack(text: str) -> float | None:
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _digest(path: Path) -> Digest:
@@ -202,7 +230,8 @@ def write_overlay_build_manifest(work_root: Path, key_value_manifest_path: Path,
     if errors:
         raise ShellBuildError(f"invalid key=value manifest {key_value_manifest_path.as_posix()}: {'; '.join(errors)}")
     manifest = dict(items)
-    if manifest.get("build_status") != "built":
+    build_status = manifest.get("build_status")
+    if build_status not in ("built", "timing-failed"):
         return None
 
     def resolve(key: str) -> Path | None:
@@ -227,12 +256,13 @@ def write_overlay_build_manifest(work_root: Path, key_value_manifest_path: Path,
         if path is not None and path.is_file():
             artifacts.append(Artifact(path=path, kind="metadata" if role != "generated-project-input" else "source", role=role))
 
-    packaged = ArtifactManifest(
-        name=name,
-        intent="output",
-        artifacts=tuple(artifacts),
-        metadata={"build_status": "built", **{k: v for k, v in manifest.items() if k not in ("build_status",)}},
-    )
+    metadata: dict[str, Any] = {k: v for k, v in manifest.items() if k not in ("build_status", "wns_ns")}
+    metadata["build_status"] = build_status
+    if "wns_ns" in manifest:
+        # recorded as a number, the way the shell flow records it, so a
+        # consumer reads one representation
+        metadata["wns_ns"] = _slack(manifest["wns_ns"])
+    packaged = ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=metadata)
     import yaml
 
     manifest_path = key_value_manifest_path.with_suffix(".artifacts.yaml")

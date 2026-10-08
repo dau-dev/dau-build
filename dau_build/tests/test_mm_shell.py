@@ -105,6 +105,8 @@ def test_project_tcl_embeds_personality_staging_and_hook(tmp_path: Path) -> None
     assert 'STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl"' in text
     assert "lane swizzle verified" in text
     assert "DAU_MM_JOB_BUILD_OK" in text
+    # the routed slack gates the OK marker: negative or unreadable is a timing failure, exit 1
+    assert 'if {![string is double -strict $wns] || $wns < 0} {\n    puts "DAU_MM_JOB_BUILD_TIMING_FAILED wns=$wns"\n    exit 1\n}' in text
 
 
 def test_swizzle_hook_covers_all_lanes() -> None:
@@ -174,6 +176,8 @@ def test_ddr_project_tcl_embeds_mig_and_shared_memory_path(tmp_path: Path) -> No
     assert "-offset 0x00010000 -range 0x00010000" in text  # XADC window
     assert 'STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl"' in text
     assert "DAU_MM_JOB_BUILD_OK" in text
+    # the routed slack gates the OK marker: negative or unreadable is a timing failure, exit 1
+    assert 'if {![string is double -strict $wns] || $wns < 0} {\n    puts "DAU_MM_JOB_BUILD_TIMING_FAILED wns=$wns"\n    exit 1\n}' in text
     # no BRAM staging in the DDR shell
     assert "axi_bram_ctrl" not in text
 
