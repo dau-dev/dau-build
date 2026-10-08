@@ -312,8 +312,8 @@ populates <code class="docutils literal notranslate"><span class="pre">model</sp
 <section id="examples">
 <h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
 <p>Inspect, build and validate a spec or generated bundle:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  model.spec_path=examples/identity/dau-build.yaml
-dau-build task=tasks/spec/build     model.spec_path=examples/identity/dau-build.yaml model.output_root=outputs/identity
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build task=tasks/spec/inspect  spec=specs/identity
+dau-build task=tasks/spec/build     spec=specs/identity model.output_root=outputs/identity
 dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-identity.manifest model.root=outputs/identity
 </pre></div>
 </div>

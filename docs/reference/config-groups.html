@@ -289,62 +289,57 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <td><p>a <code class="docutils literal notranslate"><span class="pre">…Task</span></code> <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code></p></td>
 <td><p>The unit of work to run.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">step</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">model</span></code></p></td>
-<td><p>a <code class="docutils literal notranslate"><span class="pre">…Step</span></code> <code class="docutils literal notranslate"><span class="pre">ccflow.CallableModel</span></code></p></td>
-<td><p>A lower-level plumbing operation.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spec</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">spec</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">spec</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_spec.BuildSpec</span></code></p></td>
-<td><p>A composed build spec (Hydra-native alternative to <code class="docutils literal notranslate"><span class="pre">spec_path</span></code>).</p></td>
+<td><p>The build spec a task works on.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">board</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">board</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">board</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.BoardConfig</span></code></p></td>
 <td><p>A board’s build-config view.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">backend</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">backend</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">backend</span></code></p></td>
 <td><p>a <code class="docutils literal notranslate"><span class="pre">SynthesisEngine</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">VivadoEngine</span></code>)</p></td>
 <td><p>The synthesis engine.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">driver</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">driver</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">driver</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.DriverConfig</span></code></p></td>
 <td><p>The host driver (OS + transport) in the resolved config.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.MemoryConfig</span></code></p></td>
 <td><p>The build-time staging buffers in the resolved config.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">simulator</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">simulator</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">simulator</span></code></p></td>
 <td><p>a <code class="docutils literal notranslate"><span class="pre">Simulator</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">VerilatorSimulator</span></code>)</p></td>
 <td><p>The simulator (used by <code class="docutils literal notranslate"><span class="pre">SimulateTask</span></code>).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">platform</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">platform</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">platform</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code></p></td>
 <td><p>The full physical platform definition.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plan</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plan</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">plan</span></code></p></td>
 <td><p>a <code class="docutils literal notranslate"><span class="pre">HardwarePlan</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">RecoveryPlan</span></code>)</p></td>
 <td><p>The hardware-session plan (<code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code>).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">host</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">host</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">host</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">dau_build.build_config.HostConfig</span></code></p></td>
 <td><p>The build host’s source checkout roots (none packaged).</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
 <td><p>(none packaged)</p></td>
 <td><p>Reserved; registered by extension packages.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
 <td><p>none</p></td>
 <td><p>ccflow registry pointer</p></td>
 <td><p>Fixed evaluator wiring; not normally overridden.</p></td>
@@ -377,10 +372,11 @@ tasks/validate/validate-vivado-artifacts
 <section id="spec">
 <h2><code class="docutils literal notranslate"><span class="pre">spec</span></code><a class="headerlink" href="#spec" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code> composes <code class="docutils literal notranslate"><span class="pre">dau_build.build_spec.BuildSpec</span></code> into the <code class="docutils literal notranslate"><span class="pre">spec</span></code>
-key. Tasks and steps read it through <code class="docutils literal notranslate"><span class="pre">spec:</span> <span class="pre">${oc.select:spec,null}</span></code>, so a
-composed <code class="docutils literal notranslate"><span class="pre">spec=</span></code> is an alternative to <code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code>. The packaged
-<code class="docutils literal notranslate"><span class="pre">specs/identity</span></code> option has <code class="docutils literal notranslate"><span class="pre">base_dir:</span> <span class="pre">examples/identity</span></code>, so it resolves only
-when run from the dau-build repository root.</p>
+key; tasks read it through <code class="docutils literal notranslate"><span class="pre">spec:</span> <span class="pre">${oc.select:spec,null}</span></code>, and it is the only
+way a task receives a spec. Your own spec is an option in a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>
+overlay (<code class="docutils literal notranslate"><span class="pre">&lt;dir&gt;/spec/specs/&lt;name&gt;.yaml</span></code> with the <code class="docutils literal notranslate"><span class="pre">_target_</span></code> and the fields).
+The packaged <code class="docutils literal notranslate"><span class="pre">specs/identity</span></code> option has <code class="docutils literal notranslate"><span class="pre">base_dir:</span> <span class="pre">examples/identity</span></code>, so it
+resolves only when run from the dau-build repository root.</p>
 </section>
 <section id="board">
 <h2><code class="docutils literal notranslate"><span class="pre">board</span></code><a class="headerlink" href="#board" title="Link to this heading">¶</a></h2>

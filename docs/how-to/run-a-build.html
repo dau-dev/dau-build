@@ -270,9 +270,12 @@ not invoke Vivado:</p>
 <span class="w">  </span>model.output_root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
-<p>If your spec is a file rather than a config group, drop <code class="docutils literal notranslate"><span class="pre">spec=</span></code> and pass
-<code class="docutils literal notranslate"><span class="pre">model.spec_path=&lt;file&gt;</span></code> instead. To attach a specific board and backend to
-the resolved config, add <code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span> <span class="pre">backend=backends/vivado</span></code>.</p>
+<p>Your own spec is a <code class="docutils literal notranslate"><span class="pre">spec</span></code> option too: put a yaml file with
+<code class="docutils literal notranslate"><span class="pre">_target_:</span> <span class="pre">dau_build.build_spec.BuildSpec</span></code> and the spec’s fields under
+<code class="docutils literal notranslate"><span class="pre">&lt;dir&gt;/spec/specs/&lt;name&gt;.yaml</span></code> and run with <code class="docutils literal notranslate"><span class="pre">--config-dir</span> <span class="pre">&lt;dir&gt;</span> <span class="pre">spec=specs/&lt;name&gt;</span></code>
+(set <code class="docutils literal notranslate"><span class="pre">base_dir</span></code> to the directory the spec’s relative paths start from). To
+attach a specific board and backend to the resolved config, add
+<code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span> <span class="pre">backend=backends/vivado</span></code>.</p>
 </section>
 <section id="stage-the-vivado-work-directory">
 <h2>Stage the Vivado work directory<a class="headerlink" href="#stage-the-vivado-work-directory" title="Link to this heading">¶</a></h2>

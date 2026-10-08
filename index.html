@@ -272,10 +272,10 @@
 <section id="quickstart">
 <h2>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h2>
 <p>Build the checked-in identity example. No board and no vendor tools are needed:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w">  </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
-dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w">     </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w">  </span><span class="nv">spec</span><span class="o">=</span>specs/identity
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w">     </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
 dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/validate<span class="w">  </span>model.manifest_path<span class="o">=</span>outputs/identity/dau-identity.manifest<span class="w"> </span>model.root<span class="o">=</span>outputs/identity
-dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w">   </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
+dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w">   </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span>model.module<span class="o">=</span>dau_identity_top
 </pre></div>
 </div>
 <p>Task names are paths into the config tree (<code class="docutils literal notranslate"><span class="pre">task=tasks/spec/inspect</span></code>).</p>

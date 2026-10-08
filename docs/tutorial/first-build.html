@@ -259,7 +259,7 @@ tab-separated <code class="docutils literal notranslate"><span class="pre">label
 <section id="step-1-inspect-the-spec">
 <h2>Step 1: inspect the spec<a class="headerlink" href="#step-1-inspect-the-spec" title="Link to this heading">¶</a></h2>
 <p>Start by looking at what the example declares:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/inspect<span class="w"> </span><span class="nv">spec</span><span class="o">=</span>specs/identity
 </pre></div>
 </div>
 <p><strong>Output</strong>, a summary line and then the resolved inputs:</p>
@@ -278,7 +278,7 @@ Nothing has been generated yet.</p>
 <section id="step-2-generate-the-artifacts">
 <h2>Step 2: generate the artifacts<a class="headerlink" href="#step-2-generate-the-artifacts" title="Link to this heading">¶</a></h2>
 <p>Generate the build outputs into a fresh directory:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/spec/build<span class="w"> </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span>model.output_root<span class="o">=</span>outputs/identity
 </pre></div>
 </div>
 <p><strong>Output</strong>, the two headline artifacts it wrote:</p>
@@ -316,17 +316,17 @@ than partway through a Vivado run.</p>
 <p>Validate the generated top against the spec through the simulation task. The
 default simulator, <code class="docutils literal notranslate"><span class="pre">svparser</span></code>, parses and checks the module without an
 external simulator:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span>model.module<span class="o">=</span>dau_identity_top<span class="w"> </span>model.spec_path<span class="o">=</span>examples/identity/dau-build.yaml
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/simulate<span class="w"> </span><span class="nv">spec</span><span class="o">=</span>specs/identity<span class="w"> </span>model.module<span class="o">=</span>dau_identity_top
 </pre></div>
 </div>
 <p><strong>Output:</strong></p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=examples/identity/dau-build.yaml status=validated
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dau-build-simulate	task=simulate simulator=svparser module=dau_identity_top spec=identity-pipeline status=validated
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">status=validated</span></code> means the module checked out against the build spec. As
 in the earlier steps, <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code> selected a task from the
-config tree and the <code class="docutils literal notranslate"><span class="pre">model.module=</span></code> and <code class="docutils literal notranslate"><span class="pre">model.spec_path=</span></code> overrides
-supplied its fields.</p>
+config tree, <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code> composed the build spec and the
+<code class="docutils literal notranslate"><span class="pre">model.module=</span></code> override supplied the module.</p>
 </section>
 <section id="what-you-have-done">
 <h2>What you have done<a class="headerlink" href="#what-you-have-done" title="Link to this heading">¶</a></h2>
