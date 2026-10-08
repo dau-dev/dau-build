@@ -7,31 +7,16 @@ import pytest
 from ccflow import CallableModel
 
 from dau_build.build_steps import (
-    STEP_MODEL_TYPES,
     TASK_MODEL_TYPES,
     BuildStepError,
-    BuildStepResult,
-    available_step_names,
     available_task_names,
-    execute_override_step,
-    parse_override_dict,
 )
 from dau_build.cli import main
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 
-def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
-    assert available_step_names() == (
-        "steps/explain",
-        "steps/generate",
-        "steps/inspect",
-        "steps/resolved-config",
-        "steps/simulate",
-        "steps/synthesis",
-        "steps/validate",
-        "steps/write",
-    )
+def test_task_dispatch_uses_ccflow_callable_models() -> None:
     assert available_task_names() == (
         "tasks/build/build-shell-project",
         "tasks/build/build-vivado-artifacts",
@@ -49,179 +34,29 @@ def test_build_step_and_task_dispatch_uses_ccflow_callable_models() -> None:
         "tasks/stage/stage-vivado-project",
         "tasks/validate/validate-vivado-artifacts",
     )
-    assert all(issubclass(model_type, CallableModel) for model_type in STEP_MODEL_TYPES.values())
     assert all(issubclass(model_type, CallableModel) for model_type in TASK_MODEL_TYPES.values())
 
 
-def test_parse_override_dict_accepts_hydra_style_keys() -> None:
-    overrides = parse_override_dict(("step=steps/inspect", "spec_path=examples/identity/dau-build.yaml", "+driver.os=linux"))
-
-    assert overrides == {
-        "step": "steps/inspect",
-        "spec_path": "examples/identity/dau-build.yaml",
-        "driver.os": "linux",
-    }
-
-
-def test_parse_override_dict_rejects_non_override_tokens() -> None:
-    with pytest.raises(BuildStepError, match="expected key=value"):
-        parse_override_dict(("inspect",))
-
-
-def test_execute_inspect_step_from_override_dict(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-
-    result = execute_override_step(("step=steps/inspect", f"spec_path={spec_path}"))
-
-    assert result == BuildStepResult(
-        step="inspect",
-        message="dau-build-spec\tname=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=ff sources=1 clock=clk reset=reset backend=none",
-    )
-
-
-def test_execute_validate_step_from_override_dict(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-
-    result = execute_override_step(("step=steps/validate", f"spec_path={spec_path}"))
-
-    assert result == BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={spec_path}")
-
-
-def test_execute_generate_step_returns_unwritten_artifact_paths(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-    output_root = tmp_path / "out"
-
-    result = execute_override_step(("step=steps/generate", f"spec_path={spec_path}", f"output_root={output_root}"))
-
-    assert result == BuildStepResult(
-        step="generate",
-        message=f"dau-build-artifacts-generated\tmanifest={output_root / 'dau-identity.manifest'} top_sv={output_root / 'generated' / 'dau_identity_top.sv'}",
-    )
-    assert not (output_root / "generated" / "dau_identity_top.sv").exists()
-
-
-def test_execute_write_step_persists_artifacts(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-    output_root = tmp_path / "out"
-
-    result = execute_override_step(("step=steps/write", f"spec_path={spec_path}", f"output_root={output_root}"))
-
-    assert result == BuildStepResult(
-        step="write",
-        message=f"dau-build-artifacts\tmanifest={output_root / 'dau-identity.manifest'} top_sv={output_root / 'generated' / 'dau_identity_top.sv'}",
-    )
-    assert (output_root / "generated" / "dau_identity_top.sv").is_file()
-
-
-def test_resolved_config_step_reports_typed_board_driver_operator_and_memory_models(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-
-    # the resolved config is a view over the spec — no bespoke override dict
-    result = execute_override_step(("step=steps/resolved-config", f"spec_path={spec_path}"))
-
-    assert result == BuildStepResult(
-        step="resolved-config",
-        message="dau-build-resolved-config\nboard\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr\nbackend\tname=none invocation=dry-run\ndriver\tos=host transport=xdma\noperators\tset=spec names=identity\nmemory\thost_staging_bytes=0 device_staging_bytes=0",
-    )
-
-
-def test_simulate_step_validates_sources_and_reports_local_simulation_inputs(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-
-    result = execute_override_step(("step=steps/simulate", f"spec_path={spec_path}"))
-
-    assert result == BuildStepResult(
-        step="simulate",
-        message=f"dau-build-simulate\tspec={spec_path} top=dau_identity_top modules=ff sources=1 engine=svparser status=validated",
-    )
-
-
 @pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
-def test_simulate_step_can_run_verilator_testbench(tmp_path: Path) -> None:
+def test_simulate_task_can_run_a_verilator_testbench(tmp_path: Path) -> None:
     pytest.importorskip("dau_sim.integrations.verilator")
     spec_path = _write_counter_spec(tmp_path)
     testbench_path = _write_counter_testbench(tmp_path)
     work_dir = tmp_path / "verilator-work"
 
-    result = execute_override_step(
-        (
-            "step=steps/simulate",
-            f"spec_path={spec_path}",
-            "simulate.engine=verilator",
-            f"simulate.testbench_path={testbench_path}",
-            "simulate.top_module=counter_tb",
-            "simulate.expect_stdout=DAU_BUILD_COUNTER_TB_OK",
-            f"output_root={work_dir}",
-        )
+    result = _run(
+        "task=tasks/sim/simulate",
+        f"model.spec_path={spec_path}",
+        "model.module=counter",
+        f"model.output_root={work_dir}",
+        "simulator=simulators/verilator",
+        f"simulator.testbench_path={testbench_path}",
+        "simulator.top_module=counter_tb",
+        "simulator.expect_stdout=DAU_BUILD_COUNTER_TB_OK",
     )
 
-    assert result == BuildStepResult(
-        step="simulate",
-        message=(
-            f"dau-build-simulate\tspec={spec_path} top=counter_top modules=counter sources=1 engine=verilator "
-            f"testbench={testbench_path} testbench_top=counter_tb work_dir={work_dir} status=passed"
-        ),
-    )
-    assert (work_dir / "obj_dir" / "Vcounter_tb").is_file()
-
-
-@pytest.mark.skipif(which("verilator") is None, reason="verilator not found")
-def test_simulate_step_can_run_verilator_profile_from_artlink_manifest(tmp_path: Path) -> None:
-    pytest.importorskip("dau_sim.integrations.verilator")
-    spec_path = _write_counter_spec(tmp_path)
-    testbench_path = _write_counter_testbench(tmp_path)
-    profile_manifest_path = _write_counter_profile_manifest(tmp_path, testbench_path)
-    work_dir = tmp_path / "verilator-artlink-profile-work"
-
-    result = execute_override_step(
-        (
-            "step=steps/simulate",
-            f"spec_path={spec_path}",
-            "simulate.engine=verilator",
-            "simulate.profile=counter-profile",
-            f"simulate.profile_manifest={profile_manifest_path}",
-            f"output_root={work_dir}",
-        )
-    )
-
-    assert result == BuildStepResult(
-        step="simulate",
-        message=(
-            f"dau-build-simulate\tspec={spec_path} top=counter_top modules=counter sources=1 engine=verilator "
-            f"profile=counter-profile testbench_top=counter_tb work_dir={work_dir} status=passed"
-        ),
-    )
-    assert (work_dir / "obj_dir" / "Vcounter_tb").is_file()
-
-
-def test_synthesis_step_writes_local_artifacts_for_backend_handoff(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-    output_root = tmp_path / "out"
-
-    result = execute_override_step(("step=steps/synthesis", f"spec_path={spec_path}", f"output_root={output_root}"))
-
-    assert result == BuildStepResult(
-        step="synthesis",
-        message=(
-            f"dau-build-synthesis\tbackend=none platform=vivado-xdma shell=xdma-ddr output_root={output_root} "
-            f"manifest={output_root / 'dau-identity.manifest'} top_sv={output_root / 'generated' / 'dau_identity_top.sv'} vivado=not-invoked"
-        ),
-    )
-    assert (output_root / "generated" / "dau_identity_top.sv").is_file()
-    assert (output_root / "dau-identity.manifest").is_file()
-
-
-def test_explain_step_describes_resolved_plan(tmp_path: Path) -> None:
-    spec_path = _write_spec(tmp_path)
-
-    result = execute_override_step(("step=steps/explain", f"spec_path={spec_path}"))
-
-    assert result.message.splitlines() == [
-        "dau-build-explain",
-        f"spec\tpath={spec_path} name=identity-pipeline top=dau_identity_top",
-        "board\tname=vivado-xdma platform=vivado-xdma shell=xdma-ddr",
-        "actions\tvalidate=local simulate=local synthesis=local-handoff artifacts=generate-or-write",
-    ]
+    assert result.step == "simulate"
+    assert "simulator=verilator" in result.message and "status=passed" in result.message
 
 
 def test_public_build_docs_and_tests_do_not_name_internal_hardware_hosts() -> None:
@@ -241,18 +76,29 @@ def test_public_build_docs_and_tests_do_not_name_internal_hardware_hosts() -> No
     assert matches == []
 
 
-def test_execute_step_validates_required_overrides(tmp_path: Path) -> None:
+def test_a_task_without_a_spec_is_refused() -> None:
     with pytest.raises(BuildStepError, match="a spec is required"):
-        execute_override_step(("step=steps/inspect",))
+        _run("task=tasks/spec/inspect")
 
 
-def test_callable_steps_entrypoint_prints_result(tmp_path: Path, capsys) -> None:
+def test_the_entrypoint_prints_the_task_result(tmp_path: Path, capsys) -> None:
     spec_path = _write_spec(tmp_path)
 
-    exit_code = main(["step=steps/validate", f"model.spec_path={spec_path}"])
+    exit_code = main(["task=tasks/spec/validate", f"model.spec_path={spec_path}"])
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [f"dau-build-spec-valid\tspec={spec_path}"]
+
+
+def _run(*overrides):
+    """Compose and run a task the way the CLI does: Hydra overrides only."""
+    from ccflow.utils.hydra import cfg_run
+
+    from dau_build.config import compose_config
+
+    if len(overrides) == 1 and isinstance(overrides[0], tuple):
+        overrides = overrides[0]
+    return cfg_run(compose_config(list(overrides)).cfg)
 
 
 def _write_spec(tmp_path: Path) -> Path:
@@ -320,40 +166,6 @@ def _write_counter_testbench(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return testbench_path
-
-
-def _write_counter_profile_manifest(tmp_path: Path, testbench_path: Path) -> Path:
-    profile_path = tmp_path / "counter-profiles.yaml"
-    profile_path.write_text(
-        "schema: dau.simulation-profile/v0\nprofiles:\n  - name: counter-profile\n    simulator: verilator\n    top_module: counter_tb\n    expect_stdout: DAU_BUILD_COUNTER_TB_OK\n    sources:\n      - artifact: counter-tb\n",
-        encoding="utf-8",
-    )
-    manifest_path = tmp_path / "counter-profiles.artifacts.yaml"
-    manifest_path.write_text(
-        "\n".join(
-            (
-                "schema: artlink.manifest/v0",
-                "name: counter-profiles",
-                "artifacts:",
-                "  - id: counter-profile-metadata",
-                f"    path: {profile_path.name}",
-                "    kind: metadata",
-                "    role: simulation-profile",
-                "    format: dau.simulation-profile/v0",
-                "    provides:",
-                "      - kind: simulation-profile",
-                "        name: counter-profile",
-                "  - id: counter-tb",
-                f"    path: {testbench_path.name}",
-                "    kind: source",
-                "    role: testbench-source",
-                "    language: systemverilog",
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
-    return manifest_path
 
 
 def test_task_dispatch_import_stays_light() -> None:

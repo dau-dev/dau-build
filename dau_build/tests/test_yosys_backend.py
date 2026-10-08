@@ -6,7 +6,7 @@ from shutil import which
 
 import pytest
 
-from dau_build.config import run_request_config
+from dau_build.config import model_overrides, run_request_config
 from dau_build.yosys_backend import YosysBackendRequest, _parse_cell_count, run_yosys_synthesis, yosys_script_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -84,8 +84,10 @@ def test_synthesize_task_yosys_engine_runs_real_synthesis(tmp_path: Path) -> Non
     result = run_request_config(
         "task",
         "tasks/build/synthesize",
-        overrides=["backend=backends/yosys"],
-        model_values={"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)},
+        overrides=[
+            "backend=backends/yosys",
+            *model_overrides({"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)}),
+        ],
     )
     assert result.step == "synthesize"
     assert "engine=yosys frontend=verilog" in result.message
@@ -99,8 +101,11 @@ def test_synthesize_task_yosys_slang_frontend_via_hydra_override(tmp_path: Path)
     result = run_request_config(
         "task",
         "tasks/build/synthesize",
-        overrides=["backend=backends/yosys", "backend.frontend=slang"],
-        model_values={"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)},
+        overrides=[
+            "backend=backends/yosys",
+            "backend.frontend=slang",
+            *model_overrides({"module": "identity", "spec_path": str(_IDENTITY_SPEC), "output_root": str(tmp_path)}),
+        ],
     )
     assert result.step == "synthesize"
     assert "engine=yosys frontend=slang" in result.message

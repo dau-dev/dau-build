@@ -11,8 +11,8 @@ machinery on the command line as the single ``dau-build`` entry point:
     dau-build --explain task=tasks/build/synthesize ...   # resolved config, no run
 
 Overrides are hydra overrides: ``group=option`` selects a config group
-(``backend=``, ``simulator=``, ``design=``, ``plan=``, ``board=``, ``spec=``,
-``step=``) and ``model.field=value`` sets a task field.
+(``backend=``, ``simulator=``, ``design=``, ``plan=``, ``board=``, ``spec=``)
+and ``model.field=value`` sets a task field.
 
 Open registration: a ``--config-dir`` overlay (or a package's own
 ``hydra.lernaplugins`` entry point) can add new task configs and new
@@ -42,11 +42,11 @@ def _parse(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
 
 
 # selecting any of these composes the callable under `model`
-_CALLABLE_GROUPS = ("task", "step", "plan")
+_CALLABLE_GROUPS = ("task", "plan")
 
 
 def _require_selection_resolved(overrides: list[str], cfg) -> None:
-    """Refuse a task/step/plan selection that composed to nothing.
+    """Refuse a task/plan selection that composed to nothing.
 
     These groups are declared ``optional`` so the CLI runs without them,
     which also means hydra DROPS a value it cannot find instead of

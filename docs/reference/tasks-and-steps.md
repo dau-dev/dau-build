@@ -1,20 +1,19 @@
-# Task and step catalog
+# Task catalog
 
-Tasks and steps are `ccflow.CallableModel`s selected from the `task` and `step`
-config groups. This page lists each one, its `_target_` model, its required
+Tasks are `ccflow.CallableModel`s selected from the `task` config group. This
+page lists each one, its `_target_` model, its required
 fields (those set to `???` in the config, which you must supply as overrides),
 and its default execution mode.
 
-The complete field set with defaults for any task or step is self-describing:
+The complete field set with defaults for any task is self-describing:
 
 ```text
 dau-build --explain task=<path>
-dau-build --explain step=<path>
 ```
 
 Fields marked **required** have no default and must be overridden. Field
 overrides take a `model.` prefix (`model.<field>=value`), because the selected
-task or step is composed into the `model` key.
+task is composed into the `model` key.
 
 Tasks whose default mode is **plan** have `execute: false` and produce plans,
 manifests and staged files without invoking a vendor toolchain or touching
@@ -151,20 +150,3 @@ dau-build has no board defaults, so a step that needs an unset fact fails to
 render. Required: `plan`, `work_root`. Mode: **plan** (pass `execute=true` on
 the hardware host). The plan models are in the
 [config group reference](config-groups.md).
-
-## Steps
-
-Steps are lower-level operations over the spec and artifact bundle. All read
-the spec from `spec_path` or a composed `spec=` group, and accept optional
-`board=` and `backend=` groups.
-
-| Step                    | Model                | Required      | Description                                                    |
-| ----------------------- | -------------------- | ------------- | -------------------------------------------------------------- |
-| `steps/inspect`         | `InspectStep`        | none          | Print the resolved spec summary.                               |
-| `steps/validate`        | `ValidateStep`       | none          | Validate the spec or bundle.                                   |
-| `steps/explain`         | `ExplainStep`        | none          | Explain the resolved inputs.                                   |
-| `steps/resolved-config` | `ResolvedConfigStep` | none          | Print the resolved build config (spec + board + backend view). |
-| `steps/generate`        | `GenerateStep`       | `output_root` | Generate the DAU top and artifacts.                            |
-| `steps/write`           | `WriteStep`          | `output_root` | Write the artifact bundle.                                     |
-| `steps/synthesis`       | `SynthesisStep`      | `output_root` | Produce the synthesis handoff.                                 |
-| `steps/simulate`        | `SimulateStep`       | none          | Run a simulation (fields prefixed `simulate_*`).               |

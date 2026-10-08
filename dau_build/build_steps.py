@@ -115,170 +115,6 @@ class ModuleSelectionModel(SpecPathModel):
         return spec
 
 
-class InspectStep(SpecPathModel):
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        return BuildStepResult(step="inspect", message=_build_spec_api().dau_build_spec_summary(self.load_spec()))
-
-
-class ValidateStep(SpecPathModel):
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        self.load_spec()
-        return BuildStepResult(step="validate", message=f"dau-build-spec-valid\tspec={self.spec_label}")
-
-
-class GenerateStep(SpecPathModel):
-    output_root: Path
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        artifacts = _build_spec_api().generate_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
-        return BuildStepResult(
-            step="generate",
-            message=f"dau-build-artifacts-generated\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}",
-        )
-
-
-class WriteStep(SpecPathModel):
-    output_root: Path
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        artifacts = _build_spec_api().write_dau_build_artifacts(self.load_spec(), output_root=self.output_root)
-        return BuildStepResult(step="write", message=f"dau-build-artifacts\tmanifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path}")
-
-
-class ResolvedConfigStep(SpecPathModel):
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        resolved = self._resolved(self.load_spec())
-        return BuildStepResult(step="resolved-config", message=resolved.to_text())
-
-
-class SimulateStep(SpecPathModel):
-    output_root: Path | None = None
-    simulate_engine: Literal["svparser", "verilator"] = Field(default="svparser", alias="simulate.engine")
-    simulate_profile: str | None = Field(default=None, alias="simulate.profile")
-    simulate_profile_manifest: tuple[Path, ...] = Field(default=(), alias="simulate.profile_manifest")
-    simulate_testbench_path: Path | None = Field(default=None, alias="simulate.testbench_path")
-    simulate_top_module: str | None = Field(default=None, alias="simulate.top_module")
-    simulate_expect_stdout: str | None = Field(default=None, alias="simulate.expect_stdout")
-    simulate_verilator: str = Field(default="verilator", alias="simulate.verilator")
-    simulate_extra_args: str = Field(default="", alias="simulate.extra_args")
-
-    @field_validator("simulate_profile_manifest", mode="before")
-    @classmethod
-    def _split_profile_manifest_paths(cls, value):
-        return _split_path_tuple(value)
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        spec = self.load_spec()
-        self._resolved(spec)
-        _build_spec_api().generate_dau_build_artifacts(spec, output_root=self.output_root or self.spec_base_dir / ".dau-build-sim")
-        if self.simulate_engine == "verilator":
-            return self._run_verilator(spec)
-        return BuildStepResult(
-            step="simulate",
-            message=(
-                f"dau-build-simulate\tspec={self.spec_label} top={spec.top_name} modules={','.join(spec.modules)} "
-                f"sources={len(spec.sources)} engine=svparser status=validated"
-            ),
-        )
-
-    def _run_verilator(self, spec) -> BuildStepResult:
-        try:
-            from dau_sim.integrations.verilator import VerilatorExecutionError, VerilatorUnavailableError, run_verilator_testbench
-        except ModuleNotFoundError as exc:
-            raise BuildStepError("simulate.engine=verilator requires dau-sim to be importable") from exc
-
-        from dau_build.simulation_profiles import SimulationProfileError, resolve_profile
-
-        profile = None
-        if self.simulate_profile:
-            try:
-                profile = resolve_profile(self.simulate_profile, profile_manifests=self.simulate_profile_manifest)
-            except SimulationProfileError as exc:
-                raise BuildStepError(str(exc)) from exc
-
-        if profile is not None:
-            testbench_path = None
-            top_module = profile.top_module
-            expected_stdout = self.simulate_expect_stdout or profile.expect_stdout
-            extra_sources = profile.sources
-        else:
-            if self.simulate_testbench_path is None:
-                raise BuildStepError("missing required override: simulate.testbench_path")
-            if not self.simulate_top_module:
-                raise BuildStepError("missing required override: simulate.top_module")
-            testbench_path = self.simulate_testbench_path
-            top_module = self.simulate_top_module
-            expected_stdout = self.simulate_expect_stdout
-            extra_sources = (testbench_path,)
-
-        work_dir = self.output_root or self.spec_base_dir / ".dau-build-sim" / "verilator"
-        extra_args = tuple(shlex.split(self.simulate_extra_args))
-        all_sources = _unique_paths((*spec.sources, *extra_sources))
-        try:
-            result = run_verilator_testbench(
-                sources=all_sources,
-                top_module=top_module,
-                work_dir=work_dir,
-                verilator=self.simulate_verilator,
-                extra_args=extra_args,
-            )
-        except (FileNotFoundError, ValueError, VerilatorExecutionError, VerilatorUnavailableError) as exc:
-            raise BuildStepError(str(exc)) from exc
-
-        if expected_stdout and expected_stdout not in result.stdout:
-            raise BuildStepError(f"verilator stdout did not contain expected text {expected_stdout!r}")
-
-        mode_segment = f"profile={self.simulate_profile} " if self.simulate_profile else f"testbench={testbench_path} "
-        return BuildStepResult(
-            step="simulate",
-            message=(
-                f"dau-build-simulate\tspec={self.spec_label} top={spec.top_name} modules={','.join(spec.modules)} sources={len(spec.sources)} "
-                f"engine=verilator {mode_segment}testbench_top={top_module} work_dir={work_dir} status=passed"
-            ),
-        )
-
-
-class SynthesisStep(SpecPathModel):
-    output_root: Path
-
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        spec = self.load_spec()
-        resolved = self._resolved(spec)
-        artifacts = _build_spec_api().write_dau_build_artifacts(spec, output_root=self.output_root)
-        return BuildStepResult(
-            step="synthesis",
-            message=(
-                f"dau-build-synthesis\tbackend={resolved.backend.name} platform={resolved.board.platform} shell={resolved.board.shell} "
-                f"output_root={self.output_root} manifest={artifacts.manifest_path} top_sv={artifacts.top_sv_path} vivado=not-invoked"
-            ),
-        )
-
-
-class ExplainStep(SpecPathModel):
-    @Flow.call
-    def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        spec = self.load_spec()
-        resolved = self._resolved(spec)
-        return BuildStepResult(
-            step="explain",
-            message="\n".join(
-                (
-                    "dau-build-explain",
-                    f"spec\tpath={self.spec_label} name={spec.name} top={spec.top_name}",
-                    f"board\tname={resolved.board.name} platform={resolved.board.platform} shell={resolved.board.shell}",
-                    "actions\tvalidate=local simulate=local synthesis=local-handoff artifacts=generate-or-write",
-                )
-            ),
-        )
-
-
 class InspectTask(SpecPathModel):
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
@@ -1043,8 +879,8 @@ class HardwarePlanTask(BuildCallableModel):
 def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallableModel]]:
     """A derived index of DAU-BUILD'S OWN packaged config tree: each local
     ``config/<kind>/<name>.yaml`` names its model via ``_target_``, and the
-    name→class maps are derived from it, never hand-maintained. SCOPE: this
-    deliberately covers only the tasks/steps this package ships (its own
+    name→class map is derived from it, never hand-maintained. SCOPE: this
+    deliberately covers only the tasks this package ships (its own
     drift-guards and by-name test helpers). It is NOT the global task
     registry — tasks contributed by other packages on the hydra search path
     (``hydra.lernaplugins``: dau-core, dau-polars, ...) compose and execute
@@ -1068,7 +904,7 @@ def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallable
     return MappingProxyType(model_types)
 
 
-# STEP_MODEL_TYPES / TASK_MODEL_TYPES resolve lazily (module __getattr__):
+# TASK_MODEL_TYPES resolves lazily (module __getattr__):
 # deriving them imports every _target_ module, and a task module defined
 # outside build_steps imports BuildCallableModel from here — eager derivation
 # at import time would make that a circular import. Lazy keeps the config
@@ -1084,111 +920,13 @@ def _model_types(kind: str) -> Mapping[str, type[BuildCallableModel]]:
 
 
 def __getattr__(name: str):
-    if name == "STEP_MODEL_TYPES":
-        return _model_types("step")
     if name == "TASK_MODEL_TYPES":
         return _model_types("task")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def available_step_names() -> tuple[str, ...]:
-    return tuple(sorted(_model_types("step")))
-
-
 def available_task_names() -> tuple[str, ...]:
     return tuple(sorted(_model_types("task")))
-
-
-def parse_override_dict(arguments: Iterable[str]) -> dict[str, str]:
-    overrides: dict[str, str] = {}
-    for argument in arguments:
-        normalized_argument = argument.removeprefix("+")
-        if "=" not in normalized_argument:
-            raise BuildStepError(f"expected key=value override, got {argument!r}")
-        key, value = normalized_argument.split("=", 1)
-        if not key:
-            raise BuildStepError(f"expected non-empty override key, got {argument!r}")
-        if key in overrides:
-            raise BuildStepError(f"duplicate override {key!r}")
-        overrides[key] = value
-    return overrides
-
-
-def execute_override_step(arguments: Iterable[str]) -> BuildStepResult:
-    overrides = parse_override_dict(arguments)
-    step_name = overrides.pop("step", None)
-    if not step_name:
-        raise BuildStepError("missing required override: step")
-    return _execute_named_callable(_model_types("step"), step_name, overrides, request_kind="step")
-
-
-def execute_override_task(arguments: Iterable[str]) -> BuildStepResult:
-    overrides = parse_override_dict(arguments)
-    task_name = overrides.pop("task", None)
-    if not task_name:
-        raise BuildStepError("missing required override: task")
-    if "step" in overrides:
-        raise BuildStepError("task requests cannot also provide step")
-    return _execute_named_callable(_model_types("task"), task_name, overrides, request_kind="task")
-
-
-def execute_override_request(arguments: Iterable[str]) -> BuildStepResult:
-    overrides = parse_override_dict(arguments)
-    task_name = overrides.pop("task", None)
-    step_name = overrides.pop("step", None)
-    if task_name and step_name:
-        raise BuildStepError("provide either task or step, not both")
-    if task_name:
-        return _execute_named_callable(_model_types("task"), task_name, overrides, request_kind="task")
-    if step_name:
-        return _execute_named_callable(_model_types("step"), step_name, overrides, request_kind="step")
-    raise BuildStepError("missing required override: task")
-
-
-def _execute_named_callable(
-    model_types: Mapping[str, type[BuildCallableModel]], request_name: str, overrides: Mapping[str, str], *, request_kind: str
-) -> BuildStepResult:
-    try:
-        model_type = model_types[request_name]
-    except KeyError as exc:
-        known_names = ", ".join(sorted(model_types))
-        raise BuildStepError(f"unknown build {request_kind} {request_name!r}; expected one of: {known_names}") from exc
-    try:
-        model = model_type.model_validate(dict(overrides))
-    except ValidationError as exc:
-        raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
-
-    from dau_build.config import run_request_config
-
-    result = run_request_config(request_kind, request_name, model_values=_model_config_values(model))
-    if not isinstance(result, BuildStepResult):
-        raise BuildStepError(f"build {request_kind} {request_name!r} returned unsupported result {type(result).__name__}")
-    return result
-
-
-def _execute_callable_model(
-    model_type: type[BuildCallableModel], overrides: Mapping[str, str], *, request_kind: str, request_name: str
-) -> BuildStepResult:
-    try:
-        model = model_type.model_validate(dict(overrides))
-    except ValidationError as exc:
-        raise BuildStepError(_validation_error_message(request_kind, request_name, exc)) from exc
-    return model(NullContext())
-
-
-def _model_config_values(model: BuildCallableModel) -> dict[str, Any]:
-    raw = model.model_dump(mode="python", by_alias=False, exclude={"meta", "type_"})
-    return {key: _request_config_value(value) for key, value in raw.items()}
-
-
-def _request_config_value(value: Any) -> Any:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, tuple | list):
-        return [_request_config_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {str(key): _request_config_value(item) for key, item in value.items()}
-    return value
 
 
 def _validation_error_message(request_kind: str, request_name: str, exc: ValidationError) -> str:

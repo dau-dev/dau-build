@@ -37,12 +37,11 @@ The names are paths because the groups nest. Short aliases are not supported,
 so a name always tells you where its file is.
 
 Each option file opens with a `# @package <key>` directive that decides where
-its content lands in the composed config. Tasks and steps declare
+its content lands in the composed config. Tasks declare
 `# @package model`, so a selected task becomes the `model` that runs. Boards,
 backends, specs and platforms declare their own singular key. The base config
 `config/base.yaml` lists every group as `optional … null`, so nothing is
-selected until you override it, and a run picks exactly one of `task=` or
-`step=` to fill `model`. The [config group reference](../reference/config-groups.md)
+selected until you override it, and a run picks `task=` to fill `model`. The [config group reference](../reference/config-groups.md)
 has the full list.
 
 Because groups are directories and options are files, the config tree is the
@@ -52,8 +51,8 @@ place to register it.
 
 ## The override syntax
 
-A single `dau-build` command takes three kinds of override. `task=<path>` (or
-`step=<path>`) selects the runnable and composes it into the `model` key.
+A single `dau-build` command takes three kinds of override. `task=<path>`
+selects the runnable and composes it into the `model` key.
 `<group>=<option>` selects a config group: `spec=specs/identity`,
 `board=boards/example/probe`, `backend=backends/vivado`. And
 `model.<field>=value` sets a field on the selected model. The `model.` prefix

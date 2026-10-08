@@ -39,7 +39,7 @@ dau-build task=tasks/spec/validate  model.manifest_path=outputs/identity/dau-ide
 dau-build task=tasks/sim/simulate   model.module=dau_identity_top model.spec_path=examples/identity/dau-build.yaml
 ```
 
-Task and step names are paths into the config tree (`task=tasks/spec/inspect`, `step=steps/inspect`).
+Task names are paths into the config tree (`task=tasks/spec/inspect`).
 
 ## Documentation
 

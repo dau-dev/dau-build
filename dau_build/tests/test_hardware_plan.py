@@ -6,7 +6,7 @@ import pytest
 
 from dau_build import hardware_plan, vivado_backend
 from dau_build.build_steps import BuildStepError
-from dau_build.config import run_request_config
+from dau_build.config import model_overrides, run_request_config
 from dau_build.hardware_plan import (
     HardwareToolchainConfig,
     build_and_program_plan,
@@ -42,8 +42,13 @@ def _run_plan(plan: str, *, plan_fields=(), **model_values):
         "task",
         "tasks/hardware/hardware-plan",
         # the example board declares placeholders; the plan runner tests drive fake tools, so they clear them
-        overrides=[f"plan=plans/{plan}", "platform=platforms/example/probe", "platform.placeholders=[]", *plan_fields],
-        model_values=model_values,
+        overrides=[
+            f"plan=plans/{plan}",
+            "platform=platforms/example/probe",
+            "platform.placeholders=[]",
+            *plan_fields,
+            *model_overrides(model_values),
+        ],
     )
 
 
@@ -1755,17 +1760,21 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/sram-program"],
-        model_values={
-            "work_root": str(tmp_path),
-            "bitstream": "/tmp/design.bit",
-            "endpoint_bdf": "0000:01:00.0",
-            "reset_bridge_bdf": "0000:00:1c.4",
-            "expected_endpoint_id": "10ee:9034",
-            "jtag_cable": "digilent_hs2",
-            "runtime_pm_patterns": (),
-            "rescan_bdfs": ("0000:00:1c.4",),
-        },
+        overrides=[
+            "plan=plans/sram-program",
+            *model_overrides(
+                {
+                    "work_root": str(tmp_path),
+                    "bitstream": "/tmp/design.bit",
+                    "endpoint_bdf": "0000:01:00.0",
+                    "reset_bridge_bdf": "0000:00:1c.4",
+                    "expected_endpoint_id": "10ee:9034",
+                    "jtag_cable": "digilent_hs2",
+                    "runtime_pm_patterns": (),
+                    "rescan_bdfs": ("0000:00:1c.4",),
+                }
+            ),
+        ],
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
 
@@ -1774,8 +1783,12 @@ def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/sram-program", "platform=platforms/example/probe", "model.deadman_executable=/opt/dau/bin/deadman"],
-        model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
+        overrides=[
+            "plan=plans/sram-program",
+            "platform=platforms/example/probe",
+            "model.deadman_executable=/opt/dau/bin/deadman",
+            *model_overrides({"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"}),
+        ],
     )
     assert "deadman-arm\t/opt/dau/bin/deadman arm --timeout 180" in result.message
     assert "deadman-disarm\t/opt/dau/bin/deadman disarm" in result.message
@@ -1835,8 +1848,12 @@ def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) 
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/sram-program", "platform=platforms/example/probe", "model.privilege_prefix=[]"],
-        model_values={"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"},
+        overrides=[
+            "plan=plans/sram-program",
+            "platform=platforms/example/probe",
+            "model.privilege_prefix=[]",
+            *model_overrides({"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"}),
+        ],
     )
     # dpv1 defaults to sudo; the override clears it (already-root invocation)
     assert "remove-endpoint\tsh -c" in result.message and "remove-endpoint\tsudo" not in result.message
