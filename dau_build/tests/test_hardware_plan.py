@@ -52,6 +52,22 @@ def _run_plan(plan: str, *, plan_fields=(), **model_values):
     )
 
 
+def _built_manifest(tmp_path: Path, *, payload: bytes = b"\x00\x01bitstream") -> tuple[Path, Path]:
+    """A shell build's manifest the way the shell task writes one (built,
+    digested bitstream); returns (manifest_path, the snapshot a plan programs)."""
+    from dau_build.packaging import load_artifact_manifest
+    from dau_build.shell_build import SHELL_BUILD_MANIFEST_NAME, flash_snapshot_path, write_shell_build_manifest
+
+    output_root = tmp_path / "built"
+    output_root.mkdir(exist_ok=True)
+    (output_root / "dau_mm_job.bit").write_bytes(payload)
+    (output_root / "build_mm_job.tcl").write_text("# generated\n")
+    manifest_path = write_shell_build_manifest(output_root, name="test-shell", metadata={"build_status": "built", "wns_ns": 0.1})
+    assert manifest_path == output_root / SHELL_BUILD_MANIFEST_NAME
+    digest = next(a for a in load_artifact_manifest(manifest_path).artifacts if a.role == "bitstream").digest
+    return manifest_path, flash_snapshot_path(tmp_path / "work", digest)
+
+
 EXPECTED_PCI_RESCAN_BDFS = (
     "0000:00:1c.4",
     "0000:00:1c.0",
@@ -1124,21 +1140,45 @@ def test_task_prints_local_build_and_program_plan() -> None:
     assert lines[10].startswith("thunderbolt-release\tdau-utils-pci-runtime-pm release ")
 
 
-def test_task_prints_validate_bitstream_plan_without_vivado() -> None:
+def test_task_prints_validate_bitstream_plan_without_vivado(tmp_path: Path) -> None:
+    manifest_path, snapshot = _built_manifest(tmp_path)
     result = _run_plan(
         "validate-bitstream",
         plan_fields=["plan.smoke_command=dau-smoke"],
-        work_root="/repo/projects/vivado-shell",
-        bitstream="/tmp/candidate.bit",
+        work_root=str(tmp_path / "work"),
+        manifest=str(manifest_path),
     )
 
     lines = result.message.splitlines()
     assert len(lines) == 8
     assert lines[0].startswith("thunderbolt-hold\tdau-utils-pci-runtime-pm hold ")
-    assert lines[3] == "program-volatile\topenFPGALoader -c digilent_hs2 /tmp/candidate.bit"
+    # the plan programs the digest-named snapshot of the manifest's verified bitstream
+    assert lines[3] == f"program-volatile\topenFPGALoader -c digilent_hs2 {snapshot}"
+    assert not snapshot.exists()  # plan mode touches nothing; execute writes it
     assert lines[6] == "driver-hardware-smoke\tsh -c dau-smoke"
     assert lines[7].startswith("thunderbolt-release\tdau-utils-pci-runtime-pm release ")
     assert all("vivado" not in line.lower() for line in lines)
+
+
+def test_a_programming_plan_refuses_a_raw_bitstream_and_a_missing_manifest(tmp_path: Path) -> None:
+    for plan in ("validate-bitstream", "sram-program", "flash"):
+        with pytest.raises(BuildStepError, match="from a built manifest"):
+            _run_plan(plan, work_root=str(tmp_path), bitstream="/tmp/candidate.bit")
+        with pytest.raises(BuildStepError, match="programs a bitstream"):
+            _run_plan(plan, work_root=str(tmp_path))
+
+
+def test_a_manifest_that_is_not_built_is_not_programmable(tmp_path: Path) -> None:
+    manifest_path, _ = _built_manifest(tmp_path)
+    text = manifest_path.read_text().replace("build_status: built", "build_status: timing-failed")
+    manifest_path.write_text(text)
+    with pytest.raises(BuildStepError, match="not programmable.*not built"):
+        _run_plan("sram-program", work_root=str(tmp_path / "work"), manifest=str(manifest_path))
+
+
+def test_recovery_takes_a_raw_bitstream(tmp_path: Path) -> None:
+    result = _run_plan("recovery", work_root=str(tmp_path), bitstream="/srv/fallback/top.bit")
+    assert any(line.endswith("/srv/fallback/top.bit") for line in result.message.splitlines())
 
 
 def test_task_execute_runs_plan_steps_in_order(monkeypatch) -> None:
@@ -1765,7 +1805,7 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
             *model_overrides(
                 {
                     "work_root": str(tmp_path),
-                    "bitstream": "/tmp/design.bit",
+                    "manifest": str(_built_manifest(tmp_path)[0]),
                     "endpoint_bdf": "0000:01:00.0",
                     "reset_bridge_bdf": "0000:00:1c.4",
                     "expected_endpoint_id": "10ee:9034",
@@ -1787,7 +1827,7 @@ def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
             "model.deadman_executable=/opt/dau/bin/deadman",
-            *model_overrides({"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"}),
+            *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
     assert "deadman-arm\t/opt/dau/bin/deadman arm --timeout 180" in result.message
@@ -1852,7 +1892,7 @@ def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) 
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
             "model.privilege_prefix=[]",
-            *model_overrides({"work_root": str(tmp_path), "bitstream": "/tmp/design.bit"}),
+            *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
     # dpv1 defaults to sudo; the override clears it (already-root invocation)

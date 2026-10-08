@@ -817,6 +817,10 @@ class HardwarePlanTask(BuildCallableModel):
     # model); with none, the platform's program_method selects the default
     programmer: Any = None
     work_root: Path
+    # the built shell manifest (shell-build.artifacts.yaml) whose bitstream
+    # the plan programs: status and digest verified, the bytes snapshotted
+    manifest: Path | None = None
+    # a raw bitstream path, accepted by plans that declare accepts_raw_bitstream (recovery)
     bitstream: Path | None = None
     vivado: str = "vivado"
     vivado_invocation: Literal["standard", "source-only"] = "standard"
@@ -845,6 +849,7 @@ class HardwarePlanTask(BuildCallableModel):
                     f"platform {self.platform.name!r} declares no host_access; add the board's measured "
                     "access facts to its platform config (or run without platform=) before executing hardware plans"
                 )
+        bitstream_path = self._bitstream_for(plan)
         config = HardwareToolchainConfig.for_platform(
             self.platform,
             work_root=self.work_root,
@@ -852,7 +857,7 @@ class HardwarePlanTask(BuildCallableModel):
             vivado_executable=self.vivado,
             vivado_invocation=self.vivado_invocation,
             vivado_mount_root=self.vivado_mount_root,
-            bitstream_path=self.bitstream,
+            bitstream_path=bitstream_path,
             openfpgaloader_executable=self.openfpgaloader,
             jtag_cable=self.jtag_cable,
             endpoint_bdf=self.endpoint_bdf,
@@ -881,6 +886,28 @@ class HardwarePlanTask(BuildCallableModel):
         if isinstance(self.plan, HardwarePlan):
             return self.plan
         raise BuildStepError("task=hardware-plan requires plan=plans/<name> (see dau_build/config/plan)")
+
+    def _bitstream_for(self, plan: HardwarePlan) -> Path | None:
+        """The image a programming plan loads: the snapshot of a built
+        manifest's verified bitstream, or (recovery only) a raw path."""
+        from dau_build.shell_build import ShellBuildError, flash_snapshot
+
+        if self.bitstream is not None and self.manifest is not None:
+            raise BuildStepError("pass model.manifest=<shell-build.artifacts.yaml> or model.bitstream=<path>, not both")
+        if self.bitstream is not None and not plan.accepts_raw_bitstream:
+            raise BuildStepError(
+                f"plan {plan.name!r} takes its bitstream from a built manifest: pass model.manifest=<shell-build.artifacts.yaml> "
+                "(a raw bitstream path is accepted by plan=plans/recovery only)"
+            )
+        if self.manifest is None:
+            if plan.programs_bitstream and self.bitstream is None:
+                raise BuildStepError(f"plan {plan.name!r} programs a bitstream: pass model.manifest=<shell-build.artifacts.yaml>")
+            return self.bitstream
+        try:
+            _, snapshot = flash_snapshot(self.manifest, work_root=self.work_root, write=self.execute)
+        except (BuildStepError, ShellBuildError) as exc:
+            raise BuildStepError(f"manifest {self.manifest} is not programmable: {exc}") from exc
+        return snapshot
 
 
 def _model_types_from_config_group(kind: str) -> Mapping[str, type[BuildCallableModel]]:

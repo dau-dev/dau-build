@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from ccflow import BaseModel
 from pydantic import ConfigDict
@@ -948,6 +948,13 @@ class HardwarePlan(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    # A plan that programs an existing image takes it from a built shell
+    # manifest (status and digest verified, the exact bytes snapshotted), never
+    # from a bare path; only recovery accepts a raw bitstream, because the
+    # image it loads is the SPI-resident fallback, not a build under test.
+    programs_bitstream: ClassVar[bool] = False
+    accepts_raw_bitstream: ClassVar[bool] = False
+
     name: str
 
     def compose(self, config: HardwareToolchainConfig) -> tuple[ToolStep, ...]:
@@ -962,6 +969,9 @@ class BuildAndProgramPlan(HardwarePlan):
 
 
 class RecoveryPlan(HardwarePlan):
+    # loads the fallback image: a raw path, or the work root's last build
+    accepts_raw_bitstream = True
+
     name: str = "recovery"
 
     def compose(self, config):
@@ -1009,6 +1019,8 @@ def sram_program_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int
 
 
 class SramProgramPlan(HardwarePlan):
+    programs_bitstream = True
+
     name: str = "sram-program"
     deadman_timeout_s: int = 180
     verify_command: str | None = None
@@ -1018,6 +1030,8 @@ class SramProgramPlan(HardwarePlan):
 
 
 class FlashPlan(HardwarePlan):
+    programs_bitstream = True
+
     name: str = "flash"
     dau_utils_root: Path | None = None
     python: str = "python3"
@@ -1028,6 +1042,8 @@ class FlashPlan(HardwarePlan):
 
 
 class ValidateBitstreamPlan(HardwarePlan):
+    programs_bitstream = True
+
     name: str = "validate-bitstream"
     smoke_command: str | None = None
     dau_utils_root: Path | None = None
