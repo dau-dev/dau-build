@@ -115,6 +115,41 @@ def parse_shell_build_console(console_text: str) -> ShellBuildStatus:
     return ShellBuildStatus(build_status="unknown")
 
 
+def flash_snapshot_path(work_root: Path, digest: Digest) -> Path:
+    """Where a manifest's verified bitstream is snapshotted before programming:
+    named by its digest, so the same image always lands at the same path and
+    two flashes of one design cannot disagree about the bytes."""
+    return work_root / "flash" / f"{digest.value[:16]}.bit"
+
+
+def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool) -> tuple[Path, Path]:
+    """Resolve the bitstream a built manifest names, verify its status and
+    digest, and (when ``write``) copy the exact verified bytes to the
+    digest-named snapshot atomically. Returns ``(source, snapshot)``. The
+    programmer reads the snapshot, so a file replaced under the manifest
+    after verification cannot reach the device: what was verified is what is
+    programmed."""
+    import os
+    import tempfile
+
+    from dau_build.build_steps import bitstream_from_shell_build_manifest
+    from dau_build.packaging import load_artifact_manifest
+
+    source = bitstream_from_shell_build_manifest(manifest_path)
+    bitstream = next(artifact for artifact in load_artifact_manifest(manifest_path).artifacts if artifact.role == "bitstream")
+    snapshot = flash_snapshot_path(work_root, bitstream.digest)
+    if write:
+        data = source.read_bytes()
+        if hashlib.new(bitstream.digest.algorithm, data).hexdigest() != bitstream.digest.value:
+            raise ShellBuildError(f"bitstream digest changed after manifest verification: {source}")
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=snapshot.parent, prefix=f".{snapshot.name}.")
+        with os.fdopen(handle, "wb") as out:
+            out.write(data)
+        os.replace(temporary, snapshot)
+    return source, snapshot
+
+
 def _slack(text: str) -> float | None:
     try:
         value = float(text)

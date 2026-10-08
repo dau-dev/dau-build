@@ -86,9 +86,13 @@ dau-build ships no smoke payload of its own; the DAU driver smoke, which
 asserts the DAU magic register and prints `DAU_SMOKE_OK`, comes from the
 `dau` package's config overlay.
 
-If you already have a bitstream and only want to program it, use
-`plan=plans/build-and-program` with `model.bitstream=<path>` instead. It
-skips staging and the Vivado build.
+If the shell is already built and you only want to program it, use
+`validate-bitstream` with the build's manifest (below). A plan that programs
+an existing image takes it from a built manifest, never from a bare path:
+the task checks the manifest records `build_status=built`, verifies the
+bitstream's digest and programs a snapshot of the verified bytes under
+`<work_root>/flash/`. Only `plan=plans/recovery` accepts `model.bitstream=<path>`,
+because the image it loads is the board's fallback, not a build under test.
 
 ## Validate an already-built bitstream
 
@@ -104,7 +108,7 @@ dau-build task=tasks/hardware/hardware-plan \
   plan=plans/validate-bitstream \
   plan.dau_utils_root=/path/to/dau-utils \
   model.work_root=outputs/vivado \
-  model.bitstream=/path/to/Top_wrapper.bit \
+  model.manifest=outputs/shell/shell-build.artifacts.yaml \
   model.execute=true
 ```
 

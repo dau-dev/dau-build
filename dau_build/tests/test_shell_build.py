@@ -205,6 +205,34 @@ def test_task_execute_refuses_a_failed_build_with_no_manifest(tmp_path: Path) ->
     assert not (output_root / SHELL_BUILD_MANIFEST_NAME).exists()
 
 
+def test_flash_snapshot_programs_what_was_verified(tmp_path: Path) -> None:
+    """The snapshot is the manifest's verified bytes at a digest-named path,
+    written atomically; a file replaced under the manifest after the manifest
+    was written is refused rather than snapshotted."""
+    from dau_build.shell_build import flash_snapshot, flash_snapshot_path, write_shell_build_manifest
+
+    output_root = tmp_path / "shell"
+    output_root.mkdir()
+    (output_root / "dau_mm_job.bit").write_bytes(b"verified bytes")
+    (output_root / "build_mm_job.tcl").write_text("# generated\n")
+    manifest_path = write_shell_build_manifest(output_root, name="t", metadata={"build_status": "built", "wns_ns": 0.2})
+    work_root = tmp_path / "work"
+
+    source, snapshot = flash_snapshot(manifest_path, work_root=work_root, write=False)
+    assert source == output_root / "dau_mm_job.bit"
+    assert snapshot.parent == work_root / "flash" and not snapshot.exists()
+
+    _, written = flash_snapshot(manifest_path, work_root=work_root, write=True)
+    assert written == snapshot and snapshot.read_bytes() == b"verified bytes"
+    digest = next(a for a in load_artifact_manifest(manifest_path).artifacts if a.role == "bitstream").digest
+    assert snapshot == flash_snapshot_path(work_root, digest)
+
+    (output_root / "dau_mm_job.bit").write_bytes(b"replaced after the manifest")
+    with pytest.raises(Exception, match="digest"):
+        flash_snapshot(manifest_path, work_root=work_root, write=True)
+    assert snapshot.read_bytes() == b"verified bytes"  # the earlier snapshot is untouched
+
+
 def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None:
     from dau_build.shell_build import write_overlay_build_manifest
 
