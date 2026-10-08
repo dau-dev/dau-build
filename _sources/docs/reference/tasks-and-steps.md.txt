@@ -101,7 +101,9 @@ Builds a standalone shell project from a generated Tcl script. Required:
 
 Runs the generated overlay/build Vivado command, then validates the artifact
 bundle. Moves the backend manifest from `planned` to `built` once the
-bitstream, resource report, timing report and Vivado log exist. Required:
+bitstream, resource report, timing report and Vivado log exist and the routed
+slack (`wns_ns`) is at or above zero, or to `timing-failed` when it is not.
+Required:
 `work_root`. Default `artifact_stem: dau-vivado`. Mode: **plan** (pass
 `execute=true` on the Vivado host).
 

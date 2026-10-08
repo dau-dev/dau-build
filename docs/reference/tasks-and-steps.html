@@ -342,7 +342,9 @@ rejected as synthesis tops.</p></li>
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/build-vivado-artifacts</span></code>: <code class="docutils literal notranslate"><span class="pre">BuildVivadoArtifactsTask</span></code><a class="headerlink" href="#tasks-build-build-vivado-artifacts-buildvivadoartifactstask" title="Link to this heading">¶</a></h3>
 <p>Runs the generated overlay/build Vivado command, then validates the artifact
 bundle. Moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code> once the
-bitstream, resource report, timing report and Vivado log exist. Required:
+bitstream, resource report, timing report and Vivado log exist and the routed
+slack (<code class="docutils literal notranslate"><span class="pre">wns_ns</span></code>) is at or above zero, or to <code class="docutils literal notranslate"><span class="pre">timing-failed</span></code> when it is not.
+Required:
 <code class="docutils literal notranslate"><span class="pre">work_root</span></code>. Default <code class="docutils literal notranslate"><span class="pre">artifact_stem:</span> <span class="pre">dau-vivado</span></code>. Mode: <strong>plan</strong> (pass
 <code class="docutils literal notranslate"><span class="pre">execute=true</span></code> on the Vivado host).</p>
 </section>

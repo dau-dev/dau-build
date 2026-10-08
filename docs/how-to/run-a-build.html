@@ -320,8 +320,10 @@ needs <code class="docutils literal notranslate"><span class="pre">execute=true<
 </pre></div>
 </div>
 <p>Once the bitstream, resource report, timing report and Vivado log exist,
-this moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code>.
-Flashing and smoke testing downstream require <code class="docutils literal notranslate"><span class="pre">built</span></code>.</p>
+this moves the backend manifest from <code class="docutils literal notranslate"><span class="pre">build_status=planned</span></code> to <code class="docutils literal notranslate"><span class="pre">built</span></code>, and
+records the routed worst slack as <code class="docutils literal notranslate"><span class="pre">wns_ns</span></code>. A run whose slack is negative or
+unreadable is recorded as <code class="docutils literal notranslate"><span class="pre">timing-failed</span></code> instead: the bitstream exists, and
+nothing downstream will flash it. Flashing and smoke testing require <code class="docutils literal notranslate"><span class="pre">built</span></code>.</p>
 <p>Treat the Vivado machine as an ordinary Linux host: SSH in, <code class="docutils literal notranslate"><span class="pre">rsync</span></code> the
 checkouts or the generated work directory you need, <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> the DAU
 packages there, and run the same CLIs. dau-build does not wrap host
