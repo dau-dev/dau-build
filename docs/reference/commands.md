@@ -21,18 +21,17 @@ Every argument after the options is a Hydra override:
 | Form                  | Selects                                                                                             | Example                   |
 | --------------------- | --------------------------------------------------------------------------------------------------- | ------------------------- |
 | `task=<path>`         | the task to run (populates `model`)                                                                 | `task=tasks/sim/simulate` |
-| `step=<path>`         | a low-level step to run (populates `model`)                                                         | `step=steps/inspect`      |
 | `<group>=<option>`    | a config group option: `spec=`, `board=`, `backend=`, `simulator=`, `design=`, `plan=`, `platform=` | `backend=backends/yosys`  |
-| `model.<field>=value` | a field on the selected task or step model                                                          | `model.output_root=out`   |
+| `model.<field>=value` | a field on the selected task model                                                                  | `model.output_root=out`   |
 
-Task, step and group option names are paths into the config tree
-(`task=tasks/sim/simulate`, `step=steps/inspect`, `backend=backends/yosys`).
+Task and group option names are paths into the config tree
+(`task=tasks/sim/simulate`, `backend=backends/yosys`).
 Short names such as `task=simulate` are not accepted.
 
-`dau-build` exits with an error if neither `task=` nor `step=` is given, since
-nothing then populates `model`.
+`dau-build` exits with an error if `task=` is not given, since nothing then
+populates `model`.
 
-The task and step names and their fields are in the
+The task names and their fields are in the
 [task and step catalog](tasks-and-steps.md). The groups selectable with
 `spec=`, `board=`, `backend=` and `platform=` are in the
 [config group reference](config-groups.md).
@@ -58,13 +57,6 @@ Show what a set of overrides composes to, without running:
 
 ```text
 dau-build --explain task=tasks/build/synthesize spec=specs/identity backend=backends/yosys
-```
-
-Run a low-level step. Steps are plumbing for development; the user-facing
-workflows are tasks:
-
-```text
-dau-build step=steps/validate model.spec_path=examples/identity/dau-build.yaml
 ```
 
 ## Composition across packages

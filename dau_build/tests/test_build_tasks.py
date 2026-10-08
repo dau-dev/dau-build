@@ -6,21 +6,20 @@ from pathlib import Path
 import pytest
 from ccflow import CallableModel
 
-from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask, execute_override_request, execute_override_task
+from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask
 from dau_build.cli import main
-from dau_build.config import run_request_config
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
 _SV_DIR = (Path(__file__).parent / ".." / "sv").resolve()
 
 
-def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path: Path) -> None:
+def test_simulate_task_composes_with_the_default_simulator(tmp_path: Path) -> None:
     assert issubclass(SimulateTask, CallableModel)
 
     spec_path = _write_spec(tmp_path)
 
     # default simulator is svparser (no simulator= group override)
-    result = execute_override_request(("task=tasks/sim/simulate", "module=dau_identity_top", f"spec_path={spec_path}"))
+    result = _run(("task=tasks/sim/simulate", "model.module=dau_identity_top", f"model.spec_path={spec_path}"))
 
     assert result == BuildStepResult(
         step="simulate",
@@ -28,16 +27,11 @@ def test_execute_override_request_accepts_public_task_simulate_surface(tmp_path:
     )
 
 
-def test_execute_override_task_accepts_public_cocotb_simulate_surface(tmp_path: Path) -> None:
+def test_simulate_task_composes_with_the_cocotb_simulator(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
     # the simulator is the composed simulator group
-    result = run_request_config(
-        "task",
-        "tasks/sim/simulate",
-        overrides=["simulator=simulators/cocotb"],
-        model_values={"module": "dau_identity_top", "spec_path": str(spec_path)},
-    )
+    result = _run("task=tasks/sim/simulate", "simulator=simulators/cocotb", "model.module=dau_identity_top", f"model.spec_path={spec_path}")
 
     assert result == BuildStepResult(
         step="simulate",
@@ -45,22 +39,22 @@ def test_execute_override_task_accepts_public_cocotb_simulate_surface(tmp_path: 
     )
 
 
-def test_execute_override_task_requires_selected_module_to_match_spec(tmp_path: Path) -> None:
+def test_simulate_task_requires_selected_module_to_match_spec(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
 
     with pytest.raises(BuildStepError, match="module 'missing' is not provided by spec"):
-        execute_override_task(("task=tasks/sim/simulate", "module=missing", f"spec_path={spec_path}"))
+        _run(("task=tasks/sim/simulate", "model.module=missing", f"model.spec_path={spec_path}"))
 
 
 def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "artifacts"
 
-    inspect = execute_override_task(("task=tasks/spec/inspect", f"spec_path={spec_path}"))
+    inspect = _run(("task=tasks/spec/inspect", f"model.spec_path={spec_path}"))
     assert inspect.step == "inspect"
     assert "name=identity-pipeline" in inspect.message
 
-    build = execute_override_task(("task=tasks/spec/build", f"spec_path={spec_path}", f"output_root={output_root}"))
+    build = _run(("task=tasks/spec/build", f"model.spec_path={spec_path}", f"model.output_root={output_root}"))
     manifest_path = output_root / "dau-identity.manifest"
     assert build == BuildStepResult(
         step="build",
@@ -69,21 +63,21 @@ def test_spec_tasks_inspect_build_and_validate_a_bundle(tmp_path: Path) -> None:
     assert manifest_path.is_file()
 
     # the generated bundle validates through the same task (no subcommand)
-    validated = execute_override_task(("task=tasks/spec/validate", f"manifest_path={manifest_path}", f"root={output_root}"))
+    validated = _run(("task=tasks/spec/validate", f"model.manifest_path={manifest_path}", f"model.root={output_root}"))
     assert validated.step == "validate"
     assert f"dau-build-artifacts-valid\tmanifest={manifest_path}" in validated.message
 
 
-def test_execute_override_task_maps_synthesize_engine_to_backend_handoff(tmp_path: Path) -> None:
+def test_synthesize_task_maps_the_engine_to_a_backend_handoff(tmp_path: Path) -> None:
     spec_path = _write_spec(tmp_path)
     output_root = tmp_path / "out"
 
-    result = execute_override_task(
+    result = _run(
         (
             "task=tasks/build/synthesize",
-            "module=dau_identity_top",
-            f"spec_path={spec_path}",
-            f"output_root={output_root}",
+            "model.module=dau_identity_top",
+            f"model.spec_path={spec_path}",
+            f"model.output_root={output_root}",
         )
     )
 
@@ -105,12 +99,12 @@ def test_synthesize_vivado_consumes_arrow_lite_aggregator_bundle(tmp_path: Path)
     spec_path = _write_arrow_lite_aggregator_spec(tmp_path)
     output_root = tmp_path / "out"
 
-    synthesize_result = execute_override_task(
+    synthesize_result = _run(
         (
             "task=tasks/build/synthesize",
-            "module=stream_doubler",
-            f"spec_path={spec_path}",
-            f"output_root={output_root}",
+            "model.module=stream_doubler",
+            f"model.spec_path={spec_path}",
+            f"model.output_root={output_root}",
         )
     )
 
@@ -149,11 +143,11 @@ def _write_minimal_built_backend_manifest(root: Path) -> Path:
 def test_hardware_plan_task_via_plan_group() -> None:
     # the plan is the composed plan group: plan=plans/thunderbolt-release;
     # host access (the runtime-PM patterns) composes from the platform group
-    result = run_request_config(
-        "task",
-        "tasks/hardware/hardware-plan",
-        overrides=["plan=plans/thunderbolt-release", "platform=platforms/example/probe"],
-        model_values={"work_root": "/repo/projects/vivado-shell"},
+    result = _run(
+        "task=tasks/hardware/hardware-plan",
+        "plan=plans/thunderbolt-release",
+        "platform=platforms/example/probe",
+        "model.work_root=/repo/projects/vivado-shell",
     )
 
     assert result == BuildStepResult(
@@ -162,12 +156,12 @@ def test_hardware_plan_task_via_plan_group() -> None:
     )
 
 
-def test_execute_override_task_accepts_stage_shell_surface() -> None:
-    result = execute_override_task(
+def test_task_composes_stage_shell_surface() -> None:
+    result = _run(
         (
             "task=tasks/stage/stage-shell",
-            "source_shell_root=/repo/reference/vivado-shell",
-            "work_root=/repo/dau-build/outputs/vivado",
+            "model.source_shell_root=/repo/reference/vivado-shell",
+            "model.work_root=/repo/dau-build/outputs/vivado",
         )
     )
 
@@ -176,12 +170,12 @@ def test_execute_override_task_accepts_stage_shell_surface() -> None:
     assert "/repo/reference/vivado-shell/ /repo/dau-build/outputs/vivado/" in result.message
 
 
-def test_execute_override_task_accepts_stage_vivado_overlay_surface() -> None:
-    result = execute_override_task(
+def test_task_composes_stage_vivado_overlay_surface() -> None:
+    result = _run(
         (
             "task=tasks/stage/stage-vivado-overlay",
-            "work_root=/repo/projects/vivado-shell",
-            "dau_core_root=/repo/dau-core",
+            "model.work_root=/repo/projects/vivado-shell",
+            "model.dau_core_root=/repo/dau-core",
         )
     )
 
@@ -194,16 +188,16 @@ def test_execute_override_task_accepts_stage_vivado_overlay_surface() -> None:
     assert lines[3].startswith("write-vivado-command-plan\tsh -c ")
 
 
-def test_execute_override_task_accepts_stage_vivado_project_surface() -> None:
-    result = execute_override_task(
+def test_task_composes_stage_vivado_project_surface() -> None:
+    result = _run(
         (
             "task=tasks/stage/stage-vivado-project",
-            "source_shell_root=/repo/projects/vivado-shell",
-            "work_root=/repo/dau-build/outputs/vivado",
-            "dau_core_root=/repo/dau-core",
-            "dau_driver_root=/repo/dau-driver",
-            "dau_utils_root=/repo/dau-utils",
-            "artifact_stem=dau-ci",
+            "model.source_shell_root=/repo/projects/vivado-shell",
+            "model.work_root=/repo/dau-build/outputs/vivado",
+            "model.dau_core_root=/repo/dau-core",
+            "model.dau_driver_root=/repo/dau-driver",
+            "model.dau_utils_root=/repo/dau-utils",
+            "model.artifact_stem=dau-ci",
         )
     )
 
@@ -217,12 +211,12 @@ def test_execute_override_task_accepts_stage_vivado_project_surface() -> None:
     assert lines[5].startswith("write-vivado-command-plan\tsh -c ")
 
 
-def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
-    result = execute_override_task(
+def test_task_composes_build_vivado_artifacts_surface() -> None:
+    result = _run(
         (
             "task=tasks/build/build-vivado-artifacts",
-            "work_root=/repo/projects/vivado-shell",
-            "artifact_stem=dau-ci",
+            "model.work_root=/repo/projects/vivado-shell",
+            "model.artifact_stem=dau-ci",
         )
     )
 
@@ -234,7 +228,7 @@ def test_execute_override_task_accepts_build_vivado_artifacts_surface() -> None:
     )
 
 
-def test_execute_override_task_runs_build_vivado_artifacts_with_graph_models(monkeypatch) -> None:
+def test_task_runs_build_vivado_artifacts_with_graph_models(monkeypatch) -> None:
     calls = {"execute_plan_steps": 0, "validate": 0}
 
     def fake_execute_plan_steps(steps):
@@ -264,12 +258,12 @@ def test_execute_override_task_runs_build_vivado_artifacts_with_graph_models(mon
     monkeypatch.setattr("dau_build.build_steps.execute_plan_steps", fake_execute_plan_steps)
     monkeypatch.setattr("dau_build.build_steps.validate_vivado_artifacts", fake_validate_vivado_artifacts)
 
-    result = execute_override_task(
+    result = _run(
         (
             "task=tasks/build/build-vivado-artifacts",
-            "work_root=/repo/projects/vivado-shell",
-            "artifact_stem=dau-ci",
-            "execute=true",
+            "model.work_root=/repo/projects/vivado-shell",
+            "model.artifact_stem=dau-ci",
+            "model.execute=true",
         )
     )
 
@@ -280,7 +274,7 @@ def test_execute_override_task_runs_build_vivado_artifacts_with_graph_models(mon
     assert result.message.splitlines()[2].startswith("vivado-artifacts-valid\tmanifest=/repo/projects/vivado-shell/dau-ci.manifest ")
 
 
-def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
+def test_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
     _write_backend_artifacts(
         generate_vivado_backend_artifacts(
             VivadoBackendRequest(
@@ -293,13 +287,13 @@ def test_execute_override_task_validates_vivado_artifacts_in_process(tmp_path: P
         )
     )
 
-    result = execute_override_task(
+    result = _run(
         (
             "task=tasks/validate/validate-vivado-artifacts",
-            f"work_root={tmp_path}",
-            "manifest_path=dau-ci.manifest",
-            "command_plan_path=dau-ci.plan",
-            "execute=true",
+            f"model.work_root={tmp_path}",
+            "model.manifest_path=dau-ci.manifest",
+            "model.command_plan_path=dau-ci.plan",
+            "model.execute=true",
         )
     )
 
@@ -351,6 +345,17 @@ def test_package_scripts_stay_on_hydra_style_dau_build_entrypoints() -> None:
     assert scripts == {"dau-build": "dau_build.cli:main"}
     # the config tree is registered on the Hydra search path for extension
     assert pyproject["project"]["entry-points"]["hydra.lernaplugins"]["dau-build"] == "pkg:dau_build.config"
+
+
+def _run(*overrides):
+    """Compose and run a task the way the CLI does: Hydra overrides only."""
+    from ccflow.utils.hydra import cfg_run
+
+    from dau_build.config import compose_config
+
+    if len(overrides) == 1 and isinstance(overrides[0], tuple):
+        overrides = overrides[0]
+    return cfg_run(compose_config(list(overrides)).cfg)
 
 
 def _write_spec(tmp_path: Path) -> Path:

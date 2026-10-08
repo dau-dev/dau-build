@@ -26,8 +26,7 @@ defaults:
 ```
 
 Every group except `callable` is `optional … null`: nothing is selected unless
-you override it. A run selects exactly one of `task=` or `step=` to populate
-`model`, and may add `spec=`, `board=`, `backend=`, `driver=`, `memory=`,
+you override it. A run selects `task=` to populate `model`, and may add `spec=`, `board=`, `backend=`, `driver=`, `memory=`,
 `simulator=`, `platform=`, `host=` and `plan=`.
 
 Each option file begins with a `# @package <key>` directive that places its
@@ -72,24 +71,7 @@ tasks/stage/stage-vivado-project
 tasks/validate/validate-vivado-artifacts
 ```
 
-Fields per task are in the [task and step catalog](tasks-and-steps.md).
-
-## `step`
-
-Packaged options (`step=<path>`):
-
-```text
-steps/explain
-steps/generate
-steps/inspect
-steps/resolved-config
-steps/simulate
-steps/synthesis
-steps/validate
-steps/write
-```
-
-Fields per step are in the [task and step catalog](tasks-and-steps.md).
+Fields per task are in the [task catalog](tasks-and-steps.md).
 
 ## `spec`
 

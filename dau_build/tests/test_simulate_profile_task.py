@@ -18,8 +18,8 @@ def test_profile_only_simulate_runs(tmp_path):
             "simulator=simulators/verilator",
             "simulator.profile=counter-profile",
             f"simulator.profile_manifest=[{manifest_path}]",
+            f"model.output_root={tmp_path}",
         ],
-        model_values={"output_root": str(tmp_path)},
     )
     assert "status=passed" in result.message
     assert "profile=counter-profile" in result.message

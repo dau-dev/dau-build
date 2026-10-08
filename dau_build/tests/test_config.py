@@ -6,7 +6,7 @@ from ccflow import CallableModel
 from ccflow.utils.hydra import cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-from dau_build.build_steps import STEP_MODEL_TYPES, TASK_MODEL_TYPES, BuildStepResult, execute_override_request
+from dau_build.build_steps import TASK_MODEL_TYPES, BuildStepResult
 from dau_build.config import load_config
 
 _CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -19,7 +19,7 @@ def test_spec_hydra_group_composes_a_buildspec() -> None:
     result = base_load_config(
         root_config_dir=str(_CONFIG_DIR),
         root_config_name="base",
-        overrides=["step=steps/inspect", "spec=specs/identity"],
+        overrides=["task=tasks/spec/inspect", "spec=specs/identity"],
         basepath=str(_CONFIG_DIR),
         debug=False,
     )
@@ -28,28 +28,17 @@ def test_spec_hydra_group_composes_a_buildspec() -> None:
     assert "name=identity-pipeline" in output.message
 
 
-def test_packaged_task_and_step_config_targets_follow_callable_registries() -> None:
+def test_packaged_task_config_targets_follow_the_callable_registry() -> None:
     assert _config_group_names("task") == tuple(sorted(TASK_MODEL_TYPES))
-    assert _config_group_names("step") == tuple(sorted(STEP_MODEL_TYPES))
 
     for name, model_type in TASK_MODEL_TYPES.items():
         cfg = OmegaConf.load(_CONFIG_DIR / "task" / f"{name}.yaml")
         assert cfg["_target_"] == _target(model_type)
 
-    for name, model_type in STEP_MODEL_TYPES.items():
-        cfg = OmegaConf.load(_CONFIG_DIR / "step" / f"{name}.yaml")
-        assert cfg["_target_"] == _target(model_type)
 
-
-def test_packaged_task_and_step_configs_instantiate_registered_callable_models(tmp_path: Path) -> None:
+def test_packaged_task_configs_instantiate_registered_callable_models(tmp_path: Path) -> None:
     for name, model_type in TASK_MODEL_TYPES.items():
         registry = load_config([f"task={name}", *_task_overrides(name, tmp_path)], overwrite=True)
-        model = registry["model"]
-        assert isinstance(model, model_type)
-        assert isinstance(model, CallableModel)
-
-    for name, model_type in STEP_MODEL_TYPES.items():
-        registry = load_config([f"step={name}", *_step_overrides(name, tmp_path)], overwrite=True)
         model = registry["model"]
         assert isinstance(model, model_type)
         assert isinstance(model, CallableModel)
@@ -71,42 +60,6 @@ def test_packaged_base_config_runs_selected_callable_with_ccflow_cfg_run(tmp_pat
         step="simulate",
         message=f"dau-build-simulate\ttask=simulate simulator=svparser module=dau_identity_top spec={spec_path} status=validated",
     )
-
-
-def test_public_override_dispatch_runs_packaged_task_configs(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_run_request_config(request_kind: str, request_name: str, *, model_values, **kwargs):
-        captured["request_kind"] = request_kind
-        captured["request_name"] = request_name
-        captured["model_values"] = model_values
-        captured["kwargs"] = kwargs
-        return BuildStepResult(step="simulate", message="configured")
-
-    monkeypatch.setattr("dau_build.config.run_request_config", fake_run_request_config)
-
-    result = execute_override_request(
-        (
-            "task=tasks/sim/simulate",
-            "module=dau_identity_top",
-            "spec_path=examples/identity/dau-build.yaml",
-        )
-    )
-
-    assert result == BuildStepResult(step="simulate", message="configured")
-    assert captured["request_kind"] == "task"
-    assert captured["request_name"] == "tasks/sim/simulate"
-    assert captured["model_values"] == {
-        "spec": None,
-        "spec_path": "examples/identity/dau-build.yaml",
-        "board": None,
-        "backend": None,
-        "driver": None,
-        "memory": None,
-        "module": "dau_identity_top",
-        "output_root": None,
-        "simulator": None,
-    }
 
 
 def _config_group_names(kind: str) -> tuple[str, ...]:
@@ -142,13 +95,6 @@ def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
         "validate-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
     }
     return base[name.split("/")[-1]]
-
-
-def _step_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
-    overrides = [("model.spec_path=placeholder.yaml",)]
-    if name.split("/")[-1] in {"generate", "synthesis", "write"}:
-        overrides.append((f"model.output_root={tmp_path / name}",))
-    return tuple(item for group in overrides for item in group)
 
 
 def _write_spec(tmp_path: Path) -> Path:
@@ -222,47 +168,35 @@ def test_dau_build_registers_a_hydra_searchpath_entry_point() -> None:
     assert registered.get("dau-build") == "pkg:dau_build.config"
 
 
+def _resolved(overrides: list[str]):
+    """The resolved build config (spec + composed groups) a task sees."""
+    model = load_config(overrides, overwrite=True)["model"]
+    return model._resolved(model.load_spec())
+
+
 def test_board_and_backend_groups_override_spec_derived_resolved_config() -> None:
     # board=/backend= compose into the task and win over the spec-derived view
-    spec = "examples/identity/dau-build.yaml"
-    base = ["step=steps/resolved-config", f"model.spec_path={spec}"]
-    derived = cfg_run(
-        base_load_config(root_config_dir=str(_CONFIG_DIR), root_config_name="base", overrides=base, basepath=str(_CONFIG_DIR), debug=False).cfg
-    )
-    composed = cfg_run(
-        base_load_config(
-            root_config_dir=str(_CONFIG_DIR),
-            root_config_name="base",
-            overrides=[*base, "board=boards/example/probe", "backend=backends/vivado"],
-            basepath=str(_CONFIG_DIR),
-            debug=False,
-        ).cfg
-    )
-    assert "board\tname=vivado-xdma" in derived.message  # spec-derived: board name = platform
-    assert "board\tname=probe" in composed.message  # composed board wins
-    assert "backend\tname=vivado invocation=standard" in composed.message  # composed backend wins
+    base = ["task=tasks/spec/inspect", "model.spec_path=examples/identity/dau-build.yaml"]
+    derived = _resolved(base)
+    composed = _resolved([*base, "board=boards/example/probe", "backend=backends/vivado"])
+    assert derived.board.name == "vivado-xdma"  # spec-derived: board name = platform
+    assert composed.board.name == "probe"  # composed board wins
+    assert (composed.backend.name, composed.backend.invocation) == ("vivado", "standard")  # composed backend wins
 
 
 def test_driver_and_memory_config_groups_compose_and_override() -> None:
     # driver=/memory= compose into the resolved config; fields are overridable
-    spec = "examples/identity/dau-build.yaml"
-    result = cfg_run(
-        base_load_config(
-            root_config_dir=str(_CONFIG_DIR),
-            root_config_name="base",
-            overrides=[
-                "step=steps/resolved-config",
-                f"model.spec_path={spec}",
-                "driver=drivers/host",
-                "memory=memories/default",
-                "memory.host_staging_bytes=4096",
-            ],
-            basepath=str(_CONFIG_DIR),
-            debug=False,
-        ).cfg
+    resolved = _resolved(
+        [
+            "task=tasks/spec/inspect",
+            "model.spec_path=examples/identity/dau-build.yaml",
+            "driver=drivers/host",
+            "memory=memories/default",
+            "memory.host_staging_bytes=4096",
+        ]
     )
-    assert "driver\tos=host transport=xdma" in result.message
-    assert "memory\thost_staging_bytes=4096 device_staging_bytes=0" in result.message
+    assert (resolved.driver.os, resolved.driver.transport) == ("host", "xdma")
+    assert (resolved.memory.host_staging_bytes, resolved.memory.device_staging_bytes) == (4096, 0)
 
 
 def test_an_unresolvable_task_is_refused_including_under_explain() -> None:
