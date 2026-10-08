@@ -20,11 +20,15 @@ and `thunderbolt-release`. Full field lists are in the
 [task catalog](../reference/tasks-and-steps.md).
 
 Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
-JTAG cable) is board and host configuration, not a code default. The packaged
+JTAG cable) is host configuration, not a code default and not a board fact. A
+board option describes the card; the host that holds the card gets its own
+platform option that extends the board option with `host_access` and the
+trained link (`host_link.expected_link_width`, `expected_link_speed_gts`), kept
+wherever that host's facts live and composed with `--config-dir`. The packaged
 example board (`platforms/example/probe`) is a fiction whose every hardware
 value is a placeholder, so it previews plans and refuses `execute=true`; the
 commands below name your own board. Compose
-`platform=platforms/<vendor>/<board>` so the plan takes the board's
+`platform=platforms/<vendor>/<board>-<host>` so the plan takes that host's
 `host_access` facts, or set the `model.<field>=` overrides explicitly. A
 step that needs an unset fact refuses to render.
 
