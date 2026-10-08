@@ -86,8 +86,10 @@ dau-build task=tasks/build/build-vivado-artifacts \
 ```
 
 Once the bitstream, resource report, timing report and Vivado log exist,
-this moves the backend manifest from `build_status=planned` to `built`.
-Flashing and smoke testing downstream require `built`.
+this moves the backend manifest from `build_status=planned` to `built`, and
+records the routed worst slack as `wns_ns`. A run whose slack is negative or
+unreadable is recorded as `timing-failed` instead: the bitstream exists, and
+nothing downstream will flash it. Flashing and smoke testing require `built`.
 
 Treat the Vivado machine as an ordinary Linux host: SSH in, `rsync` the
 checkouts or the generated work directory you need, `pip install` the DAU

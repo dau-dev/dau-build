@@ -666,10 +666,17 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
     if manifest.get("command_plan") and manifest["command_plan"] != command_plan_path.as_posix():
         errors.append(f"command plan path mismatch: {manifest['command_plan']} != {command_plan_path.as_posix()}")
     build_status = manifest.get("build_status")
-    if build_status and build_status not in {"planned", "built"}:
+    if build_status and build_status not in {"planned", "built", "timing-failed"}:
         errors.append(f"unsupported build status: {build_status}")
-    if build_status == "built":
+    if build_status in {"built", "timing-failed"}:
         errors.extend(_validate_built_output_paths(build_root=build_root, manifest=manifest))
+    if build_status == "built" and "wns_ns" in manifest:
+        try:
+            wns = float(manifest["wns_ns"])
+        except ValueError:
+            wns = None
+        if wns is None or wns < 0.0:
+            errors.append(f"build_status=built but wns_ns={manifest['wns_ns']!r}: a build that missed timing is timing-failed")
     if manifest.get("dau_artifact_bundle"):
         errors.extend(_validate_dau_artifact_bundle_reference(build_root=build_root, manifest=manifest))
     return tuple(errors)
@@ -1365,6 +1372,7 @@ file mkdir [file dirname "__RESOURCE_SUMMARY_PATH__"]
 file mkdir [file dirname "__TIMING_SUMMARY_PATH__"]
 report_utilization -file "__RESOURCE_SUMMARY_PATH__"
 report_timing_summary -file "__TIMING_SUMMARY_PATH__"
+set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 if {![file exists $expected_bitstream_path]} {
     error "expected Vivado bitstream was not produced: $expected_bitstream_path"
 }
@@ -1377,7 +1385,12 @@ puts $manifest_file "bitstream=__BITSTREAM_PATH__"
 puts $manifest_file "resource_summary=__RESOURCE_SUMMARY_PATH__"
 puts $manifest_file "timing_summary=__TIMING_SUMMARY_PATH__"
 puts $manifest_file "vivado_log=__VIVADO_LOG_PATH__"
-puts $manifest_file "build_status=built"
+puts $manifest_file "wns_ns=$wns"
+if {[string is double -strict $wns] && $wns >= 0} {
+    puts $manifest_file "build_status=built"
+} else {
+    puts $manifest_file "build_status=timing-failed"
+}
 close $manifest_file
 close_design
 puts "Implementation done!"

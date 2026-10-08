@@ -450,7 +450,7 @@ class BuildShellProjectTask(BuildCallableModel):
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        from dau_build.shell_build import run_shell_project_build, write_shell_build_manifest
+        from dau_build.shell_build import describe_failure, run_shell_project_build, write_shell_build_manifest
 
         if self.execute and self.platform is not None:
             from dau_build.platforms import require_measured
@@ -466,12 +466,19 @@ class BuildShellProjectTask(BuildCallableModel):
                 message=f"dau-build-shell\ttask=build-shell-project output_root={self.output_root} command={command!r} status=planned",
             )
         status = run_shell_project_build(self.output_root, script=self.script, vivado_executable=self.vivado)
+        if status.build_status not in ("built", "timing-failed"):
+            # no bitstream to record a manifest for
+            raise BuildStepError(describe_failure(status, self.output_root / "console.log"))
+        # a timing miss is recorded, as timing-failed, so the design cache and
+        # the hardware plans see what happened instead of a missing manifest
         manifest_path = write_shell_build_manifest(
             self.output_root,
             name=self.manifest_name,
             source_paths=self.source_paths,
             metadata={**self.metadata, **status.model_dump(exclude_none=True)},
         )
+        if status.build_status != "built":
+            raise BuildStepError(describe_failure(status, self.output_root / "console.log") + f"; recorded in {manifest_path}")
         return BuildStepResult(
             step="build-shell-project",
             message=(

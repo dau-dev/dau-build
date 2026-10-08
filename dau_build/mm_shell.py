@@ -399,6 +399,10 @@ report_timing_summary -file "$origin_dir/timing_mm.rpt"
 
 {verify_block}set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 file copy -force "$origin_dir/project_mm/project_mm.runs/impl_1/Top_wrapper.bit" "$origin_dir/dau_mm_job.bit"
+if {{![string is double -strict $wns] || $wns < 0}} {{
+    puts "DAU_MM_JOB_BUILD_TIMING_FAILED wns=$wns"
+    exit 1
+}}
 {spi_block}
 puts "DAU_MM_JOB_BUILD_OK wns=$wns"
 exit 0
