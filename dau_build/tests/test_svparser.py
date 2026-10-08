@@ -17,7 +17,7 @@ class TestParser:
         [
             ("cam_ifc.sv", 2, 1, 0, 0, 2),
             ("cam_tb.sv", 2, 5, 8, 0, 0),
-            # ("cam_tb_modport.sv", 0, 0, 0, 0, 0),  # TODO
+            ("cam_tb_modport.sv", 0, 0, 0, 0, 0),
             ("cam_top.sv", 0, 1, 0, 3, 0),
             ("cam.sv", 2, 9, 4, 5, 0),
             ("ceff.sv", 1, 4, 2, 0, 0),
@@ -39,6 +39,33 @@ class TestParser:
         assert len(mod.modports) == submodports
         assert all(len(sm.links) > 0 for sm in mod.modules)
         assert all((len(smp.inputs) + len(smp.outputs)) > 0 for smp in mod.modports)
+
+    def test_interface_port_is_recorded_with_its_modport(self):
+        """A port typed by an interface is kept as an interface port (name,
+        interface, modport) rather than refused or dropped."""
+        from dau_build.svparser import InterfacePort
+
+        mod = Module.from_file(_SV_DIR / "cam_tb_modport.sv")
+        assert mod.interface_ports == [InterfacePort(name="ds", interface="cam_ifc", modport="bench", node=mod.interface_ports[0].node)]
+        assert (mod.inputs, mod.outputs) == ([], [])
+
+    def test_unsupported_syntax_is_an_error_not_a_smaller_module(self, tmp_path):
+        """A non-ANSI port list, a `ref` port and an unparseable net type used
+        to be skipped or asserted; each is now an SvParseError, also through
+        Design.from_directory, so a design is never silently smaller than
+        its source."""
+        from dau_build.svparser import SvParseError
+
+        cases = {
+            "non_ansi.sv": "module m(a, b);\n  input a;\n  output b;\nendmodule\n",
+            "ref_port.sv": "module m(ref logic a);\nendmodule\n",
+        }
+        for name, text in cases.items():
+            (tmp_path / name).write_text(text)
+            with pytest.raises(SvParseError):
+                Module.from_file(tmp_path / name)
+        with pytest.raises(SvParseError, match="non_ansi.sv"):
+            Design.from_directory(tmp_path)
 
     @pytest.mark.parametrize(("file",), [("ff.sv",)])
     def test_parse_amaranth(self, file):
@@ -234,7 +261,7 @@ class TestDesign:
 
     def test_from_directory(self):
         design = Design.from_directory(_SV_DIR)
-        assert len(design.modules) == 11  # all .sv files
+        assert len(design.modules) == 12  # all .sv files
         assert "cam" in design.modules
         assert "ff" in design.modules
         assert "cam_ifc" in design.modules
