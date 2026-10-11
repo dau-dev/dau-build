@@ -118,7 +118,7 @@ def _load_base_config(
     return base_load_config(
         root_config_dir=parent_dir,
         root_config_name="base",
-        config_dir=config_dir,
+        config_dir=config_dir or "",  # ccflow treats an empty directory like an absent one
         overrides=list(overrides or ()),
         version_base=version_base,
         basepath=parent_dir,

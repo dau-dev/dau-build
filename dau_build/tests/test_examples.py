@@ -22,7 +22,7 @@ def test_identity_example_build_spec_loads_and_generates_artifacts(tmp_path: Pat
 def test_identity_generated_artifact_bundle_example_is_portable() -> None:
     manifest = load_artifact_manifest(_EXAMPLE_DIR / "generated" / "dau-identity.artifacts.yaml", validate_paths=True, root=_EXAMPLE_DIR)
 
-    assert all(not artifact.path.is_absolute() for artifact in manifest.artifacts)
+    assert all(artifact.path is not None and not artifact.path.is_absolute() for artifact in manifest.artifacts)
     assert {artifact.role for artifact in manifest.artifacts} == {"hdl-source", "python-source", "constraints", "bitstream", "generated-top"}
     assert any(
         artifact.path == Path("generated/dau_identity_top.sv") and artifact_modules(artifact) == ("dau_identity_top",)

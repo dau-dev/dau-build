@@ -38,7 +38,3 @@ def test_counter(tmp_path: Path):
     )
 
     runner.test(hdl_toplevel="counter", test_module="dau_build.tests.test_counter,", build_dir=build_dir)
-
-
-if __name__ == "__main__":
-    test_counter()

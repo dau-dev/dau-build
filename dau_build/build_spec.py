@@ -281,7 +281,8 @@ def dau_build_spec_summary(spec: DauBuildSpec) -> str:
         entries = tuple(entry for entry in spec.artifact_bundle.entries_for_kind(kind) if entry.manifest_path is not None)
         for index, entry in enumerate(entries):
             artifact = entry.artifact
-            details = [f"{kind}\tindex={index}", f"path={artifact.path.as_posix()}", f"role={artifact.role}"]
+            location = f"path={artifact.path.as_posix()}" if artifact.path is not None else f"uri={artifact.uri}"
+            details = [f"{kind}\tindex={index}", location, f"role={artifact.role}"]
             if artifact.kind == "source":
                 details.append(f"language={artifact.language}")
             if artifact.kind in ("metadata", "binary"):

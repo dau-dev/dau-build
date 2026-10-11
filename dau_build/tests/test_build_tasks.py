@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ccflow import CallableModel
@@ -607,5 +608,6 @@ def test_overlay_build_and_validate_tasks_refuse_inert_fields() -> None:
         with pytest.raises(ValidationError):
             cls(work_root=Path("/tmp/x"), bitstream=Path("top.bit"))
     for field, value in (("vivado", "vivado"), ("vivado_invocation", "standard"), ("vivado_mount_root", Path("/mnt"))):
+        unknown: dict[str, Any] = {field: value}
         with pytest.raises(ValidationError):
-            ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), **{field: value})
+            ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), **unknown)
