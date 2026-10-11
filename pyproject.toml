@@ -99,10 +99,6 @@ replace = 'version = "{new_version}"'
 
 [tool.coverage.run]
 omit = [
-<<<<<<< before updating
-    # a bare directory path matches no file; coverage omit takes globs
-=======
->>>>>>> after updating
     "dau_build/tests/integration/*",
 ]
 
@@ -182,14 +178,14 @@ section-order = [
 title = "dau-build"
 root = "README.md"
 pages = [
-    "docs/tutorial/first-build.md",
-    "docs/how-to/run-a-build.md",
-    "docs/how-to/program-hardware.md",
-    "docs/how-to/extend-dau-build.md",
-    "docs/reference/commands.md",
-    "docs/reference/config-groups.md",
-    "docs/reference/tasks-and-steps.md",
-    "docs/explanation/architecture.md",
+    "docs/src/tutorial/first-build.md",
+    "docs/src/how-to/run-a-build.md",
+    "docs/src/how-to/program-hardware.md",
+    "docs/src/how-to/extend-dau-build.md",
+    "docs/src/reference/commands.md",
+    "docs/src/reference/config-groups.md",
+    "docs/src/reference/tasks-and-steps.md",
+    "docs/src/explanation/architecture.md",
 ]
 use-autoapi = false
 
