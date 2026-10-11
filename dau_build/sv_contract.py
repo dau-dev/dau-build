@@ -16,10 +16,17 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-try:
-    from pyslang import SyntaxKind, SyntaxTree
-except ImportError:  # pragma: no cover - version-dependent import layout
-    from pyslang.syntax import SyntaxKind, SyntaxTree
+from pyslang.syntax import (
+    AnsiPortListSyntax,
+    CompilationUnitSyntax,
+    ImplicitAnsiPortSyntax,
+    ModuleDeclarationSyntax,
+    NetPortHeaderSyntax,
+    NonAnsiPortListSyntax,
+    SyntaxKind,
+    SyntaxTree,
+    VariablePortHeaderSyntax,
+)
 
 # the stream+status contract: port name -> required direction
 STREAM_TILE_INPUTS = (
@@ -55,28 +62,35 @@ def module_ports(sources: Sequence[Path | str], module: str) -> dict[str, str]:
     Non-ANSI (1995-style) port lists are unsupported and reported explicitly.
     Raises ``StreamContractError`` if the module is not found."""
     for source in sources:
-        tree = SyntaxTree.fromFile(str(source))
-        for member in tree.root.members:
-            if member.kind != SyntaxKind.ModuleDeclaration:
+        root = SyntaxTree.fromFile(str(source)).root
+        # a parsed file is a compilation unit; a lone declaration is its own member
+        members = root.members if isinstance(root, CompilationUnitSyntax) else (root,)
+        for member in members:
+            if not isinstance(member, ModuleDeclarationSyntax) or member.kind != SyntaxKind.ModuleDeclaration:
                 continue
-            if member.header.name.value != module:
+            if member.header.name.valueText != module:
                 continue
             ports: dict[str, str] = {}
             port_list = member.header.ports
             if port_list is None:
                 return ports
+            if not isinstance(port_list, (AnsiPortListSyntax, NonAnsiPortListSyntax)):
+                raise StreamContractError(f"module {module!r} has a port list form this check does not read: {str(port_list).strip()}")
             direction = ""
             saw_non_ansi = False
             for port in port_list.ports:
-                if port.kind != SyntaxKind.ImplicitAnsiPort:
+                if not isinstance(port, ImplicitAnsiPortSyntax):
                     saw_non_ansi = True
                     continue
+                header = port.header
+                if not isinstance(header, (VariablePortHeaderSyntax, NetPortHeaderSyntax)):
+                    raise StreamContractError(f"module {module!r} port {str(port).strip()!r} is not a plain directional port")
                 # valueText strips leading trivia; an empty direction means
                 # the port inherits the previous port's (ANSI semantics)
-                declared = port.header.direction.valueText
+                declared = header.direction.valueText
                 if declared:
                     direction = declared
-                name = port.declarator.name.value
+                name = port.declarator.name.valueText
                 if name in ports:
                     raise StreamContractError(f"module {module!r} declares port {name!r} more than once")
                 ports[name] = direction

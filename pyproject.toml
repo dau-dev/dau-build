@@ -39,7 +39,8 @@ dependencies = [
     "lerna>=2.0.4",
     "omegaconf",
     "pydantic",
-    "pyslang",
+    # read from pyslang.syntax and pyslang.parsing; 12 dropped the top-level re-exports
+    "pyslang>=11",
     "pyyaml",
     "typing_extensions",
 ]
@@ -173,6 +174,11 @@ section-order = [
 # test doubles conform to real interfaces and legitimately ignore arguments
 "**/tests/**" = ["ARG"]
 
+
+[tool.ty.analysis]
+# dau-build does not depend on dau-core (dau-build is public and dau-core is
+# not yet); the integration tests that read its registry skip without it
+allowed-unresolved-imports = ["dau_core.**"]
 
 [tool.yardang]
 title = "dau-build"
