@@ -6,21 +6,21 @@ hidden: true
 
 
 
-docs/tutorial/first-build.md
+docs/src/tutorial/first-build.md
 
-docs/how-to/run-a-build.md
+docs/src/how-to/run-a-build.md
 
-docs/how-to/program-hardware.md
+docs/src/how-to/program-hardware.md
 
-docs/how-to/extend-dau-build.md
+docs/src/how-to/extend-dau-build.md
 
-docs/reference/commands.md
+docs/src/reference/commands.md
 
-docs/reference/config-groups.md
+docs/src/reference/config-groups.md
 
-docs/reference/tasks-and-steps.md
+docs/src/reference/tasks-and-steps.md
 
-docs/explanation/architecture.md
+docs/src/explanation/architecture.md
 
 
 ```
@@ -70,7 +70,7 @@ Task names are paths into the config tree (`task=tasks/spec/inspect`).
 
 ## Documentation
 
-- **Tutorial**: [Build the identity example](docs/tutorial/first-build.md).
-- **How-to**: [Run a build end to end](docs/how-to/run-a-build.md) · [Program a bitstream on a board](docs/how-to/program-hardware.md) · [Extend dau-build](docs/how-to/extend-dau-build.md).
-- **Reference**: [Commands](docs/reference/commands.md) · [Config groups](docs/reference/config-groups.md) · [Task and step catalog](docs/reference/tasks-and-steps.md).
-- **Explanation**: [Architecture](docs/explanation/architecture.md), on Hydra composition, ccflow evaluation, the search-path extension model, and the state of backend support.
+- **Tutorial**: [Build the identity example](docs/src/tutorial/first-build.md).
+- **How-to**: [Run a build end to end](docs/src/how-to/run-a-build.md) · [Program a bitstream on a board](docs/src/how-to/program-hardware.md) · [Extend dau-build](docs/src/how-to/extend-dau-build.md).
+- **Reference**: [Commands](docs/src/reference/commands.md) · [Config groups](docs/src/reference/config-groups.md) · [Task and step catalog](docs/src/reference/tasks-and-steps.md).
+- **Explanation**: [Architecture](docs/src/explanation/architecture.md), on Hydra composition, ccflow evaluation, the search-path extension model, and the state of backend support.
