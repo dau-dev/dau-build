@@ -1,6 +1,7 @@
 import base64
 import shlex
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -65,6 +66,7 @@ def _built_manifest(tmp_path: Path, *, payload: bytes = b"\x00\x01bitstream") ->
     manifest_path = write_shell_build_manifest(output_root, name="test-shell", metadata={"build_status": "built", "wns_ns": 0.1})
     assert manifest_path == output_root / SHELL_BUILD_MANIFEST_NAME
     digest = next(a for a in load_artifact_manifest(manifest_path).artifacts if a.role == "bitstream").digest
+    assert digest is not None
     return manifest_path, flash_snapshot_path(tmp_path / "work", digest)
 
 
@@ -85,7 +87,7 @@ EXPECTED_LSPCI_ENDPOINT_RETRY_SNIPPET = f"for attempt in 1 2 3; do {EXPECTED_PCI
 # the dpv1 bench facts, stated explicitly: dau-build carries no board
 # defaults, so tests exercising hardware steps supply their host access
 # (values identical to the retired code defaults — plan texts unchanged)
-DPV1_HOST_ACCESS = {
+DPV1_HOST_ACCESS: dict[str, Any] = {
     "expected_endpoint_id": "10ee:9034",
     "endpoint_bdf": "0000:01:00.0",
     "reset_bridge_bdf": "0000:00:1c.4",
@@ -1306,16 +1308,16 @@ def test_vivado_invocation_is_validated_at_model_construction(tmp_path: Path) ->
     from dau_build.vivado_backend import VivadoProjectGenerationRequest
 
     with pytest.raises(pydantic.ValidationError):
-        HardwareToolchainConfig(work_root=tmp_path, vivado_invocation="bogus")
+        HardwareToolchainConfig(work_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
     with pytest.raises(pydantic.ValidationError):
-        VivadoBackendRequest(dau_core_hdl_root=tmp_path, build_root=tmp_path, vivado_invocation="bogus")
+        VivadoBackendRequest(dau_core_hdl_root=tmp_path, build_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
     with pytest.raises(pydantic.ValidationError):
         VivadoProjectGenerationRequest(
             source_shell_root=tmp_path,
             work_root=tmp_path,
             dau_core_root=tmp_path,
             dau_driver_root=tmp_path,
-            vivado_invocation="bogus",
+            vivado_invocation="bogus",  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
         )
 
 
@@ -1455,7 +1457,7 @@ def test_local_build_and_program_plan_honors_the_injected_definition(tmp_path: P
 
 def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
-    request_kwargs = {
+    request_kwargs: dict[str, Any] = {
         "source_shell_root": Path("/repo/projects/nite"),
         "work_root": tmp_path,
         "dau_core_root": Path("/repo/acme"),
@@ -1555,7 +1557,9 @@ def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
     # the jtag default composes the openFPGALoader adapter
     assert isinstance(config.resolve_programmer(), OpenFpgaLoaderProgrammer)
     # byte-identical to the pre-adapter jtag-detect / program-volatile argv
-    assert jtag_detect_step(config).argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
+    detect = jtag_detect_step(config)
+    assert detect is not None  # openFPGALoader has a detect step; a programmer without one returns None
+    assert detect.argv == ("openFPGALoader", "-c", "digilent_hs2", "--detect")
     assert program_volatile_step(config).argv == (
         "openFPGALoader",
         "-c",
@@ -1657,7 +1661,7 @@ def test_host_access_is_explicit_about_bdfs_and_patterns() -> None:
     # rescan_bdfs / runtime_pm_patterns are required: a board must state its
     # own values (empty is meaningful, silence is not)
     with pytest.raises(ValidationError):
-        HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")
+        HostAccess(pci_id="10ee:9038", endpoint_bdf="0000:65:00.0")  # ty: ignore[missing-argument]  # the required fields are the point
 
     # empty tuples are authoritative — never silently the dpv1 defaults
     bare = probe_platform()
@@ -1963,7 +1967,7 @@ def test_toolchain_config_rejects_an_unsupported_spi_width() -> None:
     import pydantic
 
     with pytest.raises(pydantic.ValidationError):
-        HardwareToolchainConfig(work_root=Path("/w"), spi_boot_buswidth=2)
+        HardwareToolchainConfig(work_root=Path("/w"), spi_boot_buswidth=2)  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
 
 
 def test_device_lock_path_is_user_private_and_tmpdir_independent(monkeypatch) -> None:

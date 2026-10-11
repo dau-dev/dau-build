@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ccflow import NullContext
@@ -14,7 +15,7 @@ _TOP_K = "/dau-core/streaming-top-k"
 
 
 def _task(tmp_path: Path, **kwargs) -> SynthesizeCoresTask:
-    defaults = {"cores": (_TOP_K,), "output_root": tmp_path, "part": "xc7a200tfbg484-2"}
+    defaults: dict[str, Any] = {"cores": (_TOP_K,), "output_root": tmp_path, "part": "xc7a200tfbg484-2"}
     defaults.update(kwargs)
     return SynthesizeCoresTask(**defaults)
 
@@ -142,7 +143,7 @@ def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     # and clock, so the comparison is only meaningful with the params too --
     # ALL of them, since the comparison is an exact coordinate match and the
     # tile declares its element type beside K (int32 encodes as 32)
-    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
+    at_k8: dict[str, Any] = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
     assert report.wns_ns == 4.350 and report.met
@@ -166,10 +167,10 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
     (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
     (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
 
-    full = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
+    full: dict[str, Any] = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     assert SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **full).registered_matches is True
     for dropped in ("clock_period_ns", "params"):
-        coordinate = {**full, dropped: None}
+        coordinate: dict[str, Any] = {**full, dropped: None}
         report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **coordinate)
         assert report.registered_matches is None, f"dropping {dropped} still selected a point"
 
@@ -296,7 +297,7 @@ def test_parse_reports_flags_a_stamp_that_disagrees_with_the_hdl(tmp_path: Path)
     definition = core("streaming-top-k")
     (tmp_path / "dau_streaming_top_k.util.rpt").write_text(_UTIL_RPT)
     (tmp_path / "dau_streaming_top_k.timing.rpt").write_text(_TIMING_RPT)
-    at_k8 = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
+    at_k8: dict[str, Any] = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     resolve = loaded_cores().get
 
     stamped = definition.model_copy(update={"measured_from": definition.hdl_closure_digest(resolve)})

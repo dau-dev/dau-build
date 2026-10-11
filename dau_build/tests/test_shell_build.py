@@ -225,6 +225,7 @@ def test_flash_snapshot_programs_what_was_verified(tmp_path: Path) -> None:
     _, written = flash_snapshot(manifest_path, work_root=work_root, write=True)
     assert written == snapshot and snapshot.read_bytes() == b"verified bytes"
     digest = next(a for a in load_artifact_manifest(manifest_path).artifacts if a.role == "bitstream").digest
+    assert digest is not None
     assert snapshot == flash_snapshot_path(work_root, digest)
 
     (output_root / "dau_mm_job.bit").write_bytes(b"replaced after the manifest")
@@ -248,6 +249,7 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
 
     kv.write_text("build_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
     packaged = write_overlay_build_manifest(work, kv, name="dau-vivado")
+    assert packaged is not None
     manifest = load_artifact_manifest(packaged)
     assert manifest.metadata["build_status"] == "built"
     roles = [artifact.role for artifact in manifest.artifacts]
@@ -257,5 +259,7 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
 
     # a timing miss is packaged too, as what it is, with the slack as a number
     kv.write_text("build_status=timing-failed\nwns_ns=-0.117\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
-    missed = load_artifact_manifest(write_overlay_build_manifest(work, kv, name="dau-vivado"))
+    missed_path = write_overlay_build_manifest(work, kv, name="dau-vivado")
+    assert missed_path is not None
+    missed = load_artifact_manifest(missed_path)
     assert (missed.metadata["build_status"], missed.metadata["wns_ns"]) == ("timing-failed", -0.117)

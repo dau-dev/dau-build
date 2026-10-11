@@ -3,9 +3,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from dau_sim.integrations.verilator_profiles import VerilatorProfile
+
+if TYPE_CHECKING:
+    from dau_sim.integrations.cocotb import CocotbProfile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest, load_yaml_mapping
@@ -44,7 +47,7 @@ def available_verilator_profiles(profile_manifests: Iterable[Path] = ()) -> tupl
     return tuple(sorted(_load_verilator_profile_map(profile_manifests)))
 
 
-def resolve_verilator_profile(name: str, profile_manifests: Iterable[Path] = ()) -> VerilatorProfile:
+def resolve_verilator_profile(name: str, profile_manifests: Iterable[Path] = ()) -> VerilatorProfile | CocotbProfile:
     profiles = _load_verilator_profile_map(profile_manifests)
     try:
         return profiles[name]
@@ -53,7 +56,7 @@ def resolve_verilator_profile(name: str, profile_manifests: Iterable[Path] = ())
         raise SimulationProfileError(f"unknown DAU Verilator profile {name!r}; expected one of: {known}") from exc
 
 
-def resolve_profile(name: str, profile_manifests: Iterable[Path] = ()) -> VerilatorProfile:
+def resolve_profile(name: str, profile_manifests: Iterable[Path] = ()) -> VerilatorProfile | CocotbProfile:
     """The single profile resolution chain: dau-sim's registered profiles
     first, then manifest-registered ones. Every dau-build simulate entrypoint
     resolves through here so a profile name means the same thing everywhere."""
@@ -73,14 +76,14 @@ def resolve_profile(name: str, profile_manifests: Iterable[Path] = ()) -> Verila
         raise SimulationProfileError(f"unknown DAU Verilator profile {name!r}; expected one of: {known}") from None
 
 
-def load_verilator_profiles_from_manifest(manifest_path: Path) -> dict[str, VerilatorProfile]:
+def load_verilator_profiles_from_manifest(manifest_path: Path) -> dict[str, VerilatorProfile | CocotbProfile]:
     try:
         manifest = load_artifact_manifest(manifest_path, validate_paths=False)
     except ArtifactManifestError as exc:
         raise SimulationProfileError(f"{manifest_path.as_posix()}: {exc}") from exc
 
     artifacts_by_id = _artifacts_by_id(manifest.artifacts)
-    profiles: dict[str, VerilatorProfile] = {}
+    profiles: dict[str, VerilatorProfile | CocotbProfile] = {}
     for artifact in manifest.artifacts:
         if artifact.kind != "metadata" or artifact.role != SIMULATION_PROFILE_ROLE:
             continue
@@ -94,8 +97,8 @@ def load_verilator_profiles_from_manifest(manifest_path: Path) -> dict[str, Veri
     return profiles
 
 
-def _load_verilator_profile_map(profile_manifests: Iterable[Path]) -> dict[str, VerilatorProfile]:
-    profiles: dict[str, VerilatorProfile] = {}
+def _load_verilator_profile_map(profile_manifests: Iterable[Path]) -> dict[str, VerilatorProfile | CocotbProfile]:
+    profiles: dict[str, VerilatorProfile | CocotbProfile] = {}
     for manifest_path in (*default_profile_manifest_paths(), *(Path(path) for path in profile_manifests)):
         profiles.update(load_verilator_profiles_from_manifest(manifest_path))
     return profiles

@@ -39,7 +39,8 @@ dependencies = [
     "lerna>=2.0.4",
     "omegaconf",
     "pydantic",
-    "pyslang",
+    # read from pyslang.syntax and pyslang.parsing; 12 dropped the top-level re-exports
+    "pyslang>=11",
     "pyyaml",
     "typing_extensions",
 ]
@@ -53,6 +54,7 @@ develop = [
     "codespell",
     "hatchling",
     "mdformat",
+    "mdformat-frontmatter",
     "mdformat-tables>=1",
     "pytest",
     "pytest-cov",
@@ -98,7 +100,6 @@ replace = 'version = "{new_version}"'
 
 [tool.coverage.run]
 omit = [
-    # a bare directory path matches no file; coverage omit takes globs
     "dau_build/tests/integration/*",
 ]
 
@@ -174,18 +175,23 @@ section-order = [
 "**/tests/**" = ["ARG"]
 
 
+[tool.ty.analysis]
+# dau-build does not depend on dau-core (dau-build is public and dau-core is
+# not yet); the integration tests that read its registry skip without it
+allowed-unresolved-imports = ["dau_core.**"]
+
 [tool.yardang]
 title = "dau-build"
 root = "README.md"
 pages = [
-    "docs/tutorial/first-build.md",
-    "docs/how-to/run-a-build.md",
-    "docs/how-to/program-hardware.md",
-    "docs/how-to/extend-dau-build.md",
-    "docs/reference/commands.md",
-    "docs/reference/config-groups.md",
-    "docs/reference/tasks-and-steps.md",
-    "docs/explanation/architecture.md",
+    "docs/src/tutorial/first-build.md",
+    "docs/src/how-to/run-a-build.md",
+    "docs/src/how-to/program-hardware.md",
+    "docs/src/how-to/extend-dau-build.md",
+    "docs/src/reference/commands.md",
+    "docs/src/reference/config-groups.md",
+    "docs/src/reference/tasks-and-steps.md",
+    "docs/src/explanation/architecture.md",
 ]
 use-autoapi = false
 

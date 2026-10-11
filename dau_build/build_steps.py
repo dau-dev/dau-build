@@ -174,11 +174,13 @@ class CocotbSimulator(Simulator):
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
-            from dau_sim.integrations.cocotb import run_cocotb_testbench
+            from dau_sim.integrations.cocotb import CocotbProfile, run_cocotb_testbench
 
             from dau_build.simulation_profiles import resolve_profile
 
             profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
+            if not isinstance(profile, CocotbProfile):
+                raise BuildStepError(f"profile {self.profile!r} is a Verilator profile; run it with simulator=verilator")
             # the cocotb runner raises on any failing test
             run_cocotb_testbench(
                 sources=profile.sources,
@@ -236,10 +238,15 @@ class VerilatorSimulator(Simulator):
 
     def _run_registered_profile(self, task: "SimulateTask") -> BuildStepResult:
         from dau_sim.integrations.verilator import run_verilator_testbench
+        from dau_sim.integrations.verilator_profiles import VerilatorProfile
 
         from dau_build.simulation_profiles import resolve_profile
 
+        if not self.profile:
+            raise BuildStepError("a registered-profile run needs simulator.profile")
         profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
+        if not isinstance(profile, VerilatorProfile):
+            raise BuildStepError(f"profile {self.profile!r} is a cocotb profile; run it with simulator=cocotb")
         result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=task._profile_work_dir(profile.name))
         marker = self.expect_stdout or profile.expect_stdout
         if marker not in result.stdout:
@@ -497,7 +504,8 @@ class StageTask(BuildCallableModel):
         return_code = execute_plan_steps(steps)
         if return_code != 0:
             raise BuildStepError(f"stage task {self.task_name!r} failed with exit code {return_code}")
-        backend_segment = f" backend={self.backend}" if getattr(self, "backend", None) else ""
+        backend = getattr(self, "backend", None)
+        backend_segment = f" backend={backend}" if backend else ""
         return BuildStepResult(
             step=self.task_name,
             message=f"dau-build-stage\ttask={self.task_name}{backend_segment} steps={len(steps)} status=executed",
@@ -1077,7 +1085,7 @@ def _write_vivado_backend_handoff(
 
 
 def _write_vivado_backend_artifacts(artifacts: VivadoBackendArtifacts) -> None:
-    outputs: list[tuple[Path, str | None]] = [
+    outputs: list[tuple[Path | None, str | None]] = [
         (artifacts.overlay_tcl_path, artifacts.overlay_tcl_text),
         (artifacts.build_tcl_path, artifacts.build_tcl_text),
         (artifacts.manifest_path, artifacts.manifest_text),

@@ -51,7 +51,7 @@ class ArtifactBundle(BaseModel):
     def hdl_source_entries(self) -> tuple[ArtifactBundleEntry, ...]:
         return tuple(entry for entry in self.entries_for_kind("source") if is_hdl_source_artifact(entry.artifact))
 
-    def validate(self, *, required_roles: tuple[str, ...] = (), require_hdl_sources: bool = False) -> ArtifactBundle:
+    def check(self, *, required_roles: tuple[str, ...] = (), require_hdl_sources: bool = False) -> ArtifactBundle:
         errors: list[str] = []
         roles = {entry.artifact.role for entry in self.entries}
         missing_roles = tuple(role for role in required_roles if role not in roles)
@@ -91,7 +91,7 @@ def load_artifact_bundle(
             for artifact in manifest.artifacts
         )
     entries.extend(ArtifactBundleEntry(artifact=_normalized_artifact(artifact), origin="direct", manifest_path=None) for artifact in direct_artifacts)
-    return ArtifactBundle(name=name, entries=tuple(entries), manifest_paths=resolved_manifest_paths).validate(
+    return ArtifactBundle(name=name, entries=tuple(entries), manifest_paths=resolved_manifest_paths).check(
         required_roles=required_roles,
         require_hdl_sources=require_hdl_sources,
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from dau_build.mm_shell import (
     MmDdrJobShellRequest,
@@ -217,7 +218,7 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
 def _probe_platform(**overrides):
     from dau_build.platforms import HostLink, PlatformDefinition, ResourceBudget, StorageTier, XdmaPersonality
 
-    base = {
+    base: dict[str, Any] = {
         "name": "probe-k7",
         "part": "xc7k325tffg900-2",
         "budget": ResourceBudget(lut=178800, ff=382600, bram36=415, dsp=810),
@@ -282,7 +283,7 @@ def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
 def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
-    common = {
+    common: dict[str, Any] = {
         "output_root": tmp_path / "shell",
         "hdl_sources": (tile,),
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
@@ -313,7 +314,7 @@ def test_a_shared_platform_cannot_be_tampered_through_one_request(tmp_path: Path
 
     tile = tmp_path / "stream_tile.sv"
     tile.write_text("module stream_tile; endmodule\n")
-    common = {
+    common: dict[str, Any] = {
         "output_root": tmp_path / "shell",
         "hdl_sources": (tile,),
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
@@ -324,7 +325,7 @@ def test_a_shared_platform_cannot_be_tampered_through_one_request(tmp_path: Path
     second = MmJobShellRequest(platform=platform, **common)
     assert first.platform is second.platform
     with _pytest.raises(TypeError):
-        first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # type: ignore[index]
+        first.platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # ty: ignore[invalid-assignment]
     assert second.platform.host_link.xdma_personality.params["plltype"] == "QPLL1"
 
 

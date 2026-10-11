@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, overload
 
 from ccflow import BaseModel
 from pydantic import ConfigDict
@@ -169,6 +169,12 @@ class HardwareToolchainConfig(BaseModel):
     @property
     def lspci_slot(self) -> str:
         return self.required_host_access("endpoint_bdf").removeprefix("0000:")
+
+    @overload
+    def required_host_access(self, field_name: Literal["rescan_bdfs", "runtime_pm_patterns"]) -> tuple[str, ...]: ...
+
+    @overload
+    def required_host_access(self, field_name: Literal["endpoint_bdf", "expected_endpoint_id", "jtag_cable", "reset_bridge_bdf"]) -> str: ...
 
     def required_host_access(self, field_name: str) -> str | tuple[str, ...]:
         """A host-access fact a plan step needs; unset means the caller

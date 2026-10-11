@@ -2,57 +2,38 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 from amaranth import Instance
 from amaranth.lib.wiring import Component, In, Out
 from pydantic import BaseModel, Field, ValidationError, model_validator
-
-try:
-    from pyslang import (
-        ContinuousAssignSyntax,
-        DataDeclarationSyntax,
-        HierarchyInstantiationSyntax,
-        IdentifierNameSyntax,
-        ImplicitAnsiPortSyntax,
-        ImplicitTypeSyntax,
-        InterfacePortHeaderSyntax,
-        ModportDeclarationSyntax,
-        ModportNamedPortSyntax,
-        ModportSimplePortListSyntax,
-        NamedPortConnectionSyntax,
-        OrderedPortConnectionSyntax,
-        ProceduralBlockSyntax,
-        ScopedNameSyntax,
-        SyntaxKind,
-        SyntaxNode,
-        SyntaxTree,
-        TokenKind,
-        WildcardPortConnectionSyntax,
-    )
-except ImportError:
-    from pyslang.parsing import TokenKind
-    from pyslang.syntax import (
-        ContinuousAssignSyntax,
-        DataDeclarationSyntax,
-        HierarchyInstantiationSyntax,
-        IdentifierNameSyntax,
-        ImplicitAnsiPortSyntax,
-        ImplicitTypeSyntax,
-        InterfacePortHeaderSyntax,
-        ModportDeclarationSyntax,
-        ModportNamedPortSyntax,
-        ModportSimplePortListSyntax,
-        NamedPortConnectionSyntax,
-        OrderedPortConnectionSyntax,
-        ProceduralBlockSyntax,
-        ScopedNameSyntax,
-        SyntaxKind,
-        SyntaxNode,
-        SyntaxTree,
-        WildcardPortConnectionSyntax,
-    )
-from typing import Self
+from pyslang.parsing import Token, TokenKind
+from pyslang.syntax import (
+    CompilationUnitSyntax,
+    ContinuousAssignSyntax,
+    DataDeclarationSyntax,
+    HierarchyInstantiationSyntax,
+    IdentifierNameSyntax,
+    ImplicitAnsiPortSyntax,
+    ImplicitTypeSyntax,
+    IntegerTypeSyntax,
+    InterfacePortHeaderSyntax,
+    KeywordTypeSyntax,
+    ModportDeclarationSyntax,
+    ModportNamedPortSyntax,
+    ModportSimplePortListSyntax,
+    ModuleDeclarationSyntax,
+    NamedPortConnectionSyntax,
+    NetPortHeaderSyntax,
+    OrderedPortConnectionSyntax,
+    ProceduralBlockSyntax,
+    ScopedNameSyntax,
+    SyntaxKind,
+    SyntaxNode,
+    SyntaxTree,
+    VariablePortHeaderSyntax,
+    WildcardPortConnectionSyntax,
+)
 
 __all__ = (
     "ContinuousAssignment",
@@ -74,6 +55,7 @@ __all__ = (
 
 
 Keyword = Literal["bit", "wire", "logic", "reg"]
+_KEYWORDS: dict[str, Keyword] = {"bit": "bit", "wire": "wire", "logic": "logic", "reg": "reg"}
 
 
 def _sv_clog2(value) -> int:
@@ -396,15 +378,17 @@ class Module(_Base):
     def from_str(cls, st: str) -> Module:
         tree = SyntaxTree.fromText(st)
         root = tree.root
-        if root.kind == SyntaxKind.CompilationUnit:
+        if isinstance(root, CompilationUnitSyntax):
             # multi-module file: take the last module/interface declaration (the top)
-            declarations = [member for member in root.members if member.kind in (SyntaxKind.ModuleDeclaration, SyntaxKind.InterfaceDeclaration)]
-            if not declarations:
-                raise ValueError("no module or interface declaration found")
-            root = declarations[-1]
+            declarations = [member for member in root.members if isinstance(member, ModuleDeclarationSyntax)]
+            root = declarations[-1] if declarations else None
+        if not isinstance(root, ModuleDeclarationSyntax):
+            # the text holds no module or interface (a package, say): a bad
+            # value for this call, so ValueError as before
+            raise ValueError("no module or interface declaration found")  # noqa: TRY004
         model = Interface if root.kind == SyntaxKind.InterfaceDeclaration else Module
         try:
-            return model(name=root.header.name.value, node=root)
+            return model(name=root.header.name.valueText, node=root)
         except ValidationError as error:
             # parsing runs inside a validator; surface its refusal as what it is
             for item in error.errors(include_context=True):
@@ -460,6 +444,15 @@ class Module(_Base):
             self.modules[i] = Module.from_module(module.name, root=root).resolve(root=root)
         return self
 
+    @property
+    def _declaration(self) -> ModuleDeclarationSyntax:
+        """The parsed declaration. ``node`` is typed ``object`` so the model
+        can hold a pyslang object without a schema for it; the parse methods
+        read it through here."""
+        if not isinstance(self.node, ModuleDeclarationSyntax):
+            raise TypeError(f"{self.name!r} holds no parsed module or interface declaration")
+        return self.node
+
     @model_validator(mode="after")
     def _parse_structure(self) -> Self:
         # Skip parsing if not parseable
@@ -484,7 +477,7 @@ class Module(_Base):
         return self
 
     def _parse_params(self):
-        for param in self._syntax_declaration_items(self.node.header.parameters or []):
+        for param in self._syntax_declaration_items(self._declaration.header.parameters or []):
             for declaration in param.declarators:
                 self.parameters.append(
                     Parameter(
@@ -530,7 +523,7 @@ class Module(_Base):
         to unresolved.
         """
         self.__localparams__ = {}
-        for member in self.node.members:
+        for member in self._declaration.members:
             if getattr(member, "kind", None) != SyntaxKind.ParameterDeclarationStatement:
                 continue
             for declarator in getattr(member.parameter, "declarators", []):
@@ -555,9 +548,9 @@ class Module(_Base):
         return Dimensions(dimensions=[1])
 
     @staticmethod
-    def _keyword_from_kind(kind) -> str:
+    def _keyword_from_kind(kind) -> Keyword:
         """Map a SyntaxKind type to a keyword string."""
-        mapping = {
+        mapping: dict[SyntaxKind, Keyword] = {
             SyntaxKind.LogicType: "logic",
             SyntaxKind.RegType: "reg",
             SyntaxKind.BitType: "bit",
@@ -565,9 +558,15 @@ class Module(_Base):
         return mapping.get(kind, "wire")
 
     def _parse_ports(self):
-        port_items = self.node.header.ports
+        port_items = self._declaration.header.ports
+        if port_items is None:
+            # `interface bus;` has no port list, as distinct from an empty one
+            return
         if len(port_items) == 3 and not any(isinstance(port, ImplicitAnsiPortSyntax) for port in port_items):
-            port_items = port_items[1]
+            # an older pyslang nested the list between its parentheses
+            middle = port_items[1]
+            if isinstance(middle, SyntaxNode):
+                port_items = middle
         if port_items:
             for port in port_items:
                 if isinstance(port, ImplicitAnsiPortSyntax):
@@ -575,20 +574,26 @@ class Module(_Base):
                         modport = port.header.modport
                         self.interface_ports.append(
                             InterfacePort(
-                                name=port.declarator.name.value,
+                                name=port.declarator.name.valueText,
                                 interface=port.header.nameOrKeyword.valueText,
                                 modport=modport.member.valueText if modport is not None else "",
                                 node=port,
                             )
                         )
                     else:
-                        direction = port.header.direction.valueText
-                        if isinstance(port.header.dataType, ImplicitTypeSyntax):
-                            keyword = "bit"
+                        header = port.header
+                        if not isinstance(header, (VariablePortHeaderSyntax, NetPortHeaderSyntax)):
+                            raise SvParseError(f"{self.name}: port header form not supported: {str(port).strip()}")
+                        direction = header.direction.valueText
+                        data_type = header.dataType
+                        if isinstance(data_type, ImplicitTypeSyntax):
+                            keyword: Keyword = "bit"
+                        elif isinstance(data_type, (IntegerTypeSyntax, KeywordTypeSyntax)) and data_type.keyword.valueText in _KEYWORDS:
+                            keyword = _KEYWORDS[data_type.keyword.valueText]
                         else:
-                            keyword = port.header.dataType.keyword.valueText
-                        declarator = port.declarator.name.value
-                        dimensions = self._parse_dimensions(port.header.dataType)
+                            raise SvParseError(f"{self.name}: port data type not supported: {str(port).strip()}")
+                        declarator = port.declarator.name.valueText
+                        dimensions = self._parse_dimensions(data_type)
                         if direction == "input":
                             self.inputs.append(
                                 Input(
@@ -618,7 +623,7 @@ class Module(_Base):
                             )
                         else:
                             raise SvParseError(f"{self.name}: port direction {direction!r} is not supported ({str(port).strip()})")
-                elif port.kind == TokenKind.Comma or port.kind in (TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
+                elif isinstance(port, Token) and port.kind in (TokenKind.Comma, TokenKind.OpenParenthesis, TokenKind.CloseParenthesis):
                     continue
                 else:
                     raise SvParseError(f"{self.name}: port form not supported: {str(port).strip()}")
@@ -626,7 +631,7 @@ class Module(_Base):
             raise SvParseError(f"{self.name}: non-ANSI port lists are not supported")
 
     def _parse_modules(self):
-        for member in self.node.members:
+        for member in self._declaration.members:
             if isinstance(member, HierarchyInstantiationSyntax):
                 self._parse_hierarchy_instantiation(member, self.modules)
 
@@ -658,7 +663,7 @@ class Module(_Base):
 
     def _parse_wires(self):
         """Parse internal wire/reg/logic/bit declarations from module body."""
-        for member in self.node.members:
+        for member in self._declaration.members:
             if isinstance(member, DataDeclarationSyntax):
                 if member.type.kind == SyntaxKind.NamedType:
                     continue
@@ -701,7 +706,7 @@ class Module(_Base):
 
     def _parse_assigns(self):
         """Parse continuous assignment statements."""
-        for member in self.node.members:
+        for member in self._declaration.members:
             if isinstance(member, ContinuousAssignSyntax):
                 for assignment in member.assignments:
                     lhs = str(assignment.left).strip()
@@ -724,7 +729,7 @@ class Module(_Base):
             SyntaxKind.InitialBlock: "initial",
             SyntaxKind.FinalBlock: "final",
         }
-        for member in self.node.members:
+        for member in self._declaration.members:
             if isinstance(member, ProceduralBlockSyntax):
                 kind = kind_map.get(member.kind, str(member.kind))
                 sensitivity = ""
@@ -747,7 +752,7 @@ class Module(_Base):
 
     def _parse_generates(self):
         """Parse generate constructs."""
-        for member in self.node.members:
+        for member in self._declaration.members:
             if hasattr(member, "kind") and member.kind == SyntaxKind.GenerateRegion:
                 gen = GenerateBlock(kind="region", body=str(member).strip())
                 self._find_instantiations_in_generate(member, gen)
@@ -786,8 +791,8 @@ class Module(_Base):
             pass
 
     def _parse_modports(self):
-        data_declarations = {}
-        for member in self.node.members:
+        data_declarations: dict[object, tuple[Keyword, Dimensions]] = {}
+        for member in self._declaration.members:
             if isinstance(member, DataDeclarationSyntax):
                 name = member.declarators[0].name.value
                 if member.type.kind == SyntaxKind.NamedType:
@@ -796,7 +801,7 @@ class Module(_Base):
                 dimensions = self._parse_dimensions(member.type)
                 data_declarations[name] = (keyword, dimensions)
 
-        for member in self.node.members:
+        for member in self._declaration.members:
             if isinstance(member, ModportDeclarationSyntax):
                 name = member.items[0].name.valueText
                 mp = Modport(name=name)
@@ -836,10 +841,11 @@ class Module(_Base):
                                             resolved = True
                                             break
 
-                                # if still not resolved, give up and just default to
-                                # input and empty dimensions
+                                # if still not resolved, give up and default to a
+                                # plain logic port with empty dimensions (the port's
+                                # direction comes from the modport, not from here)
                                 if not resolved:
-                                    keyword = "input"
+                                    keyword = "logic"
                                     dimensions = Dimensions()
 
                                 # now attach input/output to modport

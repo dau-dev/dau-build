@@ -403,8 +403,11 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
                 f"IN_WIDTH={fanout_width}; the feed and fan-out widths must agree"
             )
     elif fanout_width != 64:
+        # a width other than 64 comes from a partitioner's IN_WIDTH or a front
+        # gearbox, and a gearbox requires a partitioner, so one is present
+        partitioner = composition.partitioner.module if composition.partitioner is not None else "(none)"
         raise ScanCompositionError(
-            f"the shared partitioner {composition.partitioner.module!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
+            f"the shared partitioner {partitioner!r} declares IN_WIDTH={fanout_width} but the feed stream is 64-bit; "
             "widen data_width (quad rows) or compose a front_unpack with OUT_WIDTH=128 to drive a wide fan-out"
         )
 

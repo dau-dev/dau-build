@@ -35,26 +35,26 @@ def test_composed_platform_nested_config_is_frozen() -> None:
     platform = probe_platform()
     original_lut = platform.budget.lut
     with pytest.raises(ValidationError, match="frozen"):
-        platform.budget.lut = original_lut + 1
+        platform.budget.lut = original_lut + 1  # ty: ignore[invalid-assignment]
     assert platform.budget.lut == original_lut
 
     with pytest.raises(ValidationError, match="frozen"):
-        platform.host_link.pcie_lanes = 8
+        platform.host_link.pcie_lanes = 8  # ty: ignore[invalid-assignment]
     with pytest.raises(ValidationError, match="frozen"):
-        platform.storage_tiers[0].capacity_bytes = 2 << 30
+        platform.storage_tiers[0].capacity_bytes = 2 << 30  # ty: ignore[invalid-assignment]
     with pytest.raises(ValidationError, match="frozen"):
-        platform.host_link.xdma_personality.params = {}
+        platform.host_link.xdma_personality.params = {}  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
-        platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # type: ignore[index]
+        platform.host_link.xdma_personality.params["plltype"] = "TAMPERED"  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
-        XdmaPersonality().params["plltype"] = "TAMPERED"  # type: ignore[index]
+        XdmaPersonality().params["plltype"] = "TAMPERED"  # ty: ignore[invalid-assignment]
 
     access = platform.host_access
     assert access is not None
     assert isinstance(access.rescan_bdfs, tuple)
     original_rescan_bdfs = access.rescan_bdfs
     with pytest.raises(TypeError):
-        access.rescan_bdfs[0] = "0000:ff:00.0"  # type: ignore[index]
+        access.rescan_bdfs[0] = "0000:ff:00.0"  # ty: ignore[invalid-assignment]
     assert access.rescan_bdfs == original_rescan_bdfs
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from artlink import Capability
 
 from dau_build.packaging import load_artifact_manifest
 from dau_build.publish_inventory import PUBLISHED_METADATA_KEYS, publish_inventory, write_published_inventory
@@ -61,11 +62,14 @@ def test_publish_inventory_keeps_only_the_bitstream_and_its_capabilities(tmp_pat
 
     (artifact,) = published.artifacts
     assert artifact.role == "bitstream"
+    assert artifact.path is not None
     # the NAME, never the build-host path it was produced at
     assert Path(artifact.path).name == "dau_mm_job.bit" and Path(artifact.path).parent == Path(".")
     assert artifact.digest is not None
 
-    advertised = {capability.name: dict(capability.metadata) for capability in artifact.provides}
+    provides = [capability for capability in artifact.provides if isinstance(capability, Capability)]
+    assert len(provides) == len(artifact.provides)
+    advertised = {capability.name: dict(capability.metadata) for capability in provides}
     assert advertised == {
         "int32-example-sort": {"count": 2, "unit_kind": "sort"},
         "int32-example-sum": {"count": 1, "unit_kind": "aggregation", "opcodes": ["sum", "count"]},
@@ -143,7 +147,9 @@ def test_write_published_inventory_round_trips(tmp_path: Path) -> None:
 
     reloaded = load_artifact_manifest(destination)
     assert len(reloaded.artifacts) == 1
-    assert {capability.name for capability in reloaded.artifacts[0].provides} == {"int32-example-sort", "int32-example-sum"}
+    reloaded_provides = [capability for capability in reloaded.artifacts[0].provides if isinstance(capability, Capability)]
+    assert len(reloaded_provides) == len(reloaded.artifacts[0].provides)
+    assert {capability.name for capability in reloaded_provides} == {"int32-example-sort", "int32-example-sum"}
 
 
 def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) -> None:

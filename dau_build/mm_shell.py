@@ -99,6 +99,12 @@ class MmDdrJobShellRequest(BaseModel):
     def _width_within_platform_tiers(self) -> MmDdrJobShellRequest:
         # the catalog gate at the source: a width outside the platform's
         # tier list never reaches tcl generation
+        return self.check_width_tier()
+
+    def check_width_tier(self) -> MmDdrJobShellRequest:
+        """Refuse a data width outside the platform's tiers. The validator
+        runs it at construction; tcl generation runs it again because
+        ``model_copy`` skips validators."""
         if self.data_width not in self.platform.width_tiers:
             raise ValueError(
                 f"data_width {self.data_width} is not a width tier of platform {self.platform.name!r} (width_tiers={list(self.platform.width_tiers)})"
@@ -421,7 +427,7 @@ def mm_ddr_job_shell_project_tcl(request: MmDdrJobShellRequest) -> str:
     device_temp_i)."""
     # re-run the tier gate here: model_copy(update=) skips validators, so a
     # copied request could otherwise carry a width the platform refuses
-    request._width_within_platform_tiers()
+    request.check_width_tier()
     preamble = _project_preamble_tcl(
         request,
         banner=(

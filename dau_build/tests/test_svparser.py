@@ -376,3 +376,23 @@ endmodule
         done = next(o for o in mod.outputs if o.name == "done")
         assert done.dimensions.resolved
         assert done.dimensions.size() == 1
+
+
+class TestDeclarationsTheParserUsedToReject:
+    """Two shapes that are legal SystemVerilog and failed to parse, found when
+    the parser's syntax-tree access was given real types."""
+
+    def test_an_interface_with_no_port_list_parses(self):
+        # the header's port list is absent, not empty, and was passed to len()
+        interface = Interface.from_str("interface bus;\n  logic y;\n  modport m(input y);\nendinterface\n")
+        assert interface.inputs == [] and interface.outputs == []
+        assert [port.name for port in interface.modports[0].inputs] == ["y"]
+
+    def test_a_modport_port_declared_nowhere_defaults_its_type(self):
+        # the documented fallback is a plain port with empty dimensions; it set
+        # the type keyword to "input", which the port model rejects
+        interface = Interface.from_str("interface bus(input logic clk);\n  modport m(input y);\nendinterface\n")
+        (port,) = interface.modports[0].inputs
+        assert port.name == "y"
+        assert port.keyword == "logic"
+        assert port.dimensions.dimensions == []

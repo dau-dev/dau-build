@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*/*.md"))]
+PAGES = [ROOT / "README.md", *sorted((ROOT / "docs" / "src").glob("*/*.md"))]
 BLOCK = re.compile(r"```(?:bash|text|sh)\n(.*?)```", re.DOTALL)
 
 
@@ -40,3 +40,12 @@ def test_a_documented_command_composes(page: str, command: str, monkeypatch, cap
         argv = ["--explain", *argv]
     assert main(argv) == 0, f"{page}: {command}"
     assert "model" in capsys.readouterr().out, f"{page}: {command} composed no model"
+
+
+def test_the_docs_pages_are_found() -> None:
+    """The page list is a glob, so moving the docs makes it match nothing and
+    every command above stops being checked with the suite still green. That
+    happened once, when the pages moved under docs/src; this fails instead."""
+    documented = [page for page in PAGES if page.name != "README.md"]
+    assert documented, "no docs pages matched; the PAGES glob no longer points at the docs tree"
+    assert {page.parent.name for page in documented} >= {"tutorial", "how-to", "reference", "explanation"}

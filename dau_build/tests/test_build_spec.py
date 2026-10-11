@@ -380,4 +380,5 @@ def _main_exit_code(argv: list[str]) -> int:
     try:
         return main(argv)
     except SystemExit as exc:
-        return int(exc.code)
+        # sys.exit semantics: None is success, an int is the code, anything else is 1
+        return exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)

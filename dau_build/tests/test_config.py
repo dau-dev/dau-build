@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ccflow import CallableModel
 from ccflow.utils.hydra import cfg_run, load_config as base_load_config
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from dau_build.build_steps import TASK_MODEL_TYPES, BuildStepResult
 from dau_build.config import compose_config, load_config
@@ -33,6 +33,7 @@ def test_packaged_task_config_targets_follow_the_callable_registry() -> None:
 
     for name, model_type in TASK_MODEL_TYPES.items():
         cfg = OmegaConf.load(_CONFIG_DIR / "task" / f"{name}.yaml")
+        assert isinstance(cfg, DictConfig)
         assert cfg["_target_"] == _target(model_type)
 
 

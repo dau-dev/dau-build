@@ -137,10 +137,15 @@ def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool) -> tupl
 
     source = bitstream_from_shell_build_manifest(manifest_path)
     bitstream = next(artifact for artifact in load_artifact_manifest(manifest_path).artifacts if artifact.role == "bitstream")
-    snapshot = flash_snapshot_path(work_root, bitstream.digest)
+    digest = bitstream.digest
+    if digest is None:
+        # bitstream_from_shell_build_manifest refuses an undigested bitstream;
+        # this is the same rule, stated where the digest is read
+        raise ShellBuildError(f"bitstream in {manifest_path} carries no digest")
+    snapshot = flash_snapshot_path(work_root, digest)
     if write:
         data = source.read_bytes()
-        if hashlib.new(bitstream.digest.algorithm, data).hexdigest() != bitstream.digest.value:
+        if hashlib.new(digest.algorithm, data).hexdigest() != digest.value:
             raise ShellBuildError(f"bitstream digest changed after manifest verification: {source}")
         snapshot.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=snapshot.parent, prefix=f".{snapshot.name}.")
