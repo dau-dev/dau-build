@@ -138,10 +138,8 @@ def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool) -> tupl
     source = bitstream_from_shell_build_manifest(manifest_path)
     bitstream = next(artifact for artifact in load_artifact_manifest(manifest_path).artifacts if artifact.role == "bitstream")
     digest = bitstream.digest
-    if digest is None:
-        # bitstream_from_shell_build_manifest refuses an undigested bitstream;
-        # this is the same rule, stated where the digest is read
-        raise ShellBuildError(f"bitstream in {manifest_path} carries no digest")
+    # bitstream_from_shell_build_manifest above refuses an undigested bitstream
+    assert digest is not None, f"bitstream in {manifest_path} carries no digest"
     snapshot = flash_snapshot_path(work_root, digest)
     if write:
         data = source.read_bytes()

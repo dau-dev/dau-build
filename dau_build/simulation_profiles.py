@@ -3,12 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
+from dau_sim.integrations.cocotb import CocotbProfile
 from dau_sim.integrations.verilator_profiles import VerilatorProfile
-
-if TYPE_CHECKING:
-    from dau_sim.integrations.cocotb import CocotbProfile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest, load_yaml_mapping
@@ -135,8 +133,6 @@ def _verilator_profile_from_mapping(
         if not entry.expect_stdout:
             raise SimulationProfileError(f"profile {entry.name!r} (verilator) requires expect_stdout")
         return VerilatorProfile(name=entry.name, sources=sources, top_module=entry.top_module, expect_stdout=entry.expect_stdout)
-
-    from dau_sim.integrations.cocotb import CocotbProfile
 
     if not entry.test_module:
         raise SimulationProfileError(f"profile {entry.name!r} (cocotb) requires test_module")

@@ -380,7 +380,12 @@ class Module(_Base):
         root = tree.root
         if isinstance(root, CompilationUnitSyntax):
             # multi-module file: take the last module/interface declaration (the top)
-            declarations = [member for member in root.members if isinstance(member, ModuleDeclarationSyntax)]
+            # a program is the same syntax class as a module, so the kind decides
+            declarations = [
+                member
+                for member in root.members
+                if isinstance(member, ModuleDeclarationSyntax) and member.kind in (SyntaxKind.ModuleDeclaration, SyntaxKind.InterfaceDeclaration)
+            ]
             root = declarations[-1] if declarations else None
         if not isinstance(root, ModuleDeclarationSyntax):
             # the text holds no module or interface (a package, say): a bad
@@ -583,7 +588,8 @@ class Module(_Base):
                     else:
                         header = port.header
                         if not isinstance(header, (VariablePortHeaderSyntax, NetPortHeaderSyntax)):
-                            raise SvParseError(f"{self.name}: port header form not supported: {str(port).strip()}")
+                            # pyslang's port headers are interface, variable and net, so this is defensive
+                            raise SvParseError(f"{self.name}: port header form not supported: {str(port).strip()}")  # pragma: no cover
                         direction = header.direction.valueText
                         data_type = header.dataType
                         if isinstance(data_type, ImplicitTypeSyntax):

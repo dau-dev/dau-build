@@ -212,7 +212,7 @@ class VerilatorSimulator(Simulator):
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
-            return self._run_registered_profile(task)
+            return self._run_registered_profile(task, self.profile)
         spec = task.require_spec_and_module()
         if self.testbench_path is None:
             raise BuildStepError("missing required override: simulator.testbench_path")
@@ -236,17 +236,15 @@ class VerilatorSimulator(Simulator):
             ),
         )
 
-    def _run_registered_profile(self, task: "SimulateTask") -> BuildStepResult:
+    def _run_registered_profile(self, task: "SimulateTask", name: str) -> BuildStepResult:
         from dau_sim.integrations.verilator import run_verilator_testbench
         from dau_sim.integrations.verilator_profiles import VerilatorProfile
 
         from dau_build.simulation_profiles import resolve_profile
 
-        if not self.profile:
-            raise BuildStepError("a registered-profile run needs simulator.profile")
-        profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
+        profile = resolve_profile(name, profile_manifests=self.profile_manifest)
         if not isinstance(profile, VerilatorProfile):
-            raise BuildStepError(f"profile {self.profile!r} is a cocotb profile; run it with simulator=cocotb")
+            raise BuildStepError(f"profile {name!r} is a cocotb profile; run it with simulator=cocotb")
         result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=task._profile_work_dir(profile.name))
         marker = self.expect_stdout or profile.expect_stdout
         if marker not in result.stdout:
