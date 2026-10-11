@@ -53,6 +53,7 @@ develop = [
     "codespell",
     "hatchling",
     "mdformat",
+    "mdformat-frontmatter",
     "mdformat-tables>=1",
     "pytest",
     "pytest-cov",
@@ -98,7 +99,10 @@ replace = 'version = "{new_version}"'
 
 [tool.coverage.run]
 omit = [
+<<<<<<< before updating
     # a bare directory path matches no file; coverage omit takes globs
+=======
+>>>>>>> after updating
     "dau_build/tests/integration/*",
 ]
 
