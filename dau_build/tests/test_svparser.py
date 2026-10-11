@@ -396,3 +396,29 @@ class TestDeclarationsTheParserUsedToReject:
         assert port.name == "y"
         assert port.keyword == "logic"
         assert port.dimensions.dimensions == []
+
+    def test_a_trailing_program_is_not_taken_as_the_top(self):
+        # a program declaration is the same syntax class as a module; the top
+        # is the last module or interface, as it was before the narrowing
+        mod = Module.from_str("module dut(input logic clk);\nendmodule\nprogram test;\nendprogram\n")
+        assert mod.name == "dut"
+
+    def test_a_port_type_outside_the_keyword_set_is_refused(self):
+        from dau_build.svparser import SvParseError
+
+        with pytest.raises(SvParseError, match="port data type not supported"):
+            Module.from_str("module m(input int x);\nendmodule\n")
+
+    def test_a_single_non_ansi_port_is_refused(self):
+        from dau_build.svparser import SvParseError
+
+        with pytest.raises(SvParseError, match="port form not supported"):
+            Module.from_str("module m(x);\n  input x;\nendmodule\n")
+
+    def test_text_with_no_module_or_interface_is_refused(self):
+        with pytest.raises(ValueError, match="no module or interface declaration found"):
+            Module.from_str("package a;\nendpackage\npackage b;\nendpackage\n")
+
+    def test_a_node_that_is_not_a_declaration_is_refused(self):
+        with pytest.raises(TypeError, match="no parsed module or interface declaration"):
+            Module(name="x", node=object())

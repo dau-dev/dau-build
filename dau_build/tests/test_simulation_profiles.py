@@ -123,3 +123,45 @@ def test_cocotb_profile_parses_and_runs_through_simulate_task(tmp_path) -> None:
         output_root=tmp_path / "work",
     )(None)
     assert "simulator=cocotb" in result.message and "status=passed" in result.message
+
+
+def test_a_profile_run_under_the_wrong_simulator_says_which_to_use(tmp_path) -> None:
+    """A Verilator profile named under simulator=cocotb, or the reverse, is
+    refused with the simulator to use instead of failing on a missing field."""
+    import pytest as _pytest
+
+    from dau_build.build_steps import BuildStepError, CocotbSimulator, SimulateTask, VerilatorSimulator
+
+    profiles_yaml = tmp_path / "profiles.yaml"
+    profiles_yaml.write_text(
+        "schema: dau.simulation-profile/v0\n"
+        "profiles:\n"
+        "  - name: sum-cocotb\n"
+        "    simulator: cocotb\n"
+        "    top_module: ready_valid_sum\n"
+        "    test_module: dau_sim.tests.cocotb_benches.ready_valid_sum_tb\n"
+        "    sources:\n"
+        "      - uri: package://dau_sim/tests/sv/ready_valid_sum.sv\n"
+        "  - name: sum-verilator\n"
+        "    simulator: verilator\n"
+        "    top_module: ready_valid_sum\n"
+        "    expect_stdout: PASS\n"
+        "    sources:\n"
+        "      - uri: package://dau_sim/tests/sv/ready_valid_sum.sv\n"
+    )
+    manifest_yaml = tmp_path / "profiles.artifacts.yaml"
+    manifest_yaml.write_text(
+        "schema: artlink.manifest/v0\n"
+        "name: test-mixed-profiles\n"
+        "intent: simulation-profiles\n"
+        "artifacts:\n"
+        "  - id: profiles\n"
+        f"    path: {profiles_yaml.name}\n"
+        "    kind: metadata\n"
+        "    role: simulation-profile\n"
+        "    format: dau.simulation-profile/v0\n"
+    )
+    with _pytest.raises(BuildStepError, match="run it with simulator=verilator"):
+        SimulateTask(simulator=CocotbSimulator(profile="sum-verilator", profile_manifest=(manifest_yaml,)), output_root=tmp_path / "a")(None)
+    with _pytest.raises(BuildStepError, match="run it with simulator=cocotb"):
+        SimulateTask(simulator=VerilatorSimulator(profile="sum-cocotb", profile_manifest=(manifest_yaml,)), output_root=tmp_path / "b")(None)

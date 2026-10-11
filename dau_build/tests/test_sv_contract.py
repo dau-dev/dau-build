@@ -113,3 +113,15 @@ def test_non_ansi_port_list_is_reported_explicitly(tmp_path: Path) -> None:
     source = _write(tmp_path, "module old (a, b);\ninput a;\noutput b;\nendmodule\n")
     with pytest.raises(StreamContractError, match="non-ANSI"):
         module_ports([source], "old")
+
+
+def test_a_wildcard_port_list_is_refused(tmp_path: Path) -> None:
+    source = _write(tmp_path, "module wild (.*);\nendmodule\n")
+    with pytest.raises(StreamContractError, match="port list form this check does not read"):
+        module_ports([source], "wild")
+
+
+def test_an_interface_port_is_refused(tmp_path: Path) -> None:
+    source = _write(tmp_path, "module bused (input wire logic clk, bus.m b);\nendmodule\n")
+    with pytest.raises(StreamContractError, match="not a plain directional port"):
+        module_ports([source], "bused")
