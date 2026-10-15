@@ -14,8 +14,8 @@ defaults:
   - optional plan: null
   - optional programmer: null
   - optional design: null
-  - callable: callable
 
+callable: /model
 context: {}
 
 cli:
