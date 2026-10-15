@@ -29,7 +29,7 @@ a downstream package add new options without editing dau-build.
 ## Config groups are directories
 
 Each subdirectory of `dau_build/config` is a Hydra config group: `task`,
-`step`, `spec`, `board`, `backend`, `platform`, `design`, `callable`.
+`step`, `spec`, `board`, `backend`, `platform`, `design`.
 Selecting an option is an override `<group>=<option>`, where the option is the
 file's path relative to the group directory. A file at
 `config/task/tasks/sim/simulate.yaml` is selected as `task=tasks/sim/simulate`.
@@ -64,8 +64,8 @@ config, so you can see what they produced.
 
 ## ccflow owns ordering and caching
 
-A composed `model` is run by ccflow, not by dau-build directly. The `callable`
-group wires a `MultiEvaluator` of a `GraphEvaluator` and a
+A composed `model` is run by ccflow, not by dau-build directly. `cli.model`
+in the base config wires a `MultiEvaluator` of a `GraphEvaluator` and a
 `MemoryCacheEvaluator`. Composite tasks declare their prerequisites through
 `Flow.deps`, the `GraphEvaluator` walks that dependency graph so the pieces
 run in order, and the `MemoryCacheEvaluator` keeps a shared dependency from

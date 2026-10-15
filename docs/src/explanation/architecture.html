@@ -272,7 +272,7 @@ a downstream package add new options without editing dau-build.</p>
 <section id="config-groups-are-directories">
 <h2>Config groups are directories<a class="headerlink" href="#config-groups-are-directories" title="Link to this heading">¶</a></h2>
 <p>Each subdirectory of <code class="docutils literal notranslate"><span class="pre">dau_build/config</span></code> is a Hydra config group: <code class="docutils literal notranslate"><span class="pre">task</span></code>,
-<code class="docutils literal notranslate"><span class="pre">step</span></code>, <code class="docutils literal notranslate"><span class="pre">spec</span></code>, <code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>, <code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">design</span></code>, <code class="docutils literal notranslate"><span class="pre">callable</span></code>.
+<code class="docutils literal notranslate"><span class="pre">step</span></code>, <code class="docutils literal notranslate"><span class="pre">spec</span></code>, <code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>, <code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">design</span></code>.
 Selecting an option is an override <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code>, where the option is the
 file’s path relative to the group directory. A file at
 <code class="docutils literal notranslate"><span class="pre">config/task/tasks/sim/simulate.yaml</span></code> is selected as <code class="docutils literal notranslate"><span class="pre">task=tasks/sim/simulate</span></code>.
@@ -304,8 +304,8 @@ config, so you can see what they produced.</p>
 </section>
 <section id="ccflow-owns-ordering-and-caching">
 <h2>ccflow owns ordering and caching<a class="headerlink" href="#ccflow-owns-ordering-and-caching" title="Link to this heading">¶</a></h2>
-<p>A composed <code class="docutils literal notranslate"><span class="pre">model</span></code> is run by ccflow, not by dau-build directly. The <code class="docutils literal notranslate"><span class="pre">callable</span></code>
-group wires a <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code> of a <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> and a
+<p>A composed <code class="docutils literal notranslate"><span class="pre">model</span></code> is run by ccflow, not by dau-build directly. <code class="docutils literal notranslate"><span class="pre">cli.model</span></code>
+in the base config wires a <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code> of a <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> and a
 <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code>. Composite tasks declare their prerequisites through
 <code class="docutils literal notranslate"><span class="pre">Flow.deps</span></code>, the <code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> walks that dependency graph so the pieces
 run in order, and the <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> keeps a shared dependency from

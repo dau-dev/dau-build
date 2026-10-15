@@ -265,10 +265,9 @@ selected with <code class="docutils literal notranslate"><span class="pre">task=
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional spec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional plan</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">optional design</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">callable</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">callable</span>
 </pre></div>
 </div>
-<p>Every group except <code class="docutils literal notranslate"><span class="pre">callable</span></code> is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
+<p>Every group is <code class="docutils literal notranslate"><span class="pre">optional</span> <span class="pre">…</span> <span class="pre">null</span></code>: nothing is selected unless
 you override it. A run selects <code class="docutils literal notranslate"><span class="pre">task=</span></code> to populate <code class="docutils literal notranslate"><span class="pre">model</span></code>, and may add <code class="docutils literal notranslate"><span class="pre">spec=</span></code>, <code class="docutils literal notranslate"><span class="pre">board=</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=</span></code>, <code class="docutils literal notranslate"><span class="pre">driver=</span></code>, <code class="docutils literal notranslate"><span class="pre">memory=</span></code>,
 <code class="docutils literal notranslate"><span class="pre">simulator=</span></code>, <code class="docutils literal notranslate"><span class="pre">platform=</span></code>, <code class="docutils literal notranslate"><span class="pre">host=</span></code> and <code class="docutils literal notranslate"><span class="pre">plan=</span></code>.</p>
 <p>Each option file begins with a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">&#64;package</span> <span class="pre">&lt;key&gt;</span></code> directive that places its
@@ -338,11 +337,6 @@ other groups use their singular key (<code class="docutils literal notranslate">
 <td><p><code class="docutils literal notranslate"><span class="pre">design</span></code></p></td>
 <td><p>(none packaged)</p></td>
 <td><p>Reserved; registered by extension packages.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">callable</span></code></p></td>
-<td><p>none</p></td>
-<td><p>ccflow registry pointer</p></td>
-<td><p>Fixed evaluator wiring; not normally overridden.</p></td>
 </tr>
 </tbody>
 </table>
@@ -586,9 +580,10 @@ compositions registered by extension packages on the search path.</p>
 </section>
 <section id="callable">
 <h2><code class="docutils literal notranslate"><span class="pre">callable</span></code><a class="headerlink" href="#callable" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">callable/callable.yaml</span></code> is a fixed ccflow registry pointer that wires the
-evaluator (<code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> + <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code> through
-<code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code>). It is selected by default and not normally overridden.</p>
+<p><code class="docutils literal notranslate"><span class="pre">callable</span></code> is a plain key in <code class="docutils literal notranslate"><span class="pre">base.yaml</span></code>, not a group. <code class="docutils literal notranslate"><span class="pre">callable:</span> <span class="pre">/model</span></code> tells
+ccflow’s <code class="docutils literal notranslate"><span class="pre">cfg_run</span></code> which registry entry to run. Override it with
+<code class="docutils literal notranslate"><span class="pre">callable=/&lt;entry&gt;</span></code>. The evaluator (<code class="docutils literal notranslate"><span class="pre">GraphEvaluator</span></code> + <code class="docutils literal notranslate"><span class="pre">MemoryCacheEvaluator</span></code>
+through <code class="docutils literal notranslate"><span class="pre">MultiEvaluator</span></code>) is wired by <code class="docutils literal notranslate"><span class="pre">cli.model</span></code> in the same file.</p>
 </section>
 </section>
 
