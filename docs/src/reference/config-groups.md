@@ -22,10 +22,9 @@ defaults:
   - optional spec: null
   - optional plan: null
   - optional design: null
-  - callable: callable
 ```
 
-Every group except `callable` is `optional … null`: nothing is selected unless
+Every group is `optional … null`: nothing is selected unless
 you override it. A run selects `task=` to populate `model`, and may add `spec=`, `board=`, `backend=`, `driver=`, `memory=`,
 `simulator=`, `platform=`, `host=` and `plan=`.
 
@@ -46,7 +45,6 @@ other groups use their singular key (`# @package board`, and so on).
 | `plan`      | `plan`         | a `HardwarePlan` (e.g. `RecoveryPlan`)    | The hardware-session plan (`HardwarePlanTask`).          |
 | `host`      | `host`         | `dau_build.build_config.HostConfig`       | The build host's source checkout roots (none packaged).  |
 | `design`    | `design`       | (none packaged)                           | Reserved; registered by extension packages.              |
-| `callable`  | none           | ccflow registry pointer                   | Fixed evaluator wiring; not normally overridden.         |
 
 ## `task`
 
@@ -224,6 +222,7 @@ compositions registered by extension packages on the search path.
 
 ## `callable`
 
-`callable/callable.yaml` is a fixed ccflow registry pointer that wires the
-evaluator (`GraphEvaluator` + `MemoryCacheEvaluator` through
-`MultiEvaluator`). It is selected by default and not normally overridden.
+`callable` is a plain key in `base.yaml`, not a group. `callable: /model` tells
+ccflow's `cfg_run` which registry entry to run. Override it with
+`callable=/<entry>`. The evaluator (`GraphEvaluator` + `MemoryCacheEvaluator`
+through `MultiEvaluator`) is wired by `cli.model` in the same file.
