@@ -32,7 +32,7 @@ dependencies = [
     "amaranth",
     "artlink",
     "ccflow>=0.8.5",
-    "dau-sim>=0.2.0",
+    "dau-sim>=0.3",
     "dau-utils",
     "hydra-core",
     # the search-path bridge that honours hydra.lernaplugins entry points
