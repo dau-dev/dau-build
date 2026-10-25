@@ -5,7 +5,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal
 
-from dau_sim.integrations.cocotb import CocotbProfile
+from dau_sim.integrations.profiles import SimulationProfile
 from dau_sim.integrations.verilator_profiles import VerilatorProfile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -23,6 +23,21 @@ class _ProfileEntry(BaseModel):
     top_module: str = Field(min_length=1)
     expect_stdout: str | None = None
     test_module: str | None = None
+
+
+class ManifestVerilatorProfile(VerilatorProfile):
+    """A Verilator bench registered by an artifact manifest. Its bench
+    prints ``expect_stdout`` on success, which is how a run is judged."""
+
+    expect_stdout: str
+
+
+class CocotbProfile(SimulationProfile):
+    """A cocotb bench registered by an artifact manifest: HDL sources, the
+    toplevel they build, and the cocotb test module that drives it."""
+
+    hdl_toplevel: str
+    test_module: str
 
 
 SIMULATION_PROFILE_SCHEMA = "dau.simulation-profile/v0"
@@ -132,7 +147,7 @@ def _verilator_profile_from_mapping(
     if entry.simulator == "verilator":
         if not entry.expect_stdout:
             raise SimulationProfileError(f"profile {entry.name!r} (verilator) requires expect_stdout")
-        return VerilatorProfile(name=entry.name, sources=sources, top_module=entry.top_module, expect_stdout=entry.expect_stdout)
+        return ManifestVerilatorProfile(name=entry.name, sources=sources, top_module=entry.top_module, expect_stdout=entry.expect_stdout)
 
     if not entry.test_module:
         raise SimulationProfileError(f"profile {entry.name!r} (cocotb) requires test_module")

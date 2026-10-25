@@ -67,3 +67,25 @@ def _write_self_contained_counter_manifest(tmp_path) -> Path:
         encoding="utf-8",
     )
     return manifest_path
+
+
+def _stub_verilator(monkeypatch, stdout: str) -> None:
+    from types import SimpleNamespace
+
+    import dau_sim.integrations.verilator
+
+    monkeypatch.setattr(dau_sim.integrations.verilator, "run_verilator_testbench", lambda **_kwargs: SimpleNamespace(stdout=stdout))
+
+
+def test_a_registered_dau_sim_profile_passes_on_a_clean_run(tmp_path, monkeypatch):
+    # dau-sim's registered profiles carry no success marker: a run that exits
+    # clean passes unless the caller names one
+    _stub_verilator(monkeypatch, "done\n")
+    overrides = ["simulator=simulators/verilator", "simulator.profile=ready-valid-sum", f"model.output_root={tmp_path}"]
+
+    result = run_request_config("task", "tasks/sim/simulate", overrides=overrides)
+    assert "status=passed" in result.message
+    assert "marker=" not in result.message
+
+    with pytest.raises(BuildStepError, match="did not report 'READY_OK'"):
+        run_request_config("task", "tasks/sim/simulate", overrides=[*overrides, "simulator.expect_stdout=READY_OK"])
