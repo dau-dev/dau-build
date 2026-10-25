@@ -83,10 +83,9 @@ def test_cocotb_profile_parses_and_runs_through_simulate_task(tmp_path) -> None:
     from shutil import which
 
     import pytest as _pytest
-    from dau_sim.integrations.cocotb import CocotbProfile
 
     from dau_build.build_steps import CocotbSimulator, SimulateTask
-    from dau_build.simulation_profiles import resolve_profile
+    from dau_build.simulation_profiles import CocotbProfile, resolve_profile
 
     profiles_yaml = tmp_path / "profiles.yaml"
     profiles_yaml.write_text(

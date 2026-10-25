@@ -174,9 +174,9 @@ class CocotbSimulator(Simulator):
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
-            from dau_sim.integrations.cocotb import CocotbProfile, run_cocotb_testbench
+            from dau_sim.integrations.cocotb import run_cocotb_testbench
 
-            from dau_build.simulation_profiles import resolve_profile
+            from dau_build.simulation_profiles import CocotbProfile, resolve_profile
 
             profile = resolve_profile(self.profile, profile_manifests=self.profile_manifest)
             if not isinstance(profile, CocotbProfile):
@@ -240,18 +240,22 @@ class VerilatorSimulator(Simulator):
         from dau_sim.integrations.verilator import run_verilator_testbench
         from dau_sim.integrations.verilator_profiles import VerilatorProfile
 
-        from dau_build.simulation_profiles import resolve_profile
+        from dau_build.simulation_profiles import ManifestVerilatorProfile, resolve_profile
 
         profile = resolve_profile(name, profile_manifests=self.profile_manifest)
         if not isinstance(profile, VerilatorProfile):
             raise BuildStepError(f"profile {name!r} is a cocotb profile; run it with simulator=cocotb")
         result = run_verilator_testbench(sources=profile.sources, top_module=profile.top_module, work_dir=task._profile_work_dir(profile.name))
-        marker = self.expect_stdout or profile.expect_stdout
-        if marker not in result.stdout:
+        # a manifest profile names its success marker; dau-sim's registered
+        # profiles do not, and pass when the bench runs clean unless the
+        # caller asks for one
+        marker = self.expect_stdout or (profile.expect_stdout if isinstance(profile, ManifestVerilatorProfile) else None)
+        if marker is not None and marker not in result.stdout:
             raise BuildStepError(f"profile {profile.name!r} did not report {marker!r}")
         return BuildStepResult(
             step="simulate",
-            message=f"dau-build-simulate\ttask=simulate simulator=verilator profile={profile.name} status=passed marker={marker}",
+            message=f"dau-build-simulate\ttask=simulate simulator=verilator profile={profile.name} status=passed"
+            + (f" marker={marker}" if marker is not None else ""),
         )
 
 
