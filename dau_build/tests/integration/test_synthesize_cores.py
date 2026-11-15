@@ -407,3 +407,54 @@ def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
                 assert found is point, f"{definition.name}: its {point.clock_ns} point is invisible to a run at clock_period_ns={spelling}"
 
     assert len(spellings) > 1, f"the registry now spells the 150 MHz tier one way ({spellings}); this guard's premise is gone, and so is its value"
+
+
+def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) -> None:
+    """A tile another package contributes resolves under /dau-core-contrib,
+    and its sources close over dau-core's own, which come first."""
+    from ccflow import ModelRegistry
+    from omegaconf import OmegaConf
+
+    tile = {
+        "_target_": "dau_core.cores.CoreDefinition",
+        "name": "vendor-alu",
+        "kind": "operator",
+        "module": "dau_row_map_alu",
+        "source": "dau_row_map_alu.sv",
+        "description": "a contributed tile reusing a stock module",
+        "depends": ["map-alu-pkg"],
+        "contract_kind": "row-stream",
+        "record_words": 2,
+        "ingest": {"_target_": "dau_core.cores.IngestRate", "rows": 1, "per_cycles": 7},
+    }
+    root = ModelRegistry.root()
+    # an installed contributor may already have composed the group
+    installed = root.models.get("dau-core-contrib")
+    if installed is not None:
+        root.remove("dau-core-contrib")
+    root.load_config(OmegaConf.create({"dau-core-contrib": {"vendor-alu": tile}}))
+    try:
+        task = _task(tmp_path, cores=("/dau-core-contrib/vendor-alu",))
+        definition = task._resolve_core("/dau-core-contrib/vendor-alu")
+        assert [path.name for path in task._sources_for(definition)] == ["dau_map_alu_pkg.sv", "dau_row_map_alu.sv"]
+        assert "status=handoff-written" in task(NullContext()).message
+        with pytest.raises(BuildStepError, match="unknown core"):
+            task._resolve_core("/dau-core-contrib/no-such-tile")
+    finally:
+        root.remove("dau-core-contrib")
+        if installed is not None:
+            root.add("dau-core-contrib", installed)
+
+
+def test_discovering_contributed_cores_leaves_the_root_registry_alone() -> None:
+    """With no contributed group composed, the task composes whatever is
+    installed into a detached registry (or finds nothing), never the root."""
+    from ccflow import ModelRegistry
+
+    from dau_build.synthesize_cores import contributed_registry
+
+    before = set(ModelRegistry.root().models)
+    contributed = contributed_registry()
+    assert set(ModelRegistry.root().models) == before
+    if contributed is not None:
+        assert len(contributed.models) > 0

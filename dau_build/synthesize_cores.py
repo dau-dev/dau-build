@@ -37,6 +37,9 @@ __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
 _REGISTRY_PREFIX = "/dau-core/"
 _REGISTRY_GROUP = "dau-core"
+# where a package contributing tiles composes them (dau-core's CONTRIB_GROUP)
+_CONTRIB_PREFIX = "/dau-core-contrib/"
+_CONTRIB_GROUP = "dau-core-contrib"
 
 
 class CoreEnvelopeReport(BaseModel):
@@ -164,11 +167,55 @@ def core_registry():
     return subregistry
 
 
-def resolve_core_definition(entry: str):
-    name = entry.removeprefix(_REGISTRY_PREFIX)
-    if "/" in name:
-        raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> registry path")
+def contributed_registry():
+    """The composed ``/dau-core-contrib`` subregistry: tiles other packages
+    contribute through the same hydra searchpath, or None when none are
+    installed. Every installed option is composed, discovered rather than
+    named, into a detached registry for the reason :func:`core_registry`
+    gives."""
+    from ccflow import ModelRegistry
+
+    subregistry = ModelRegistry.root().models.get(_CONTRIB_GROUP)
+    if subregistry is not None:
+        return subregistry
+    from hydra import initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    from omegaconf import OmegaConf
+
+    from .config import compose_config
+
+    instance = GlobalHydra.instance()
+    if instance.is_initialized():
+        options = instance.config_loader().get_group_options(_CONTRIB_GROUP)
+    else:
+        with initialize_config_dir(config_dir=str(Path(__file__).resolve().parent / "config"), version_base=None):
+            options = GlobalHydra.instance().config_loader().get_group_options(_CONTRIB_GROUP)
+    if not options:
+        return None
+    group = compose_config([f"+{_CONTRIB_GROUP}=[{','.join(options)}]"]).cfg.get(_CONTRIB_GROUP)
+    scratch = ModelRegistry(name=f"{_CONTRIB_GROUP}-synthesize-cores")
+    scratch.load_config(OmegaConf.create({_CONTRIB_GROUP: group}))
+    return scratch.models.get(_CONTRIB_GROUP)
+
+
+def lookup_core(name: str):
+    """A core by name: dau-core's own first, then contributed ones."""
     definition = core_registry().models.get(name)
+    if definition is None and (contributed := contributed_registry()) is not None:
+        definition = contributed.models.get(name)
+    return definition
+
+
+def resolve_core_definition(entry: str):
+    if entry.startswith(_CONTRIB_PREFIX):
+        name = entry.removeprefix(_CONTRIB_PREFIX)
+        contributed = contributed_registry()
+        definition = None if contributed is None or "/" in name else contributed.models.get(name)
+    else:
+        name = entry.removeprefix(_REGISTRY_PREFIX)
+        definition = None if "/" in name else core_registry().models.get(name)
+    if "/" in name:
+        raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> or /dau-core-contrib/<name> registry path")
     if definition is None:
         raise BuildStepError(f"unknown core {entry!r}")
     if definition.kind.value == "package":
@@ -257,6 +304,10 @@ class SynthesizeCoresTask(BuildCallableModel):
     def _core_registry(self):
         return core_registry()
 
+    def _registries(self) -> tuple:
+        contributed = contributed_registry()
+        return (self._core_registry(),) if contributed is None else (self._core_registry(), contributed)
+
     def _resolve_core(self, entry: str):
         return resolve_core_definition(entry)
 
@@ -289,11 +340,11 @@ class SynthesizeCoresTask(BuildCallableModel):
         rather than calling into the provider package, for the same reason
         :meth:`_core_registry` does.
         """
-        subregistry = self._core_registry()
+        registries = self._registries()
         selected: dict[str, object] = {}
 
         def visit(name: str) -> None:
-            model = subregistry.models.get(name)
+            model = next((found for registry in registries if (found := registry.models.get(name)) is not None), None)
             if model is None:
                 raise BuildStepError(f"core {name!r} is a declared dependency but is not in the registry")
             for dependency in model.depends:
@@ -301,7 +352,8 @@ class SynthesizeCoresTask(BuildCallableModel):
             selected.setdefault(name, model)
 
         visit(definition.name)
-        ordered = [model for name, model in subregistry.models.items() if name in selected]
+        # dau-core's own first: a contributed tile depends on them, never the reverse
+        ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
         return tuple(model.source_path() for model in ordered)
 
     def _stage_core(self, definition, *, part: str, root: Path) -> Path:
@@ -379,7 +431,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             part=self._part(),
             clock_period_ns=self.clock_period_ns,
             params=self._generics(definition),
-            resolve=self._core_registry().models.get,
+            resolve=lookup_core,
         )
 
     @staticmethod
