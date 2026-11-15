@@ -61,6 +61,10 @@ class MmJobShellRequest(BaseModel):
     input_bram_bytes: int = 0x0002_0000  # 128 KiB
     output_bram_bytes: int = 0x0000_1000  # 4 KiB
     jobs: int = 12
+    # run Vivado's post-route physical optimization: it can close a path a
+    # few tens of picoseconds short (the IP's own, crowded by a large design)
+    # at the cost of a longer implementation
+    post_route_phys_opt: bool = False
 
     @property
     def resolved_part(self) -> str:
@@ -94,6 +98,8 @@ class MmDdrJobShellRequest(BaseModel):
     # smartconnect slaves. Mirrors the composition's data_width.
     data_width: int = 64
     jobs: int = 12
+    # see MmJobShellRequest.post_route_phys_opt
+    post_route_phys_opt: bool = False
 
     @model_validator(mode="after")
     def _width_within_platform_tiers(self) -> MmDdrJobShellRequest:
@@ -372,6 +378,8 @@ def _build_postamble_tcl(request) -> str:
     when the platform declares lane placements."""
     placements = request.platform.lane_placements
     hook_line = 'set_property STEPS.OPT_DESIGN.TCL.PRE "$origin_dir/gt_lane_swizzle.tcl" [get_runs impl_1]\n' if placements else ""
+    if request.post_route_phys_opt:
+        hook_line += "set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]\n"
     # A board whose resident path is SPI flash needs the mcs the flasher
     # actually writes, and the bitstream has to carry the SPI width/rate
     # BEFORE it is generated -- a raw JTAG write of a plain bitstream never
