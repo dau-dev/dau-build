@@ -428,6 +428,10 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
         "ingest": {"_target_": "dau_core.cores.IngestRate", "rows": 1, "per_cycles": 7},
     }
     root = ModelRegistry.root()
+    # an installed contributor may already have composed the group
+    installed = root.models.get("dau-core-contrib")
+    if installed is not None:
+        root.remove("dau-core-contrib")
     root.load_config(OmegaConf.create({"dau-core-contrib": {"vendor-alu": tile}}))
     try:
         task = _task(tmp_path, cores=("/dau-core-contrib/vendor-alu",))
@@ -438,6 +442,8 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
             task._resolve_core("/dau-core-contrib/no-such-tile")
     finally:
         root.remove("dau-core-contrib")
+        if installed is not None:
+            root.add("dau-core-contrib", installed)
 
 
 def test_discovering_contributed_cores_leaves_the_root_registry_alone() -> None:
