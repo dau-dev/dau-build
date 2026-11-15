@@ -136,7 +136,8 @@ module dau_mm_sorted_scan_job #(
 
     wire write_fire;
     wire read_fire;
-    wire [15:0] selected_addr;
+    reg read_pending;
+    reg [11:0] read_addr;
     wire [31:0] identity_rdata;
     wire [31:0] reset_request_unused;
 
@@ -343,8 +344,7 @@ module dau_mm_sorted_scan_job #(
     wire lane_rst = !s_axi_aresetn || pipeline_error_reset;
 
     assign write_fire = !s_axi_bvalid && s_axi_awvalid && s_axi_wvalid;
-    assign read_fire = !write_fire && !s_axi_rvalid && s_axi_arvalid;
-    assign selected_addr = write_fire ? s_axi_awaddr : s_axi_araddr;
+    assign read_fire = !write_fire && !s_axi_rvalid && !read_pending && s_axi_arvalid;
     assign s_axi_bresp = 2'b00;
     assign s_axi_rresp = 2'b00;
 
@@ -383,7 +383,7 @@ module dau_mm_sorted_scan_job #(
         .SORT_CAPACITY(SORT_CAPACITY),
         .BUILD_ID(BUILD_ID)
     ) identity_registers (
-        .addr({4'h0, selected_addr[11:0]}),
+        .addr({4'h0, read_addr}),
         .wen(1'b0),
         .wdata(32'd0),
         .reset_request(reset_request_unused),
@@ -807,6 +807,8 @@ module dau_mm_sorted_scan_job #(
             s_axi_arready <= 1'b0;
             s_axi_rdata <= 32'h0000_0000;
             s_axi_rvalid <= 1'b0;
+            read_pending <= 1'b0;
+            read_addr <= 12'd0;
             input_address <= 32'd0;
             input_length_bytes <= 32'd0;
             job_start <= 1'b0;
@@ -865,7 +867,11 @@ module dau_mm_sorted_scan_job #(
             end
 
             if (read_fire) begin
-                case (s_axi_araddr[11:0])
+                read_addr <= s_axi_araddr[11:0];
+                read_pending <= 1'b1;
+            end
+            if (read_pending) begin
+                case (read_addr)
                     ADDR_JOB_CONTROL: s_axi_rdata <= 32'd0;
                     ADDR_JOB_STATUS: s_axi_rdata <= {28'd0, job_error, job_done, job_busy, !job_busy};
                     ADDR_LAST_ERROR: s_axi_rdata <= {24'd0, job_error_code};
@@ -899,6 +905,7 @@ module dau_mm_sorted_scan_job #(
                     default: s_axi_rdata <= identity_rdata;
                 endcase
                 s_axi_rvalid <= 1'b1;
+                read_pending <= 1'b0;
             end else if (s_axi_rvalid && s_axi_rready) begin
                 s_axi_rvalid <= 1'b0;
             end

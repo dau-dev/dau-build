@@ -592,17 +592,18 @@ def _axi_lite_decode_wires_sv() -> str:
     """Wire declarations for the shared AXI-Lite register decode."""
     return """    wire write_fire;
     wire read_fire;
-    wire [15:0] selected_addr;
+    reg read_pending;
+    reg [11:0] read_addr;
     wire [31:0] identity_rdata;
     wire [31:0] reset_request_unused;"""
 
 
 def _axi_lite_decode_assigns_sv() -> str:
     """Single-outstanding AXI-Lite decode: a write wins over a concurrent
-    read; responses are always OKAY."""
+    read; responses are always OKAY. A read is accepted, then answered a
+    cycle later from the latched address (see the register process)."""
     return """    assign write_fire = !s_axi_bvalid && s_axi_awvalid && s_axi_wvalid;
-    assign read_fire = !write_fire && !s_axi_rvalid && s_axi_arvalid;
-    assign selected_addr = write_fire ? s_axi_awaddr : s_axi_araddr;
+    assign read_fire = !write_fire && !s_axi_rvalid && !read_pending && s_axi_arvalid;
     assign s_axi_bresp = 2'b00;
     assign s_axi_rresp = 2'b00;"""
 
@@ -623,7 +624,7 @@ def _identity_registers_instance_sv() -> str:
         .SORT_CAPACITY(SORT_CAPACITY),
         .BUILD_ID(BUILD_ID)
     ) identity_registers (
-        .addr({4'h0, selected_addr[11:0]}),
+        .addr({4'h0, read_addr}),
         .wen(1'b0),
         .wdata(32'd0),
         .reset_request(reset_request_unused),
@@ -642,7 +643,13 @@ def _axi_lite_register_process_sv(
     """The AXI-Lite register process shared by every register-windowed top:
     handshake reset, the JOB_CONTROL start pulse, and the
     JOB_STATUS/LAST_ERROR status-glue readback. Callers splice in their
-    register cases; every extra carries its own trailing newline."""
+    register cases; every extra carries its own trailing newline.
+
+    A read takes two cycles: the address is latched when the read is
+    accepted, and the data is selected from the latched address the cycle
+    after. The address arrives from the interconnect on the faster XDMA
+    clock, so selecting from it directly left the decode and the register
+    mux half a job-clock period, which a 44-lane design missed by 0.27 ns."""
     return f"""    always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) begin
             s_axi_awready <= 1'b0;
@@ -651,6 +658,8 @@ def _axi_lite_register_process_sv(
             s_axi_arready <= 1'b0;
             s_axi_rdata <= 32'h0000_0000;
             s_axi_rvalid <= 1'b0;
+            read_pending <= 1'b0;
+            read_addr <= 12'd0;
 {reset_extra}        end else begin
             job_start <= 1'b0;
 {tick_extra}            s_axi_awready <= write_fire;
@@ -668,13 +677,18 @@ def _axi_lite_register_process_sv(
             end
 
             if (read_fire) begin
-                case (s_axi_araddr[11:0])
+                read_addr <= s_axi_araddr[11:0];
+                read_pending <= 1'b1;
+            end
+            if (read_pending) begin
+                case (read_addr)
                     ADDR_JOB_CONTROL: s_axi_rdata <= 32'd0;
                     ADDR_JOB_STATUS: s_axi_rdata <= {{28'd0, job_error, job_done, job_busy, !job_busy}};
                     ADDR_LAST_ERROR: s_axi_rdata <= {{24'd0, job_error_code}};
 {read_cases_extra}                    default: s_axi_rdata <= identity_rdata;
                 endcase
                 s_axi_rvalid <= 1'b1;
+                read_pending <= 1'b0;
             end else if (s_axi_rvalid && s_axi_rready) begin
                 s_axi_rvalid <= 1'b0;
             end
