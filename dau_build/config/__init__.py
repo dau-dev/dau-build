@@ -8,7 +8,40 @@ from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-__all__ = ("compose_config", "load_config", "request_config", "resolve_platform", "run_request_config")
+__all__ = ("CONTRIB_GROUP", "compose_config", "contributed_options", "load_config", "request_config", "resolve_platform", "run_request_config")
+
+# where a package or a searchpath directory contributes tiles (dau-core's CONTRIB_GROUP)
+CONTRIB_GROUP = "dau-core-contrib"
+
+
+def contributed_options(overrides: Sequence[str] = (), *, config_dir: str | None = None) -> tuple[str, ...]:
+    """The ``dau-core-contrib`` options on the searchpath a composition with
+    these overrides and ``config_dir`` would see: installed packages'
+    ``hydra.lernaplugins`` entry points, a ``--config-dir`` overlay, and any
+    ``hydra.searchpath=[...]`` override. Discovered, so a tile registered
+    from any of them composes without being named."""
+    from hydra import initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    searchpath = [override for override in overrides if override.lstrip("+").partition("=")[0] == "hydra.searchpath"][-1:]
+    if config_dir:
+        entry = f"file://{Path(config_dir).resolve()}"
+        given = searchpath[0].partition("=")[2].strip().removeprefix("[").removesuffix("]") if searchpath else ""
+        searchpath = [f"hydra.searchpath=[{entry}{',' + given if given else ''}]"]
+    instance = GlobalHydra.instance()
+    if instance.is_initialized():
+        return tuple(sorted(instance.config_loader().get_group_options(CONTRIB_GROUP, overrides=searchpath)))
+    # initializing hydra runs the searchpath plugin, which can load provider
+    # configs into the root registry; asking what is installed must not
+    # change what is installed
+    root = ModelRegistry.root()
+    before = set(root.models)
+    try:
+        with initialize_config_dir(config_dir=str(Path(__file__).resolve().parent), version_base=None):
+            return tuple(sorted(GlobalHydra.instance().config_loader().get_group_options(CONTRIB_GROUP, overrides=searchpath)))
+    finally:
+        for name in set(root.models) - before:
+            root.remove(name)
 
 
 def resolve_platform(name: str, *, config_dir: str | None = None, version_base: str | None = None):

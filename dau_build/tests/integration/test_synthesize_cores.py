@@ -458,3 +458,50 @@ def test_discovering_contributed_cores_leaves_the_root_registry_alone() -> None:
     assert set(ModelRegistry.root().models) == before
     if contributed is not None:
         assert len(contributed.models) > 0
+
+
+@pytest.mark.parametrize("route", ["config-dir", "hydra-searchpath"])
+def test_a_tile_on_the_callers_searchpath_synthesizes_without_being_named(tmp_path: Path, route: str) -> None:
+    """A tile registered from a plain directory, with no package installed,
+    is discovered on the searchpath the command composes with."""
+    from ccflow import ModelRegistry
+
+    from dau_build.cli import main
+
+    tiles = tmp_path / "tiles"
+    (tiles / "dau-core-contrib").mkdir(parents=True)
+    (tiles / "dau-core-contrib" / "path-alu.yaml").write_text(
+        """path-alu:
+  _target_: dau_core.cores.CoreDefinition
+  name: path-alu
+  kind: operator
+  module: dau_row_map_alu
+  source: dau_row_map_alu.sv
+  description: a tile registered only through a searchpath
+  depends: [map-alu-pkg]
+  contract_kind: row-stream
+  record_words: 2
+  ingest: {_target_: dau_core.cores.IngestRate, rows: 1, per_cycles: 7}
+"""
+    )
+    location = ["--config-dir", str(tiles)] if route == "config-dir" else [f"hydra.searchpath=[file://{tiles}]"]
+    root = ModelRegistry.root()
+    installed = root.models.get("dau-core-contrib")
+    if installed is not None:
+        root.remove("dau-core-contrib")
+    try:
+        main(
+            [
+                *location,
+                "task=tasks/build/synthesize-cores",
+                "model.cores=[/dau-core-contrib/path-alu]",
+                f"model.output_root={tmp_path / 'out'}",
+                "model.part=xc7k325tffg900-2",
+            ]
+        )
+        assert (tmp_path / "out" / "dau_row_map_alu.ooc.tcl").is_file()
+    finally:
+        if "dau-core-contrib" in root.models:
+            root.remove("dau-core-contrib")
+        if installed is not None:
+            root.add("dau-core-contrib", installed)

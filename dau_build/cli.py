@@ -72,9 +72,16 @@ def _require_selection_resolved(overrides: list[str], cfg) -> None:
 def main(argv: list[str] | None = None) -> int:
     from ccflow.utils.hydra import cfg_run
 
-    from dau_build.config import compose_config
+    from dau_build.config import CONTRIB_GROUP, compose_config, contributed_options
 
     args, overrides = _parse(argv)
+    if not any(override.lstrip("+~").partition("=")[0] == CONTRIB_GROUP for override in overrides):
+        # tiles registered on this composition's searchpath (an installed
+        # package, --config-dir, hydra.searchpath) compose without being
+        # named; naming the group yourself selects exactly what you name
+        options = contributed_options(overrides, config_dir=args.config_dir)
+        if options:
+            overrides = [*overrides, f"+{CONTRIB_GROUP}=[{','.join(options)}]"]
     result = compose_config(overrides, config_dir=args.config_dir)
     _require_selection_resolved(overrides, result.cfg)
     if args.explain:

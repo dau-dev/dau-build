@@ -178,18 +178,11 @@ def contributed_registry():
     subregistry = ModelRegistry.root().models.get(_CONTRIB_GROUP)
     if subregistry is not None:
         return subregistry
-    from hydra import initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
     from omegaconf import OmegaConf
 
-    from .config import compose_config
+    from .config import compose_config, contributed_options
 
-    instance = GlobalHydra.instance()
-    if instance.is_initialized():
-        options = instance.config_loader().get_group_options(_CONTRIB_GROUP)
-    else:
-        with initialize_config_dir(config_dir=str(Path(__file__).resolve().parent / "config"), version_base=None):
-            options = GlobalHydra.instance().config_loader().get_group_options(_CONTRIB_GROUP)
+    options = contributed_options()
     if not options:
         return None
     group = compose_config([f"+{_CONTRIB_GROUP}=[{','.join(options)}]"]).cfg.get(_CONTRIB_GROUP)
