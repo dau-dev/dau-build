@@ -964,10 +964,30 @@ def test_wide_lane_taps_the_wide_reader_directly() -> None:
     assert "wire length_ok = (input_length_bytes != 32'd0) && (input_length_bytes[5:0] == 6'd0);" in sv
 
 
-def test_wide_lane_requires_exactly_one_lane() -> None:
-    lane = LaneTile(module="dau_int32_wide_row_projection", count_port="record_count")
-    with pytest.raises(ValidationError, match="wide_lane.*exactly one lane"):
-        ScanComposition(name="bad", module_name="dau_bad", lanes=(lane, lane), data_width=512, wide_lane=True)
+def test_several_wide_lanes_share_the_beat_through_the_broadcast() -> None:
+    """Wide lanes behind one reader: the broadcast fans the whole 512-bit
+    beat out, and each lane taps its own output of it."""
+    lane = _wide_lane_composition().lanes[0]
+    composition = ScanComposition(name="wide-lanes", module_name="dau_mm_wide_lanes_job", lanes=(lane, lane), data_width=512, wide_lane=True)
+
+    sv = generate_scan_composition_top_sv(composition, platform_id="DPV1")
+
+    assert "dau_stream_broadcast #(\n        .NUM_OUTPUTS(2),\n        .DATA_WIDTH(512)\n    ) broadcast (" in sv
+    assert "wire [511:0] bcast_data;" in sv
+    assert ".input_valid(scan_valid)" in sv and ".input_ready(scan_ready)" in sv
+    for i in (0, 1):
+        assert f"    assign filt_out_valid_{i} = bcast_valid[{i}];\n" in sv
+        assert f"    assign bcast_ready[{i}] = filt_out_ready_{i};\n" in sv
+        assert f"    assign filt_out_data_{i} = bcast_data;\n" in sv
+        assert f"wire [511:0] filt_out_data_{i};" in sv
+    assert "assign scan_ready = filt_out_ready_0;" not in sv
+
+
+def test_wide_lanes_take_no_lane_partition() -> None:
+    lane = _wide_lane_composition().lanes[0]
+    partitioned = lane.model_copy(update={"partition": TileInstance(module="dau_pair_key_filter")})
+    with pytest.raises(ValidationError, match="wide_lane.*lane partition"):
+        ScanComposition(name="bad", module_name="dau_bad", lanes=(lane, partitioned), data_width=512, wide_lane=True)
 
 
 def test_wide_lane_rejects_a_shared_partitioner() -> None:

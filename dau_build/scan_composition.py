@@ -181,9 +181,11 @@ class ScanComposition(BaseModel):
     shared dispatcher. Absent (``None``), the top emits exactly as before —
     every param-less golden stays byte-identical.
 
-    ``wide_lane`` selects the registry-legalized single-lane shape whose
-    stages consume the burst reader's whole wide beat directly. The private
-    bridge sets this flag; this public generator cannot consult its registry."""
+    ``wide_lane`` selects the registry-legalized shape whose stages consume
+    the burst reader's whole wide beat: one lane takes the stream directly,
+    several take it through the stream broadcast at the beat width. The
+    private bridge sets this flag; this public generator cannot consult its
+    registry."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -294,8 +296,6 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
             f"handle_table_capacity must be between 0 (no table) and {MAX_HANDLE_TABLE_CAPACITY}, got {composition.handle_table_capacity}"
         )
     if composition.wide_lane:
-        if len(composition.lanes) != 1:
-            raise ScanCompositionError("a wide_lane scan composition needs exactly one lane")
         if composition.partitioner is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a shared partitioner")
         # a PACKED wide lane is the point of the wide unpacker: the front
@@ -304,7 +304,7 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
         # moves half the bytes. The width coherence is checked below.
         if composition.front_gearbox is not None:
             raise ScanCompositionError("a wide_lane scan composition cannot carry a front_gearbox")
-        if composition.lanes[0].partition is not None:
+        if any(lane.partition is not None for lane in composition.lanes):
             raise ScanCompositionError("a wide_lane scan composition cannot carry a lane partition")
     if composition.partitioner is not None:
         for lane in composition.lanes:
@@ -714,12 +714,17 @@ def _wide_lane_source(composition: ScanComposition) -> tuple[int, str]:
     return composition.data_width, "scan"
 
 
+def _wide_direct(composition: ScanComposition) -> bool:
+    """Whether a single wide lane takes the stream with no fan-out placed."""
+    return composition.wide_lane and len(composition.lanes) == 1
+
+
 def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk") -> str:
     """The lane front for lane ``i``: tap the shared partitioner's per-lane
     stream, tap the broadcast directly (filterless lane), or instantiate the
     lane's partition filter off the broadcast."""
     lane = composition.lanes[i]
-    if composition.wide_lane:
+    if composition.wide_lane and len(composition.lanes) == 1:
         _, src = _wide_lane_source(composition)
         return f"""    assign filt_out_valid_{i} = {src}_valid;
     assign {src}_ready = filt_out_ready_{i};
@@ -1178,12 +1183,15 @@ def _fanout_sv(composition: ScanComposition, *, clk: str, stream_prefix: str = "
         .status_error_code(part_status_error_code)
     );"""
         return wire_decls, instance
+    # several wide lanes share the whole beat; the row stream is 64-bit
+    beat_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
+    width_param = f",\n        .DATA_WIDTH({beat_width})" if composition.wide_lane else ""
     wire_decls = f"""    wire [{num_lanes - 1}:0] bcast_valid;
     wire [{num_lanes - 1}:0] bcast_ready;
-    wire [63:0] bcast_data;
+    wire [{beat_width - 1}:0] bcast_data;
     wire bcast_last;"""
     instance = f"""    dau_stream_broadcast #(
-        .NUM_OUTPUTS({num_lanes})
+        .NUM_OUTPUTS({num_lanes}){width_param}
     ) broadcast (
         .clk({clk}),
         .rst(lane_rst),
@@ -1806,7 +1814,9 @@ def generate_scan_composition_top_sv(
         stream_prefix = "feed"
     elif composition.front_gearbox is not None:
         stream_prefix = "geared"
-    fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
+    fanout_wire_decls, fanout_instance = (
+        ("", "") if _wide_direct(composition) else _fanout_sv(composition, clk="s_axi_aclk", stream_prefix=stream_prefix)
+    )
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="s_axi_aclk")
     front_gearbox_wire_decls = _front_gearbox_wire_decls_sv(composition)
@@ -2241,7 +2251,7 @@ def generate_scan_composition_sim_sv(
         stream_prefix = "feed"
     elif composition.front_gearbox is not None:
         stream_prefix = "geared"
-    fanout_wire_decls, fanout_instance = ("", "") if composition.wide_lane else _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
+    fanout_wire_decls, fanout_instance = ("", "") if _wide_direct(composition) else _fanout_sv(composition, clk="clk", stream_prefix=stream_prefix)
     front_unpack_wire_decls = _front_unpack_wire_decls_sv(composition)
     front_unpack_instance = _front_unpack_instance_sv(composition, clk="clk")
     front_gearbox_wire_decls = _front_gearbox_wire_decls_sv(composition)
