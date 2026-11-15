@@ -438,3 +438,17 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
             task._resolve_core("/dau-core-contrib/no-such-tile")
     finally:
         root.remove("dau-core-contrib")
+
+
+def test_discovering_contributed_cores_leaves_the_root_registry_alone() -> None:
+    """With no contributed group composed, the task composes whatever is
+    installed into a detached registry (or finds nothing), never the root."""
+    from ccflow import ModelRegistry
+
+    from dau_build.synthesize_cores import contributed_registry
+
+    before = set(ModelRegistry.root().models)
+    contributed = contributed_registry()
+    assert set(ModelRegistry.root().models) == before
+    if contributed is not None:
+        assert len(contributed.models) > 0
