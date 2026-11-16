@@ -191,6 +191,18 @@ def test_post_route_phys_opt_is_enabled_only_on_request(tmp_path: Path) -> None:
     assert f"{line}\nlaunch_runs impl_1" in text
 
 
+def test_an_impl_strategy_is_set_before_the_step_overrides(tmp_path: Path) -> None:
+    """A strategy resets every step property of the run, so it has to come
+    before the phys_opt switch (and a lane-swizzle hook) or it erases them."""
+    strategy = 'set_property strategy "Performance_ExplorePostRoutePhysOpt" [get_runs impl_1]'
+    request = _ddr_request(tmp_path)
+    assert "set_property strategy" not in mm_ddr_job_shell_project_tcl(request)
+    text = mm_ddr_job_shell_project_tcl(
+        request.model_copy(update={"impl_strategy": "Performance_ExplorePostRoutePhysOpt", "post_route_phys_opt": True})
+    )
+    assert text.index(strategy) < text.index("STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED") < text.index("launch_runs impl_1")
+
+
 def test_ddr_constraints_add_sys_clk_and_calib_led_only() -> None:
     base = shell_constraints_xdc(_test_platform())
     text = ddr_shell_constraints_xdc(_test_platform())
