@@ -15,8 +15,8 @@ it, it runs on the host. Run these on the machine physically attached to the
 board.
 
 The named plans are `local-build-and-program`, `build-and-program`,
-`validate-bitstream`, `recovery`, `sram-program`, `flash`, `thunderbolt-hold`
-and `thunderbolt-release`. Full field lists are in the
+`validate-bitstream`, `recovery`, `sram-program`, `spi-flash`, `flash`,
+`thunderbolt-hold` and `thunderbolt-release`. Full field lists are in the
 [task catalog](../reference/tasks-and-steps.md).
 
 Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
@@ -118,6 +118,37 @@ dau-build task=tasks/hardware/hardware-plan \
 
 The XDMA kernel module must already be loaded. For a Vivado shell checkout
 it is at `sw/xdma/xdma.ko` in the seed or work directory.
+
+## Flash a board that boots from SPI flash
+
+A board whose platform sets `spi_boot_buswidth` loads its design from SPI
+flash at power-on. Its shell build writes a configuration-memory image
+(`dau_mm_job.mcs`) beside the bitstream and records it in the manifest with
+role `cfgmem`. The `spi-flash` plan writes that image and power-cycles the
+host so the board loads it:
+
+```bash
+dau-build task=tasks/hardware/hardware-plan \
+  platform=platforms/<vendor>/<board>-<host> \
+  plan=plans/spi-flash \
+  model.work_root=outputs/flash \
+  model.manifest=outputs/shell/shell-build.artifacts.yaml \
+  model.execute=true
+```
+
+The plan arms the deadman, removes the endpoint, writes the flash over JTAG
+through openFPGALoader's SPI bridge, then sets an RTC alarm
+(`plan.wake_after_s`, 60 by default) and powers the host off. The host option
+names the bridge bitstream for the board's part as `host_access.spi_bridge_bitstream`
+(openFPGALoader installs them as `spiOverJtag_<part>.bit.gz`). The host must
+wake from an RTC alarm, and the steps that write sysfs or power the host off
+run behind `host_access.privilege_prefix`.
+
+The plan cannot check the board, because the host is off when the plan ends.
+Once the host is back, check that the board reports the BUILD_ID of the
+manifest you flashed. If a step fails, the deadman stays armed and reboots
+the host; the flash may be partly written, and running the plan again
+rewrites it.
 
 ## Recover a hung device
 

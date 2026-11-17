@@ -174,7 +174,8 @@ known-good core byte for byte.
   board. `require_measured` rejects placeholder boards for real builds while
   config-only generation stays open.
 - `host_access` (`HostAccess`: `pci_id`, `endpoint_bdf`, `rescan_bdfs`,
-  `runtime_pm_patterns`, `runtime_pm_executable`, `jtag_cable`): the bench
+  `runtime_pm_patterns`, `runtime_pm_executable`, `jtag_cable`,
+  `reset_bridge_bdf`, `privilege_prefix`, `spi_bridge_bitstream`): the bench
   host's measured access facts. A board option leaves this unset; a host
   option extending the board (`platforms/<vendor>/<board>-<host>`, composed
   from a `--config-dir`) sets it. `HardwarePlanTask` composes its toolchain
@@ -207,6 +208,7 @@ pydantic enforces them rather than a runtime check.
 | `plans/validate-bitstream`      | `ValidateBitstreamPlan`    | `smoke_command`, `dau_utils_root`, `python`                                                                                                                 |
 | `plans/flash`                   | `FlashPlan`                | `dau_utils_root`, `python`, `vivado_settings`                                                                                                               |
 | `plans/sram-program`            | `SramProgramPlan`          | `deadman_timeout_s`, `verify_command`                                                                                                                       |
+| `plans/spi-flash`               | `SpiFlashPlan`             | `deadman_timeout_s`, `wake_after_s`                                                                                                                         |
 | `plans/recovery`                | `RecoveryPlan`             | none                                                                                                                                                        |
 | `plans/thunderbolt-hold`        | `ThunderboltHoldPlan`      | none                                                                                                                                                        |
 | `plans/thunderbolt-release`     | `ThunderboltReleasePlan`   | none                                                                                                                                                        |

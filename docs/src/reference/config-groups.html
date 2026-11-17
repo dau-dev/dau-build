@@ -428,7 +428,8 @@ implementation hook. Empty means the board needs none.</p></li>
 board. <code class="docutils literal notranslate"><span class="pre">require_measured</span></code> rejects placeholder boards for real builds while
 config-only generation stays open.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>, <code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>,
-<code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>): the bench
+<code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>,
+<code class="docutils literal notranslate"><span class="pre">reset_bridge_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">privilege_prefix</span></code>, <code class="docutils literal notranslate"><span class="pre">spi_bridge_bitstream</span></code>): the bench
 host’s measured access facts. A board option leaves this unset; a host
 option extending the board (<code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code>, composed
 from a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>) sets it. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain
@@ -481,15 +482,19 @@ pydantic enforces them rather than a runtime check.</p>
 <td><p><code class="docutils literal notranslate"><span class="pre">SramProgramPlan</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">deadman_timeout_s</span></code>, <code class="docutils literal notranslate"><span class="pre">verify_command</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/recovery</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/spi-flash</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SpiFlashPlan</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">deadman_timeout_s</span></code>, <code class="docutils literal notranslate"><span class="pre">wake_after_s</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/recovery</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">RecoveryPlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-hold</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-hold</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltHoldPlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-release</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plans/thunderbolt-release</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">ThunderboltReleasePlan</span></code></p></td>
 <td><p>none</p></td>
 </tr>

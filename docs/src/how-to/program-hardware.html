@@ -148,6 +148,9 @@
     <a href="#validate-an-already-built-bitstream">Validate an already-built bitstream</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
+    <a href="#flash-a-board-that-boots-from-spi-flash">Flash a board that boots from SPI flash</a>
+  </li>
+  <li class="fd-toc-item" data-depth="1">
     <a href="#recover-a-hung-device">Recover a hung device</a>
   </li>
 </ul>
@@ -172,8 +175,8 @@ build tasks it is plan-first: without <code class="docutils literal notranslate"
 it, it runs on the host. Run these on the machine physically attached to the
 board.</p>
 <p>The named plans are <code class="docutils literal notranslate"><span class="pre">local-build-and-program</span></code>, <code class="docutils literal notranslate"><span class="pre">build-and-program</span></code>,
-<code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>, <code class="docutils literal notranslate"><span class="pre">sram-program</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">thunderbolt-hold</span></code>
-and <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
+<code class="docutils literal notranslate"><span class="pre">validate-bitstream</span></code>, <code class="docutils literal notranslate"><span class="pre">recovery</span></code>, <code class="docutils literal notranslate"><span class="pre">sram-program</span></code>, <code class="docutils literal notranslate"><span class="pre">spi-flash</span></code>, <code class="docutils literal notranslate"><span class="pre">flash</span></code>,
+<code class="docutils literal notranslate"><span class="pre">thunderbolt-hold</span></code> and <code class="docutils literal notranslate"><span class="pre">thunderbolt-release</span></code>. Full field lists are in the
 <a class="reference internal" href="../reference/tasks-and-steps.html"><span class="std std-doc">task catalog</span></a>.</p>
 <p>Host access (the endpoint PCI identity, bridge BDFs, runtime-PM patterns and
 JTAG cable) is host configuration, not a code default and not a board fact. A
@@ -266,6 +269,34 @@ example). With no command the plan ends at the endpoint check:</p>
 <p>The XDMA kernel module must already be loaded. For a Vivado shell checkout
 it is at <code class="docutils literal notranslate"><span class="pre">sw/xdma/xdma.ko</span></code> in the seed or work directory.</p>
 </section>
+<section id="flash-a-board-that-boots-from-spi-flash">
+<h2>Flash a board that boots from SPI flash<a class="headerlink" href="#flash-a-board-that-boots-from-spi-flash" title="Link to this heading">¶</a></h2>
+<p>A board whose platform sets <code class="docutils literal notranslate"><span class="pre">spi_boot_buswidth</span></code> loads its design from SPI
+flash at power-on. Its shell build writes a configuration-memory image
+(<code class="docutils literal notranslate"><span class="pre">dau_mm_job.mcs</span></code>) beside the bitstream and records it in the manifest with
+role <code class="docutils literal notranslate"><span class="pre">cfgmem</span></code>. The <code class="docutils literal notranslate"><span class="pre">spi-flash</span></code> plan writes that image and power-cycles the
+host so the board loads it:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/hardware/hardware-plan<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">platform</span><span class="o">=</span>platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">plan</span><span class="o">=</span>plans/spi-flash<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.work_root<span class="o">=</span>outputs/flash<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.manifest<span class="o">=</span>outputs/shell/shell-build.artifacts.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.execute<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+<p>The plan arms the deadman, removes the endpoint, writes the flash over JTAG
+through openFPGALoader’s SPI bridge, then sets an RTC alarm
+(<code class="docutils literal notranslate"><span class="pre">plan.wake_after_s</span></code>, 60 by default) and powers the host off. The host option
+names the bridge bitstream for the board’s part as <code class="docutils literal notranslate"><span class="pre">host_access.spi_bridge_bitstream</span></code>
+(openFPGALoader installs them as <code class="docutils literal notranslate"><span class="pre">spiOverJtag_&lt;part&gt;.bit.gz</span></code>). The host must
+wake from an RTC alarm, and the steps that write sysfs or power the host off
+run behind <code class="docutils literal notranslate"><span class="pre">host_access.privilege_prefix</span></code>.</p>
+<p>The plan cannot check the board, because the host is off when the plan ends.
+Once the host is back, check that the board reports the BUILD_ID of the
+manifest you flashed. If a step fails, the deadman stays armed and reboots
+the host; the flash may be partly written, and running the plan again
+rewrites it.</p>
+</section>
 <section id="recover-a-hung-device">
 <h2>Recover a hung device<a class="headerlink" href="#recover-a-hung-device" title="Link to this heading">¶</a></h2>
 <p>If a bad image has left the endpoint dead, do not rescan first: a rescan
@@ -325,6 +356,9 @@ does not reappear, the device needs a power cycle.</p>
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#validate-an-already-built-bitstream">Validate an already-built bitstream</a>
+  </li>
+  <li class="fd-toc-item" data-depth="1">
+    <a href="#flash-a-board-that-boots-from-spi-flash">Flash a board that boots from SPI flash</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#recover-a-hung-device">Recover a hung device</a>
