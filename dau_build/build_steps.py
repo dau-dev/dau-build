@@ -401,11 +401,11 @@ class SynthesizeTask(ModuleSelectionModel):
         raise BuildStepError(f"backend {getattr(self.backend, 'name', self.backend)!r} is not a synthesis engine")
 
 
-def bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
-    """Resolve and verify the bitstream from an artlink shell-build
-    manifest: build_status must be built and the file must match its
-    recorded digest — a flashed bitstream is identified by provenance,
-    never by filename."""
+def bitstream_from_shell_build_manifest(manifest_path: Path, *, role: str = "bitstream") -> Path:
+    """Resolve and verify the image of ``role`` (the bitstream, or the cfgmem
+    image of an SPI-boot board) from an artlink shell-build manifest:
+    build_status must be built and the file must match its recorded digest —
+    a flashed image is identified by provenance, never by filename."""
     import hashlib
 
     from dau_build.packaging import load_artifact_manifest
@@ -413,23 +413,23 @@ def bitstream_from_shell_build_manifest(manifest_path: Path) -> Path:
     manifest = load_artifact_manifest(manifest_path)
     if manifest.metadata.get("build_status") != "built":
         raise BuildStepError(f"shell-build manifest is not built: {manifest_path.as_posix()}")
-    bitstreams = [artifact for artifact in manifest.artifacts if artifact.role == "bitstream"]
+    bitstreams = [artifact for artifact in manifest.artifacts if artifact.role == role]
     if len(bitstreams) != 1:
-        raise BuildStepError(f"shell-build manifest must carry exactly one bitstream artifact: {manifest_path.as_posix()}")
+        raise BuildStepError(f"shell-build manifest must carry exactly one {role} artifact: {manifest_path.as_posix()}")
     bitstream = bitstreams[0]
     if bitstream.path is None:
-        raise BuildStepError(f"bitstream artifact has no path: {manifest_path.as_posix()}")
+        raise BuildStepError(f"{role} artifact has no path: {manifest_path.as_posix()}")
     bitstream_path = bitstream.path if bitstream.path.is_absolute() else manifest_path.parent / bitstream.path
     if not bitstream_path.is_file():
-        raise BuildStepError(f"bitstream does not exist: {bitstream_path.as_posix()}")
+        raise BuildStepError(f"{role} does not exist: {bitstream_path.as_posix()}")
     if bitstream.digest is None:
         # digest is optional in the artlink model, but flash provenance is
         # the digest: a manifest without one proves nothing about the file
-        raise BuildStepError(f"bitstream artifact carries no digest: {manifest_path.as_posix()}; flash requires digested provenance")
+        raise BuildStepError(f"{role} artifact carries no digest: {manifest_path.as_posix()}; flash requires digested provenance")
     actual = hashlib.new(bitstream.digest.algorithm, bitstream_path.read_bytes()).hexdigest()
     if actual != bitstream.digest.value:
         raise BuildStepError(
-            f"bitstream digest mismatch (manifest {bitstream.digest.value[:12]}..., file {actual[:12]}...): {bitstream_path.as_posix()}"
+            f"{role} digest mismatch (manifest {bitstream.digest.value[:12]}..., file {actual[:12]}...): {bitstream_path.as_posix()}"
         )
     return bitstream_path
 
@@ -909,7 +909,7 @@ class HardwarePlanTask(BuildCallableModel):
                 raise BuildStepError(f"plan {plan.name!r} programs a bitstream: pass model.manifest=<shell-build.artifacts.yaml>")
             return self.bitstream
         try:
-            _, snapshot = flash_snapshot(self.manifest, work_root=self.work_root, write=self.execute)
+            _, snapshot = flash_snapshot(self.manifest, work_root=self.work_root, write=self.execute, role=plan.image_role)
         except (BuildStepError, ShellBuildError) as exc:
             raise BuildStepError(f"manifest {self.manifest} is not programmable: {exc}") from exc
         return snapshot

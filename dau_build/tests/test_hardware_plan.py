@@ -1511,10 +1511,10 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     from dau_build.tests.platform_fixtures import probe_platform
 
     # dpv1's host_access config reproduces the proven bench facts exactly
-    # (spi_boot_buswidth rides the platform, not host_access — supplied here;
-    # dpv1 also fronts its privileged PCIe steps with sudo)
+    # (spi_boot_buswidth and the part ride the platform, not host_access —
+    # supplied here; dpv1 also fronts its privileged PCIe steps with sudo)
     assert HardwareToolchainConfig.for_platform(probe_platform(), work_root=Path("/w")) == _bench_config(
-        work_root=Path("/w"), spi_boot_buswidth=4, privilege_prefix=("sudo",)
+        work_root=Path("/w"), spi_boot_buswidth=4, fpga_part="xc7k325tffg676-2", privilege_prefix=("sudo",)
     )
 
     # a board with different access data changes the plans through config alone
@@ -2042,3 +2042,65 @@ def test_shell_staging_refuses_an_rsync_that_would_delete_the_wrong_tree(tmp_pat
         _stage_shell_script(source_shell_root=source, work_root=Path.home())
     with pytest.raises(ValueError, match="empty or '.' path"):
         _stage_shell_script(source_shell_root=source, work_root=Path(""))
+
+
+def _built_manifest_with_cfgmem(tmp_path: Path) -> tuple[Path, Path]:
+    """A built manifest of an SPI-boot board's shell (bitstream plus the cfgmem
+    image); returns (manifest_path, the cfgmem snapshot the spi-flash plan writes)."""
+    from dau_build.packaging import load_artifact_manifest
+    from dau_build.shell_build import flash_snapshot_path, write_shell_build_manifest
+
+    output_root = tmp_path / "built"
+    output_root.mkdir(parents=True, exist_ok=True)
+    (output_root / "dau_mm_job.bit").write_bytes(b"\x00\x01bitstream")
+    (output_root / "dau_mm_job.mcs").write_text(":020000040000FA\n")
+    manifest_path = write_shell_build_manifest(output_root, name="test-shell", metadata={"build_status": "built", "wns_ns": 0.1})
+    digest = next(a for a in load_artifact_manifest(manifest_path).artifacts if a.role == "cfgmem").digest
+    assert digest is not None
+    return manifest_path, flash_snapshot_path(tmp_path / "work", digest, role="cfgmem")
+
+
+def test_spi_flash_writes_the_cfgmem_image_then_power_cycles(tmp_path: Path) -> None:
+    manifest_path, snapshot = _built_manifest_with_cfgmem(tmp_path)
+    result = _run_plan(
+        "spi-flash",
+        plan_fields=(
+            "+platform.host_access.spi_bridge_bitstream=/usr/local/share/openFPGALoader/spiOverJtag_xc7k325tffg676.bit.gz",
+            "plan.wake_after_s=90",
+        ),
+        work_root=str(tmp_path / "work"),
+        manifest=str(manifest_path),
+    )
+    lines = result.message.splitlines()
+    assert [line.split("\t")[0] for line in lines] == ["deadman-arm", "remove-endpoint", "program-cfgmem", "cold-power-cycle"]
+    assert lines[0] == "deadman-arm\tdau-utils-deadman arm --timeout 1200"
+    # the part without its speed grade, the host's bridge, the cfgmem snapshot
+    assert snapshot.suffix == ".mcs"
+    assert lines[2] == (
+        "program-cfgmem\topenFPGALoader -c digilent_hs2 --fpga-part xc7k325tffg676 "
+        f"-B /usr/local/share/openFPGALoader/spiOverJtag_xc7k325tffg676.bit.gz -f {snapshot}"
+    )
+    assert lines[3].endswith("sh -c 'rtcwake -m no -s 90 && systemctl poweroff'")
+    # the power cycle ends the deadman; nothing disarms it first
+    assert "disarm" not in result.message
+
+
+def test_spi_flash_needs_a_cfgmem_image_and_a_bridge(tmp_path: Path) -> None:
+    # a build without the cfgmem image (a board that does not boot from flash)
+    manifest_path, _ = _built_manifest(tmp_path)
+    with pytest.raises(BuildStepError, match="exactly one cfgmem artifact"):
+        _run_plan("spi-flash", work_root=str(tmp_path / "work"), manifest=str(manifest_path))
+    cfgmem_manifest, _ = _built_manifest_with_cfgmem(tmp_path / "spi")
+    with pytest.raises(Exception, match="spi_bridge_bitstream is unset"):
+        _run_plan("spi-flash", work_root=str(tmp_path / "work"), manifest=str(cfgmem_manifest))
+
+
+def test_spi_flash_refuses_a_board_that_does_not_boot_from_flash(tmp_path: Path) -> None:
+    manifest_path, _ = _built_manifest_with_cfgmem(tmp_path)
+    with pytest.raises(Exception, match="declares no spi_boot_buswidth"):
+        _run_plan(
+            "spi-flash",
+            plan_fields=("platform.spi_boot_buswidth=null", "+platform.host_access.spi_bridge_bitstream=/b.bit.gz"),
+            work_root=str(tmp_path / "work"),
+            manifest=str(manifest_path),
+        )

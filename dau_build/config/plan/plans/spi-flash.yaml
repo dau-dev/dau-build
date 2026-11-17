@@ -1,0 +1,11 @@
+# @package plan
+
+# Flash an SPI-boot board with the build's cfgmem image and power-cycle the
+# host so the board loads it: deadman arm -> sysfs remove -> cfgmem write
+# over openFPGALoader's SPI bridge -> rtcwake + poweroff. Needs the
+# platform's host_access, including spi_bridge_bitstream. Verify after the
+# host is back, against the BUILD_ID of the manifest that was flashed.
+_target_: dau_build.hardware_plan.SpiFlashPlan
+name: spi-flash
+deadman_timeout_s: 1200
+wake_after_s: 60

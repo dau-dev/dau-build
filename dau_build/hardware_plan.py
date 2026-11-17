@@ -105,6 +105,11 @@ class HardwareToolchainConfig(BaseModel):
     # the deadman self-escalates and the JTAG programmer runs as the user, so
     # only the sysfs-writing steps carry it. Empty = already privileged.
     privilege_prefix: tuple[str, ...] = ()
+    # the board's part (PlatformDefinition.part) and this host's SPI-over-JTAG
+    # bridge for it (HostAccess.spi_bridge_bitstream): the spi-flash plan needs
+    # both to reach the configuration flash
+    fpga_part: str | None = None
+    spi_bridge_bitstream: str | None = None
     programmer: Any = None
 
     @classmethod
@@ -131,10 +136,12 @@ class HardwareToolchainConfig(BaseModel):
                 "runtime_pm_patterns": access.runtime_pm_patterns,
                 "reset_bridge_bdf": access.reset_bridge_bdf,
                 "privilege_prefix": access.privilege_prefix,
+                "spi_bridge_bitstream": access.spi_bridge_bitstream,
             }
         if platform is not None:
             values["program_method"] = platform.program_method
             values["spi_boot_buswidth"] = platform.spi_boot_buswidth
+            values["fpga_part"] = platform.part
         if programmer is not None:
             values["programmer"] = programmer
         values.update({key: value for key, value in overrides.items() if value is not None})
@@ -174,7 +181,9 @@ class HardwareToolchainConfig(BaseModel):
     def required_host_access(self, field_name: Literal["rescan_bdfs", "runtime_pm_patterns"]) -> tuple[str, ...]: ...
 
     @overload
-    def required_host_access(self, field_name: Literal["endpoint_bdf", "expected_endpoint_id", "jtag_cable", "reset_bridge_bdf"]) -> str: ...
+    def required_host_access(
+        self, field_name: Literal["endpoint_bdf", "expected_endpoint_id", "jtag_cable", "reset_bridge_bdf", "fpga_part", "spi_bridge_bitstream"]
+    ) -> str: ...
 
     def required_host_access(self, field_name: str) -> str | tuple[str, ...]:
         """A host-access fact a plan step needs; unset means the caller
@@ -961,6 +970,9 @@ class HardwarePlan(BaseModel):
     # image it loads is the SPI-resident fallback, not a build under test.
     programs_bitstream: ClassVar[bool] = False
     accepts_raw_bitstream: ClassVar[bool] = False
+    # which manifest artifact a programming plan loads: the bitstream, or the
+    # cfgmem image an SPI-boot board's flash is written with
+    image_role: ClassVar[str] = "bitstream"
 
     name: str
 
@@ -1034,6 +1046,73 @@ class SramProgramPlan(HardwarePlan):
 
     def compose(self, config):
         return sram_program_plan(config, deadman_timeout_s=self.deadman_timeout_s, verify_command=self.verify_command)
+
+
+def program_cfgmem_step(config: HardwareToolchainConfig) -> ToolStep:
+    """Write the configuration flash of an SPI-boot board with the build's
+    cfgmem image (written by the build with the board's SPI bus width and
+    config rate), over JTAG through openFPGALoader's SPI bridge. The bridge
+    is named explicitly: the binary's compiled-in path is where it was built,
+    which on a bench host need not exist."""
+    # openFPGALoader names a part without the speed grade
+    part = config.required_host_access("fpga_part").rsplit("-", 1)[0]
+    return ToolStep(
+        "program-cfgmem",
+        (
+            config.openfpgaloader_executable,
+            "-c",
+            config.required_host_access("jtag_cable"),
+            "--fpga-part",
+            part,
+            "-B",
+            config.required_host_access("spi_bridge_bitstream"),
+            "-f",
+            str(config.bitstream),
+        ),
+        required_executable=config.openfpgaloader_executable,
+        executable_override="model.openfpgaloader",
+    )
+
+
+def cold_power_cycle_step(config: HardwareToolchainConfig, *, wake_after_s: int) -> ToolStep:
+    """Power the host off with an RTC alarm set to wake it ``wake_after_s``
+    later. An SPI-boot board loads its flash only at power-on, and a warm
+    reboot is not enough on every host (the link can fail to train), so a
+    flash takes effect through a full power cycle."""
+    script = f"rtcwake -m no -s {int(wake_after_s)} && systemctl poweroff"
+    return _privileged_sh(config, "cold-power-cycle", script)
+
+
+def spi_flash_plan(config: HardwareToolchainConfig, *, deadman_timeout_s: int = 1200, wake_after_s: int = 60) -> tuple[ToolStep, ...]:
+    """Flash an SPI-boot board and bring the new image up: deadman arm ->
+    sysfs remove (the host stops touching the endpoint before the bridge
+    replaces the running design) -> cfgmem write -> cold power cycle.
+
+    There is no disarm and no device verify in the plan. On success the host
+    powers off, which ends the deadman with it, and the verify belongs after
+    the boot, against the BUILD_ID the new image advertises. On a failure the
+    deadman stays armed and reboots the host; the flash may then be partly
+    written, which JTAG can always rewrite."""
+    return (
+        deadman_arm_step(config, timeout_s=deadman_timeout_s),
+        remove_endpoint_step(config),
+        program_cfgmem_step(config),
+        cold_power_cycle_step(config, wake_after_s=wake_after_s),
+    )
+
+
+class SpiFlashPlan(HardwarePlan):
+    programs_bitstream = True
+    image_role = "cfgmem"
+
+    name: str = "spi-flash"
+    deadman_timeout_s: int = 1200
+    wake_after_s: int = 60
+
+    def compose(self, config):
+        if config.spi_boot_buswidth is None:
+            raise ValueError("plan spi-flash writes the configuration flash of an SPI-boot board; this platform declares no spi_boot_buswidth")
+        return spi_flash_plan(config, deadman_timeout_s=self.deadman_timeout_s, wake_after_s=self.wake_after_s)
 
 
 class FlashPlan(HardwarePlan):
