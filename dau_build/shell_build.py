@@ -115,16 +115,21 @@ def parse_shell_build_console(console_text: str) -> ShellBuildStatus:
     return ShellBuildStatus(build_status="unknown")
 
 
-def flash_snapshot_path(work_root: Path, digest: Digest) -> Path:
-    """Where a manifest's verified bitstream is snapshotted before programming:
+# the snapshot suffix of each programmable image role
+_IMAGE_SUFFIX = {"bitstream": ".bit", "cfgmem": ".mcs"}
+
+
+def flash_snapshot_path(work_root: Path, digest: Digest, *, role: str = "bitstream") -> Path:
+    """Where a manifest's verified image is snapshotted before programming:
     named by its digest, so the same image always lands at the same path and
     two flashes of one design cannot disagree about the bytes."""
-    return work_root / "flash" / f"{digest.value[:16]}.bit"
+    return work_root / "flash" / f"{digest.value[:16]}{_IMAGE_SUFFIX[role]}"
 
 
-def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool) -> tuple[Path, Path]:
-    """Resolve the bitstream a built manifest names, verify its status and
-    digest, and (when ``write``) copy the exact verified bytes to the
+def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool, role: str = "bitstream") -> tuple[Path, Path]:
+    """Resolve the image of ``role`` a built manifest names (the bitstream,
+    or the cfgmem image an SPI-boot board is flashed with), verify its status
+    and digest, and (when ``write``) copy the exact verified bytes to the
     digest-named snapshot atomically. Returns ``(source, snapshot)``. The
     programmer reads the snapshot, so a file replaced under the manifest
     after verification cannot reach the device: what was verified is what is
@@ -135,16 +140,16 @@ def flash_snapshot(manifest_path: Path, *, work_root: Path, write: bool) -> tupl
     from dau_build.build_steps import bitstream_from_shell_build_manifest
     from dau_build.packaging import load_artifact_manifest
 
-    source = bitstream_from_shell_build_manifest(manifest_path)
-    bitstream = next(artifact for artifact in load_artifact_manifest(manifest_path).artifacts if artifact.role == "bitstream")
-    digest = bitstream.digest
-    # bitstream_from_shell_build_manifest above refuses an undigested bitstream
-    assert digest is not None, f"bitstream in {manifest_path} carries no digest"
-    snapshot = flash_snapshot_path(work_root, digest)
+    source = bitstream_from_shell_build_manifest(manifest_path, role=role)
+    image = next(artifact for artifact in load_artifact_manifest(manifest_path).artifacts if artifact.role == role)
+    digest = image.digest
+    # bitstream_from_shell_build_manifest above refuses an undigested image
+    assert digest is not None, f"{role} in {manifest_path} carries no digest"
+    snapshot = flash_snapshot_path(work_root, digest, role=role)
     if write:
         data = source.read_bytes()
         if hashlib.new(digest.algorithm, data).hexdigest() != digest.value:
-            raise ShellBuildError(f"bitstream digest changed after manifest verification: {source}")
+            raise ShellBuildError(f"{role} digest changed after manifest verification: {source}")
         snapshot.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=snapshot.parent, prefix=f".{snapshot.name}.")
         with os.fdopen(handle, "wb") as out:
@@ -183,15 +188,17 @@ def shell_build_manifest(
     *,
     name: str,
     bitstream: str = "dau_mm_job.bit",
+    cfgmem: str = "dau_mm_job.mcs",
     reports: tuple[str, ...] = ("utilization_mm.rpt", "timing_mm.rpt"),
     console_log: str = "console.log",
     source_paths: tuple[Path, ...] = (),
     metadata: dict[str, Any] | None = None,
 ) -> ArtifactManifest:
-    """Package a completed shell build: the bitstream (digested), reports,
-    console log, the generated project inputs found in the output root, and
-    the contributing HDL sources (digested, with the git state of each
-    containing repository recorded in the manifest metadata)."""
+    """Package a completed shell build: the bitstream (digested), the SPI
+    configuration-memory image when the board boots from flash (digested),
+    reports, console log, the generated project inputs found in the output
+    root, and the contributing HDL sources (digested, with the git state of
+    each containing repository recorded in the manifest metadata)."""
     bitstream_path = output_root / bitstream
     if not bitstream_path.is_file():
         raise ShellBuildError(f"bitstream does not exist: {bitstream_path.as_posix()}")
@@ -199,6 +206,9 @@ def shell_build_manifest(
     artifacts: list[Artifact] = [
         Artifact(path=bitstream_path, kind="binary", role="bitstream", digest=_digest(bitstream_path)),
     ]
+    cfgmem_path = output_root / cfgmem
+    if cfgmem_path.is_file():
+        artifacts.append(Artifact(path=cfgmem_path, kind="binary", role="cfgmem", digest=_digest(cfgmem_path)))
     for report in reports:
         report_path = output_root / report
         if report_path.is_file():

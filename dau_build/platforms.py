@@ -228,6 +228,11 @@ class HostAccess(BaseModel):
     # unprivileged, so this wraps ONLY the steps that write sysfs/config space.
     # Empty (the default) = already privileged, or an unprivileged host.
     privilege_prefix: tuple[str, ...] = ()
+    # openFPGALoader's SPI-over-JTAG bridge bitstream for this board's part,
+    # as installed on this host: the spi-flash plan loads it to reach the
+    # configuration flash. A host fact because the path is where this host's
+    # openFPGALoader keeps it (the binary's compiled-in path can be wrong).
+    spi_bridge_bitstream: str | None = None
 
     @field_validator("pci_id")
     @classmethod
