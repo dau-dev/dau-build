@@ -12,6 +12,7 @@ from dau_build.packaging import load_artifact_manifest
 from dau_build.shell_build import (
     SHELL_BUILD_MANIFEST_NAME,
     ShellBuildError,
+    ShellBuildRecord,
     ShellBuildStatus,
     parse_shell_build_console,
     run_shell_project_build,
@@ -42,6 +43,24 @@ def test_parse_console_markers() -> None:
     assert parse_shell_build_console("noise\nDAU_MM_JOB_BUILD_OK wns=0.321\n") == ShellBuildStatus(build_status="built", wns_ns=0.321)
     assert parse_shell_build_console("DAU_MM_JOB_BUILD_FAILED synthesis\n") == ShellBuildStatus(build_status="failed", failed_stage="synthesis")
     assert parse_shell_build_console("vivado died\n") == ShellBuildStatus(build_status="unknown")
+
+
+@pytest.mark.parametrize("wns_ns", [None, -0.004, float("nan"), float("inf")])
+def test_a_built_record_must_carry_a_finite_non_negative_slack(wns_ns) -> None:
+    with pytest.raises(ShellBuildError, match="finite, non-negative wns_ns"):
+        ShellBuildRecord.from_metadata({"build_status": "built", "wns_ns": wns_ns})
+    # the same slack is a valid record of a miss
+    assert ShellBuildRecord.from_metadata({"build_status": "timing-failed", "wns_ns": wns_ns}).build_status == "timing-failed"
+
+
+def test_a_build_record_keeps_provenance_keys_and_types_its_own() -> None:
+    record = ShellBuildRecord.from_metadata(
+        {"build_status": "built", "wns_ns": "0.25", "job_clock_mhz": "125.0", "platform": "probe", "source_repositories": {}}
+    )
+    assert (record.wns_ns, record.job_clock_mhz, record.platform) == (0.25, 125.0, "probe")
+    assert record.model_dump(mode="json", exclude_none=True)["source_repositories"] == {}
+    with pytest.raises(ShellBuildError, match="build_status"):
+        ShellBuildRecord.from_metadata({"build_status": "bulit", "wns_ns": 0.25})
 
 
 def test_a_timing_miss_is_its_own_status_whatever_marker_printed_it() -> None:
@@ -247,7 +266,12 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     kv.write_text("build_status=planned\nbitstream=overlay.bit\n")
     assert write_overlay_build_manifest(work, kv, name="dau-vivado") is None
 
+    # built without a recorded slack proves nothing about timing: refused
     kv.write_text("build_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    with pytest.raises(ShellBuildError, match="wns_ns"):
+        write_overlay_build_manifest(work, kv, name="dau-vivado")
+
+    kv.write_text("wns_ns=0.042\nbuild_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
     packaged = write_overlay_build_manifest(work, kv, name="dau-vivado")
     assert packaged is not None
     manifest = load_artifact_manifest(packaged)

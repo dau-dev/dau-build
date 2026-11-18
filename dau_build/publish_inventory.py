@@ -25,7 +25,6 @@ the public build layer stays independent of the private one.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,7 @@ from typing import Any
 from artlink.artifact import Artifact, Capability
 
 from .packaging import ArtifactManifest, load_artifact_manifest
+from .shell_build import ShellBuildError, ShellBuildRecord
 
 __all__ = ("PUBLISHED_METADATA_KEYS", "publish_inventory", "write_published_inventory")
 
@@ -114,14 +114,12 @@ def publish_inventory(
         raise ValueError(f"a published inventory needs exactly one bitstream artifact, found {len(bitstreams)}")
     source = bitstreams[0]
 
-    status = manifest.metadata.get("build_status")
-    if status != "built":
-        raise ValueError(f"refusing to publish a bitstream whose build_status is {status!r}, not 'built'")
-    wns = manifest.metadata.get("wns_ns")
-    if wns is None:
-        raise ValueError("refusing to publish a bitstream whose manifest records no wns_ns; a published image proves it closed timing")
-    if not math.isfinite(float(wns)) or float(wns) < 0.0:
-        raise ValueError(f"refusing to publish a bitstream that missed timing or recorded no finite slack (wns_ns={wns})")
+    try:
+        record = ShellBuildRecord.from_metadata(manifest.metadata)
+    except ShellBuildError as exc:
+        raise ValueError(f"refusing to publish a bitstream whose manifest is not a valid build record: {exc}") from exc
+    if record.build_status != "built":
+        raise ValueError(f"refusing to publish a bitstream whose build_status is {record.build_status!r}, not 'built'")
 
     metadata = {key: manifest.metadata[key] for key in PUBLISHED_METADATA_KEYS if key in manifest.metadata}
     capabilities = _capabilities_from_contract(contract) if contract else ()
