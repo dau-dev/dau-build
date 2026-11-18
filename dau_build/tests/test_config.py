@@ -110,7 +110,6 @@ def _spec_text() -> str:
             f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
             "modules:",
             "  - ff",
-            "backend: none",
             "",
         )
     )

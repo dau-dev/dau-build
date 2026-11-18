@@ -47,7 +47,6 @@ def _spec_text(tmp_path: Path) -> str:
             "modules:",
             "  - ff",
             "  - decoder",
-            "backend: vivado",
             "",
         )
     )
@@ -74,7 +73,7 @@ def test_build_spec_is_hydra_instantiable() -> None:
         }
     )
     assert isinstance(spec, BuildSpec)
-    assert spec.name == "x" and spec.backend == "none"
+    assert spec.name == "x"
 
 
 def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Path) -> None:
@@ -99,7 +98,6 @@ def test_load_dau_build_spec_records_declarative_hardware_contract(tmp_path: Pat
         metadata=((tmp_path / "constraints" / "identity.xdc").resolve(),),
         binary_assets=((tmp_path / "bitstreams" / "seed.bit").resolve(),),
         modules=("ff", "decoder"),
-        backend="vivado",
     )
 
 
@@ -135,7 +133,6 @@ def test_generate_dau_build_artifacts_loads_sv_and_emits_top_and_manifest(tmp_pa
     assert "operators=identity,sum_i64" in artifacts.manifest_text
     assert "design_name=identity-pipeline" in artifacts.manifest_text
     assert "units=aggregation:1:sum:int32" in artifacts.manifest_text
-    assert "backend=vivado" in artifacts.manifest_text
     assert "artifact_manifest=dau-identity.artifacts.yaml" in artifacts.manifest_text
     assert "schema: artlink.manifest/v0" in artifacts.artifact_manifest_text
     assert "path: generated/dau_identity_top.sv" in artifacts.artifact_manifest_text
@@ -175,7 +172,6 @@ def test_generate_dau_build_artifacts_emits_stream_job_top_boundary_for_stream_m
             f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
             "modules:",
             "  - stream_doubler",
-            "backend: vivado",
             "",
         )
     )
@@ -237,14 +233,17 @@ def test_load_dau_build_spec_rejects_empty_modules(tmp_path: Path) -> None:
     assert "modules" in str(exc_info.value) and "at least 1 item" in str(exc_info.value)
 
 
-def test_load_dau_build_spec_rejects_unsupported_backend(tmp_path: Path) -> None:
-    text = _spec_text(tmp_path).replace("backend: vivado", "backend: quartus")
+def test_a_spec_names_no_backend(tmp_path: Path) -> None:
+    """The composed backend= group is the only backend selector: a spec that
+    says one is refused, and the build manifest records none (it used to say
+    vivado for a backends/yosys synthesis)."""
+    from pydantic import ValidationError
 
-    with pytest.raises(Exception) as exc_info:
-        spec_from_text(text, tmp_path).resolve()
-
-    assert exc_info.type.__name__ == "DauBuildSpecError"
-    assert "unsupported backend" in str(exc_info.value)
+    text = _spec_text(tmp_path)
+    with pytest.raises(ValidationError, match="backend"):
+        spec_from_text(text + "backend: vivado\n", tmp_path)
+    artifacts = generate_dau_build_artifacts(spec_from_text(text, tmp_path).resolve(), output_root=tmp_path / "out")
+    assert not any(line.startswith("backend=") for line in artifacts.manifest_text.splitlines())
 
 
 def test_generate_dau_build_artifacts_rejects_unknown_requested_module(tmp_path: Path) -> None:
@@ -265,7 +264,7 @@ def test_cli_inspect_reports_spec_without_generating_outputs(tmp_path: Path, cap
 
     assert exit_code == 0
     assert capsys.readouterr().out.splitlines() == [
-        "dau-build-spec\tname=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=ff,decoder sources=2 clock=clk reset=reset backend=vivado"
+        "dau-build-spec\tname=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=ff,decoder sources=2 clock=clk reset=reset"
     ]
     assert not (tmp_path / "generated").exists()
 
@@ -304,7 +303,7 @@ def test_build_spec_consumes_yaml_artifact_manifest_inputs(tmp_path: Path) -> No
         "schema: artlink.manifest/v0\nname: packaged-filter\nartifacts:\n  - path: rtl/packaged_filter.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n    provides:\n      - kind: python-symbol\n        name: PackagedFilter\n  - path: constraints/package.xdc\n    kind: metadata\n    role: constraints\n    format: xdc\n  - path: bitstreams/package.bit\n    kind: binary\n    role: bitstream\n    format: xilinx-bitstream\n",
         encoding="utf-8",
     )
-    text = 'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\nbackend: none\n'
+    text = 'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\n'
 
     spec = spec_from_text(text, tmp_path).resolve()
     artifacts = write_dau_build_artifacts(spec, output_root=tmp_path / "out")
@@ -334,7 +333,7 @@ def test_build_spec_reports_manifest_inputs_without_hdl(tmp_path: Path) -> None:
         "schema: artlink.manifest/v0\nname: python-only-package\nartifacts:\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n",
         encoding="utf-8",
     )
-    text = 'name: python-only-pipeline\ntop_name: dau_python_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-python\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - python-only\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - missing_hdl\nbackend: none\n'
+    text = 'name: python-only-pipeline\ntop_name: dau_python_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-python\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - python-only\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - missing_hdl\n'
 
     with pytest.raises(Exception) as exc_info:
         spec_from_text(text, tmp_path).resolve()
@@ -359,7 +358,7 @@ def test_cli_inspect_reports_manifest_input_origins(tmp_path: Path, capsys) -> N
         "schema: artlink.manifest/v0\nname: packaged-filter\nartifacts:\n  - path: rtl/packaged_filter.sv\n    kind: source\n    role: hdl-source\n    language: systemverilog\n  - path: python/model.py\n    kind: source\n    role: python-source\n    language: python\n  - path: constraints/package.xdc\n    kind: metadata\n    role: constraints\n    format: xdc\n  - path: bitstreams/package.bit\n    kind: binary\n    role: bitstream\n    format: xilinx-bitstream\n",
         encoding="utf-8",
     )
-    text = 'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\nbackend: none\n'
+    text = 'name: packaged-filter-pipeline\ntop_name: dau_packaged_top\nplatform: sim\nshell: unit-test\nartifact_stem: dau-packaged\nregister_map_version: "0.1"\nstream_protocol_version: "0.1"\nclock: clk\nreset: reset\noperators:\n  - packaged-filter\nartifact_manifests:\n  - package/package.artifacts.yaml\nmodules:\n  - packaged_filter\n'
 
     config_dir, spec = write_spec_option(tmp_path, text)
     exit_code = _main_exit_code(["--config-dir", config_dir, "task=tasks/spec/inspect", spec])
@@ -367,7 +366,7 @@ def test_cli_inspect_reports_manifest_input_origins(tmp_path: Path, capsys) -> N
     assert exit_code == 0
     origin = package_manifest_path.resolve().as_posix()
     assert capsys.readouterr().out.splitlines() == [
-        "dau-build-spec\tname=packaged-filter-pipeline platform=sim shell=unit-test modules=packaged_filter sources=1 clock=clk reset=reset backend=none",
+        "dau-build-spec\tname=packaged-filter-pipeline platform=sim shell=unit-test modules=packaged_filter sources=1 clock=clk reset=reset",
         f"manifest\tindex=0 path={origin}",
         f"source\tindex=0 path={(package_dir / 'rtl' / 'packaged_filter.sv').resolve().as_posix()} role=hdl-source language=systemverilog origin={origin}",
         f"source\tindex=1 path={(package_dir / 'python' / 'model.py').resolve().as_posix()} role=python-source language=python origin={origin}",

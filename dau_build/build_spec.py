@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 _NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
-SUPPORTED_BACKENDS = frozenset(("none", "vivado"))
-
 # Generic staging-window defaults for generated register tops. dau-build is
 # public and independent of any DAU package; the dau integration suite pins
 # these to the DAU stream-job register contract so they cannot drift.
@@ -55,7 +53,6 @@ class DauBuildSpec(BaseModel):
     artifact_manifests: tuple[Path, ...] = ()
     artifacts: tuple[Artifact, ...] = ()
     artifact_bundle: ArtifactBundle = Field(default_factory=lambda: ArtifactBundle(name="", entries=()))
-    backend: str = "none"
 
 
 _INDEXED_KEYS = {"source_files": "source", "metadata_files": "metadata", "binary_asset_files": "binary_asset"}
@@ -86,7 +83,6 @@ class DauBuildManifest(KeyValueManifest):
     units: str
     modules: Annotated[CommaList, Field(min_length=1)]
     sources: int
-    backend: NonEmptyText
     source_files: tuple[str, ...] = ()
     metadata_files: tuple[str, ...] = ()
     binary_asset_files: tuple[str, ...] = ()
@@ -158,12 +154,9 @@ class BuildSpec(BaseModel):
     metadata: tuple[_NonEmptyStr, ...] = ()
     binary_assets: tuple[_NonEmptyStr, ...] = ()
     artifact_manifests: tuple[_NonEmptyStr, ...] = ()
-    backend: str = "none"
     base_dir: Path = Path(".")
 
     def resolve(self) -> DauBuildSpec:
-        if self.backend not in SUPPORTED_BACKENDS:
-            raise DauBuildSpecError(f"unsupported backend: {self.backend}")
         spec_root = self.base_dir
         artifact_manifests = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.artifact_manifests), "artifact manifest")
         direct_sources = _checked_paths(tuple(_resolve_spec_path(spec_root, value) for value in self.sources), "source")
@@ -211,7 +204,6 @@ class BuildSpec(BaseModel):
             artifacts=manifest_artifacts,
             artifact_bundle=artifact_bundle,
             modules=self.modules,
-            backend=self.backend,
         )
 
 
@@ -290,7 +282,6 @@ def dau_build_manifest(spec: DauBuildSpec, *, top_sv_path: Path, manifest_path: 
         units=design_items["units"],
         modules=spec.modules,
         sources=len(spec.sources),
-        backend=spec.backend,
         source_files=tuple(source.as_posix() for source in spec.sources),
         metadata_files=tuple(metadata.as_posix() for metadata in spec.metadata),
         binary_asset_files=tuple(binary.as_posix() for binary in spec.binary_assets),
@@ -349,8 +340,7 @@ def dau_build_spec_summary(spec: DauBuildSpec) -> str:
         f"modules={','.join(spec.modules)} "
         f"sources={len(spec.sources)} "
         f"clock={spec.clock} "
-        f"reset={spec.reset} "
-        f"backend={spec.backend}"
+        f"reset={spec.reset}"
     )
     if not spec.artifact_manifests:
         return summary

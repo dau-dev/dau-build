@@ -448,7 +448,6 @@ def _spec_text() -> str:
             f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
             "modules:",
             "  - ff",
-            "backend: none",
             "",
         )
     )
@@ -472,7 +471,6 @@ def _arrow_lite_aggregator_spec_text() -> str:
             f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
             "modules:",
             "  - stream_doubler",
-            "backend: vivado",
             "",
         )
     )

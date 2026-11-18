@@ -121,7 +121,6 @@ def _spec_text() -> str:
             f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
             "modules:",
             "  - ff",
-            "backend: none",
             "",
         )
     )
@@ -145,7 +144,6 @@ def _counter_spec_text() -> str:
             f"  - {(Path(__file__).parent / 'sv' / 'counter.sv').as_posix()}",
             "modules:",
             "  - counter",
-            "backend: none",
             "",
         )
     )

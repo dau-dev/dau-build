@@ -23,7 +23,7 @@ dau-build task=tasks/spec/inspect spec=specs/identity
 **Output**, a summary line and then the resolved inputs:
 
 ```text
-dau-build-spec	name=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=identity sources=1 clock=clk reset=reset backend=vivado
+dau-build-spec	name=identity-pipeline platform=vivado-xdma shell=xdma-ddr modules=identity sources=1 clock=clk reset=reset
 manifest	index=0 path=.../examples/identity/package.artifacts.yaml
 source	index=0 path=.../examples/identity/rtl/identity.sv role=hdl-source language=systemverilog origin=...
 source	index=1 path=.../examples/identity/python/model.py role=python-source language=python origin=...

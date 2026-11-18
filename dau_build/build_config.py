@@ -120,7 +120,7 @@ class ResolvedBuildConfig(BaseModel):
         return cls(
             spec=spec,
             board=board or BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
-            backend=_backend_label(backend, backend_name, spec),
+            backend=_backend_label(backend, backend_name),
             driver=driver,
             operators=OperatorConfig(set_name="spec", names=spec.operators),
             memory=memory or MemoryConfig(),
@@ -139,12 +139,14 @@ class ResolvedBuildConfig(BaseModel):
         )
 
 
-def _backend_label(backend: BackendLabel | None, backend_name: str | None, spec: DauBuildSpec) -> BackendConfig:
+def _backend_label(backend: BackendLabel | None, backend_name: str | None) -> BackendConfig:
     """Normalize a composed backend (a BackendConfig or a synthesis engine
     model with extra fields) to the name+invocation label the resolved config
-    reports, or derive it from ``backend_name`` / the spec."""
+    reports. With no ``backend=`` group the label is ``backend_name`` (a
+    task's synthesis engine) or the dry-run ``none``; the spec names no
+    backend."""
     if isinstance(backend, BackendConfig):
         return backend
     if backend is not None:
         return BackendConfig(name=backend.name, invocation=backend.invocation)
-    return BackendConfig(name=backend_name or spec.backend, invocation="dry-run")
+    return BackendConfig(name=backend_name or "none", invocation="dry-run")
