@@ -109,20 +109,6 @@ def artifact_with_modules(
 
 
 def _copy_artifact(artifact: Artifact, **changes: Any) -> Artifact:
-    data = {
-        "id": artifact.id,
-        "name": artifact.name,
-        "path": artifact.path,
-        "uri": artifact.uri,
-        "kind": artifact.kind,
-        "role": artifact.role,
-        "format": artifact.format,
-        "media_type": artifact.media_type,
-        "language": artifact.language,
-        "provides": artifact.provides,
-        "requires": artifact.requires,
-        "digest": artifact.digest,
-        "metadata": artifact.metadata,
-    }
-    data.update(changes)
-    return Artifact(**data)
+    """A copy of ``artifact`` with ``changes`` applied, validated like any
+    other artifact (``model_copy`` would skip validation)."""
+    return Artifact.model_validate({**artifact.model_dump(), **changes})
