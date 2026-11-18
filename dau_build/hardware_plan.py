@@ -14,6 +14,7 @@ from ccflow import BaseModel
 from pydantic import ConfigDict
 
 from dau_build.vivado_backend import (
+    VALIDATE_TASK_NAME,
     VivadoBackendArtifactValidation,
     VivadoBackendRequest,
     VivadoOverlayDefinition,
@@ -569,17 +570,13 @@ def validate_vivado_artifacts_step(
     project_manifest_path: Path | None = None,
     executable: str | Sequence[str] = "dau-build",
 ) -> ToolStep:
+    from dau_build.config import model_overrides
+
     command_prefix = [executable] if isinstance(executable, str) else list(executable)
-    argv = [
-        *command_prefix,
-        "task=tasks/validate/validate-vivado-artifacts",
-        f"work_root={config.work_root}",
-        f"manifest_path={manifest_path}",
-        f"command_plan_path={command_plan_path}",
-    ]
+    fields: dict[str, Path] = {"work_root": config.work_root, "manifest_path": manifest_path, "command_plan_path": command_plan_path}
     if project_manifest_path is not None:
-        argv.append(f"project_manifest_path={project_manifest_path}")
-    return ToolStep("validate-vivado-artifacts", tuple(argv))
+        fields["project_manifest_path"] = project_manifest_path
+    return ToolStep("validate-vivado-artifacts", (*command_prefix, f"task={VALIDATE_TASK_NAME}", *model_overrides(fields)))
 
 
 def hardware_smoke_step(smoke_command: str) -> ToolStep:

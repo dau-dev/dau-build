@@ -33,8 +33,11 @@ class VivadoOverlayDefinition(BaseModel):
     lane_placements: tuple[tuple[str, str], ...] = ()
 
 
-# the packaged staging task a recorded stage_command replays by default
-DEFAULT_STAGE_TASK_NAME = "stage-vivado-overlay"
+# the packaged tasks the project manifest's recorded commands replay, as the
+# path-style keys the CLI composes (task=tasks/<kind>/<name>)
+DEFAULT_STAGE_TASK_NAME = "tasks/stage/stage-vivado-overlay"
+BUILD_TASK_NAME = "tasks/build/build-vivado-artifacts"
+VALIDATE_TASK_NAME = "tasks/validate/validate-vivado-artifacts"
 
 
 class VivadoBackendRequest(BaseModel):
@@ -591,7 +594,7 @@ def vivado_project_build_command(request: VivadoProjectGenerationRequest) -> str
         overrides.append(("vivado_invocation", request.vivado_invocation))
     if request.vivado_mount_root is not None:
         overrides.append(("vivado_mount_root", request.vivado_mount_root.resolve(strict=False)))
-    return _task_command(request.plan_executable, "build-vivado-artifacts", tuple(overrides))
+    return _task_command(request.plan_executable, BUILD_TASK_NAME, tuple(overrides))
 
 
 def vivado_project_validate_command(request: VivadoProjectGenerationRequest) -> str:
@@ -601,13 +604,16 @@ def vivado_project_validate_command(request: VivadoProjectGenerationRequest) -> 
         ("command_plan_path", request.backend_request.resolved_command_plan_path),
         ("project_manifest_path", request.resolved_project_manifest_path),
     ]
-    return _task_command(request.plan_executable, "validate-vivado-artifacts", tuple(overrides))
+    return _task_command(request.plan_executable, VALIDATE_TASK_NAME, tuple(overrides))
 
 
 def _task_command(executable: str, task: str, overrides: tuple[tuple[str, object], ...]) -> str:
-    argv = [executable, f"task={task}"]
-    argv.extend(f"{key}={value}" for key, value in overrides)
-    return shlex.join(argv)
+    """A replayable CLI command: the path-style task key plus one
+    ``model.<field>=<value>`` override per task field, written by the same
+    ``model_overrides`` the CLI's own callers use."""
+    from dau_build.config import model_overrides
+
+    return shlex.join([executable, f"task={task}", *model_overrides(dict(overrides))])
 
 
 def _parse_manifest_text(text: str) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
@@ -833,10 +839,10 @@ def _validate_project_manifest_commands(
     manifest_path: Path,
     command_plan_path: Path,
 ) -> tuple[str, ...]:
+    """Each recorded command must compose under the current CLI, select the
+    task it claims, and set the task fields this manifest records."""
     errors: list[str] = []
-    source_shell_root = project_manifest.get("source_shell_root", "")
     work_root = project_manifest.get("work_root", "")
-    dau_core_root = project_manifest.get("dau_core_root", "")
     overlay_tcl = project_manifest.get("overlay_tcl", "")
     dau_artifact_bundle = project_manifest.get("dau_artifact_bundle", "")
     vivado_settings = project_manifest.get("vivado_settings", "")
@@ -845,90 +851,99 @@ def _validate_project_manifest_commands(
     vivado_mount_root = project_manifest.get("vivado_mount_root", "")
     project_manifest_path = project_manifest.get("project_manifest", "")
 
-    stage_required_options = [
-        ("--source-shell-root", source_shell_root),
-        ("--work-root", work_root),
-        ("--dau-core-root", dau_core_root),
-        ("--artifact-stem", project_manifest.get("artifact_stem", "")),
-        ("--backend-platform", project_manifest.get("platform", "")),
-        ("--backend-shell", project_manifest.get("shell", "")),
-        ("--register-map-version", project_manifest.get("register_map_version", "")),
-        ("--stream-protocol-version", project_manifest.get("stream_protocol_version", "")),
-        ("--overlay-tcl", overlay_tcl),
-        ("--manifest-path", manifest_path.as_posix()),
-        ("--command-plan-path", command_plan_path.as_posix()),
-        ("--vivado", vivado_executable),
-    ]
+    stage_fields = {
+        "source_shell_root": project_manifest.get("source_shell_root", ""),
+        "work_root": work_root,
+        "dau_core_root": project_manifest.get("dau_core_root", ""),
+        "artifact_stem": project_manifest.get("artifact_stem", ""),
+        "backend_platform": project_manifest.get("platform", ""),
+        "backend_shell": project_manifest.get("shell", ""),
+        "register_map_version": project_manifest.get("register_map_version", ""),
+        "stream_protocol_version": project_manifest.get("stream_protocol_version", ""),
+        "overlay_tcl": overlay_tcl,
+        "manifest_path": manifest_path.as_posix(),
+        "command_plan_path": command_plan_path.as_posix(),
+        "vivado": vivado_executable,
+        "operator": project_manifest.get("operator_set", ""),
+    }
     if vivado_settings:
         # recorded only when the host named one; an absent settings file is absent on replay too
-        stage_required_options.append(("--vivado-settings", vivado_settings))
+        stage_fields["vivado_settings"] = vivado_settings
     if dau_artifact_bundle:
-        stage_required_options.append(("--dau-artifact-bundle", dau_artifact_bundle))
+        stage_fields["dau_artifact_bundle"] = dau_artifact_bundle
     if vivado_invocation != "standard":
-        stage_required_options.append(("--vivado-invocation", vivado_invocation))
+        stage_fields["vivado_invocation"] = vivado_invocation
     if vivado_mount_root:
-        stage_required_options.append(("--vivado-mount-root", vivado_mount_root))
+        stage_fields["vivado_mount_root"] = vivado_mount_root
     stage_task = project_manifest.get("stage_task", "") or DEFAULT_STAGE_TASK_NAME
-    if project_manifest.get("overlay_definition") == "injected" and stage_task == DEFAULT_STAGE_TASK_NAME:
-        # the artifacts came from a caller-injected overlay definition and no
-        # caller staging task was recorded; the recorded stage_command must
-        # demand the definition (hydra-missing) rather than silently re-stage
-        # the packaged default overlay. A recorded caller task composes the
-        # injection itself, so no marker is required then.
-        stage_required_options.append(("--overlay-definition", "???"))
+    # the artifacts came from a caller-injected overlay definition and no
+    # caller staging task was recorded: the recorded stage_command must leave
+    # the definition hydra-missing instead of re-staging the packaged default
+    # overlay. A recorded caller task composes the injection itself.
+    require_missing = (
+        ("overlay_definition",) if project_manifest.get("overlay_definition") == "injected" and stage_task == DEFAULT_STAGE_TASK_NAME else ()
+    )
     errors.extend(
         _validate_project_command(
             label="stage_command",
             command=project_manifest.get("stage_command", ""),
-            expected_plan=stage_task,
-            required_options=tuple(stage_required_options),
+            expected_task=stage_task,
+            expected_fields=stage_fields,
+            missing_fields=require_missing,
         )
     )
-    build_required_options = [
-        ("--work-root", work_root),
-        ("--overlay-tcl", overlay_tcl),
-        ("--manifest-path", manifest_path.as_posix()),
-        ("--command-plan-path", command_plan_path.as_posix()),
-        ("--project-manifest-path", project_manifest_path),
-        ("--vivado", vivado_executable),
-    ]
+    build_fields = {
+        "work_root": work_root,
+        "overlay_tcl": overlay_tcl,
+        "manifest_path": manifest_path.as_posix(),
+        "command_plan_path": command_plan_path.as_posix(),
+        "project_manifest_path": project_manifest_path,
+        "vivado": vivado_executable,
+    }
     if vivado_settings:
-        build_required_options.append(("--vivado-settings", vivado_settings))
-    validate_required_options = [
-        ("--work-root", work_root),
-        ("--manifest-path", manifest_path.as_posix()),
-        ("--command-plan-path", command_plan_path.as_posix()),
-        ("--project-manifest-path", project_manifest_path),
-    ]
+        build_fields["vivado_settings"] = vivado_settings
     if vivado_invocation != "standard":
-        build_required_options.append(("--vivado-invocation", vivado_invocation))
+        build_fields["vivado_invocation"] = vivado_invocation
     if vivado_mount_root:
-        build_required_options.append(("--vivado-mount-root", vivado_mount_root))
+        build_fields["vivado_mount_root"] = vivado_mount_root
     errors.extend(
         _validate_project_command(
             label="build_command",
             command=project_manifest.get("build_command", ""),
-            expected_plan="build-vivado-artifacts",
-            required_options=tuple(build_required_options),
+            expected_task=BUILD_TASK_NAME,
+            expected_fields=build_fields,
         )
     )
+    validate_fields = {
+        "work_root": work_root,
+        "manifest_path": manifest_path.as_posix(),
+        "command_plan_path": command_plan_path.as_posix(),
+        "project_manifest_path": project_manifest_path,
+    }
     errors.extend(
         _validate_project_command(
             label="validate_command",
             command=project_manifest.get("validate_command", ""),
-            expected_plan="validate-vivado-artifacts",
-            required_options=tuple(validate_required_options),
+            expected_task=VALIDATE_TASK_NAME,
+            expected_fields=validate_fields,
         )
     )
     return tuple(errors)
+
+
+def _compose_recorded_command(overrides: list[str]):
+    from dau_build.config import compose_config
+
+    return compose_config(overrides).cfg
 
 
 def _validate_project_command(
     *,
     label: str,
     command: str,
-    expected_plan: str,
-    required_options: tuple[tuple[str, str], ...],
+    expected_task: str,
+    expected_fields: dict[str, str],
+    missing_fields: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     if not command:
         return ()
@@ -936,46 +951,36 @@ def _validate_project_command(
         tokens = shlex.split(command)
     except ValueError as exc:
         return (f"project {label} cannot be parsed: {exc}",)
+    overrides = tokens[1:]
+    tasks = [token.removeprefix("task=") for token in overrides if token.startswith("task=")]
+    if tasks != [expected_task]:
+        return (f"project {label} task mismatch: {','.join(tasks) or '<none>'} != {expected_task}",)
+    from hydra.errors import HydraException
+    from omegaconf import OmegaConf
+    from omegaconf.errors import OmegaConfBaseException
+
+    try:
+        cfg = _compose_recorded_command(overrides)
+    except (HydraException, OmegaConfBaseException) as exc:
+        return (f"project {label} does not compose: {exc}",)
+    if "model" not in cfg:
+        return (f"project {label} does not compose: task={expected_task} did not resolve",)
 
     errors: list[str] = []
-    hydra_overrides = _command_hydra_overrides(tokens)
-    if hydra_overrides:
-        actual_plan = hydra_overrides.get("plan", "") if hydra_overrides.get("task") == "hardware-plan" else hydra_overrides.get("task", "")
-    else:
-        actual_plan = tokens[1] if len(tokens) > 1 else ""
-    if actual_plan != expected_plan:
-        errors.append(f"project {label} plan mismatch: {actual_plan} != {expected_plan}")
-    for option, expected_value in required_options:
-        actual_value = hydra_overrides.get(_hydra_option_key(option)) if hydra_overrides else _command_option_value(tokens, option)
-        if actual_value is None:
-            errors.append(f"project {label} missing option: {option}")
-        elif expected_value and actual_value != expected_value:
-            errors.append(f"project {label} option {option} mismatch: {actual_value} != {expected_value}")
+    for field in missing_fields:
+        if not OmegaConf.is_missing(cfg.model, field):
+            errors.append(f"project {label} must leave model.{field} missing (???)")
+    for field, expected in expected_fields.items():
+        if OmegaConf.is_missing(cfg.model, field):
+            errors.append(f"project {label} leaves model.{field} unset")
+            continue
+        if field not in cfg.model:
+            errors.append(f"project {label} task has no field: {field}")
+            continue
+        actual = cfg.model[field]
+        if expected and (actual is None or str(actual) != expected):
+            errors.append(f"project {label} field {field} mismatch: {actual} != {expected}")
     return tuple(errors)
-
-
-def _command_hydra_overrides(tokens: list[str]) -> dict[str, str]:
-    if len(tokens) < 2:
-        return {}
-    overrides = dict(token.split("=", 1) for token in tokens[1:] if "=" in token)
-    if "task" not in overrides:
-        return {}
-    return overrides
-
-
-def _hydra_option_key(option: str) -> str:
-    return option.removeprefix("--").replace("-", "_")
-
-
-def _command_option_value(tokens: list[str], option: str) -> str | None:
-    try:
-        option_index = tokens.index(option)
-    except ValueError:
-        return None
-    value_index = option_index + 1
-    if value_index >= len(tokens):
-        return ""
-    return tokens[value_index]
 
 
 def _validate_command_plan_contract(*, build_root: Path, manifest: dict[str, str], command_plan_text: str) -> tuple[str, ...]:
