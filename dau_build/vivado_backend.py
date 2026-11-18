@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import os
 import shlex
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from types import MappingProxyType
+from typing import Annotated, Any, Literal
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, field_validator
+from pydantic import BeforeValidator, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, load_artifact_bundle
+from dau_build.key_value_manifest import CommaList, KeyValueManifest, KeyValueManifestError, NonEmptyText, OptionalText
+from dau_build.shell_build import ShellBuildStatus, _slack
 
 
 class VivadoOverlayDefinition(BaseModel):
@@ -202,6 +206,156 @@ class VivadoProjectGenerationArtifacts(BaseModel):
     backend_artifacts: VivadoBackendArtifacts
 
 
+VivadoBuildStatus = Literal["planned", "built", "timing-failed"]
+VivadoInvocation = Literal["standard", "source-only"]
+# a slack the build Tcl printed; a value it could not read (no timing paths,
+# nan, empty) is recorded as no slack
+RecordedSlack = Annotated[float | None, BeforeValidator(lambda value: _slack(value) if isinstance(value, str) else value)]
+
+
+class VivadoBackendManifest(KeyValueManifest):
+    """The backend handoff manifest (``dau-vivado.manifest``). The staging
+    step writes it planned; the overlay and build Tcl append lines, and the
+    last line for a key wins, so a read after the build sees the recorded
+    ``build_status`` and ``wns_ns``. ``build_status`` built or timing-failed
+    must satisfy the shell-build timing rule (ShellBuildStatus).
+
+    An overlay definition contributes lines whose keys are data (its HDL
+    source variables, static items and runtime entries). Their names are
+    listed in ``overlay_keys`` and their values kept in ``overlay_items``;
+    any other key the model does not declare is refused."""
+
+    backend: Literal["dau_build.vivado_backend.vivado_overlay"]
+    overlay_keys: CommaList = ()
+    overlay_items: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
+    overlay: NonEmptyText
+    bitstream: NonEmptyText
+    resource_summary: NonEmptyText
+    timing_summary: NonEmptyText
+    vivado_log: NonEmptyText
+    build_status: VivadoBuildStatus
+    wns_ns: RecordedSlack = None
+    register_window_offset: NonEmptyText
+    job_control_offset: NonEmptyText
+    job_status_offset: NonEmptyText
+    last_error_offset: NonEmptyText
+    input_address_low_offset: NonEmptyText
+    input_length_low_offset: NonEmptyText
+    output_address_low_offset: NonEmptyText
+    output_length_low_offset: NonEmptyText
+    result_length_low_offset: NonEmptyText
+    job_start_bit: NonEmptyText
+    job_busy_bit: NonEmptyText
+    job_done_bit: NonEmptyText
+    job_error_bit: NonEmptyText
+    input_buffer_address: NonEmptyText
+    input_buffer_bytes: NonEmptyText
+    output_buffer_address: NonEmptyText
+    output_buffer_bytes: NonEmptyText
+    result_bytes: NonEmptyText
+    dau_artifact_bundle: OptionalText = None
+    dau_generated_top: OptionalText = None
+    dau_bundle_hdl_sources: CommaList = ()
+    platform: NonEmptyText
+    shell: NonEmptyText
+    artifact_stem: NonEmptyText
+    build_root: NonEmptyText
+    manifest: NonEmptyText
+    command_plan: NonEmptyText
+    build_tcl: NonEmptyText
+    selected_module: OptionalText = None
+    register_map_version: NonEmptyText
+    stream_protocol_version: NonEmptyText
+    operator_set: Annotated[CommaList, Field(min_length=1)]
+    vivado_settings: OptionalText = None
+    vivado_executable: NonEmptyText
+    vivado_invocation: VivadoInvocation
+    vivado_mount_root: OptionalText = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _collect_overlay_items(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping) or "overlay_items" in data:
+            return data
+        declared = {key: value for key, value in data.items() if key in cls.model_fields}
+        declared["overlay_items"] = {key: value for key, value in data.items() if key not in cls.model_fields}
+        return declared
+
+    @field_validator("overlay_items")
+    @classmethod
+    def _freeze_overlay_items(cls, value: Mapping[str, str]) -> Mapping[str, str]:
+        return MappingProxyType(dict(value))
+
+    @field_serializer("overlay_items")
+    def _serialize_overlay_items(self, value: Mapping[str, str]) -> dict[str, str]:
+        return dict(value)
+
+    @model_validator(mode="after")
+    def _check(self) -> VivadoBackendManifest:
+        declared = set(type(self).model_fields)
+        if clashing := sorted(declared.intersection(self.overlay_keys)):
+            raise ValueError(f"overlay_keys name manifest fields: {', '.join(clashing)}")
+        if unknown := sorted(set(self.overlay_items) - set(self.overlay_keys)):
+            raise ValueError(f"unknown manifest key(s): {', '.join(unknown)} (not a field and not in overlay_keys)")
+        if self.build_status != "planned":
+            ShellBuildStatus(build_status=self.build_status, wns_ns=self.wns_ns)
+        return self
+
+    def items(self) -> tuple[tuple[str, str], ...]:
+        flat: list[tuple[str, str]] = []
+        for key, value in super().items():
+            if key == "overlay_items":
+                continue
+            flat.append((key, value))
+            if key == "overlay_keys":
+                flat.extend(self.overlay_items.items())
+        return tuple(flat)
+
+
+class VivadoProjectManifest(KeyValueManifest):
+    """The project manifest (``dau-vivado.project``): what was staged from
+    where, and the CLI commands that replay staging, build and validation."""
+
+    project_generator: Literal["dau_build.vivado_backend.vivado_project"]
+    platform: NonEmptyText
+    shell: NonEmptyText
+    artifact_stem: NonEmptyText
+    source_shell_root: NonEmptyText
+    work_root: NonEmptyText
+    dau_core_root: NonEmptyText
+    dau_core_hdl_root: NonEmptyText
+    dau_driver_root: NonEmptyText
+    dau_utils_root: OptionalText = None
+    dau_build_manifest: OptionalText = None
+    dau_top_sv: OptionalText = None
+    dau_artifact_bundle: OptionalText = None
+    project_manifest: NonEmptyText
+    backend_manifest: NonEmptyText
+    backend_command_plan: NonEmptyText
+    overlay_tcl: NonEmptyText
+    build_tcl: NonEmptyText
+    bitstream: NonEmptyText
+    resource_summary: NonEmptyText
+    timing_summary: NonEmptyText
+    vivado_log: NonEmptyText
+    build_status: Literal["planned"]
+    xdma_module: NonEmptyText
+    register_map_version: NonEmptyText
+    stream_protocol_version: NonEmptyText
+    operator_set: Annotated[CommaList, Field(min_length=1)]
+    vivado_settings: OptionalText = None
+    vivado_executable: NonEmptyText
+    vivado_invocation: VivadoInvocation
+    vivado_mount_root: OptionalText = None
+    # recorded only when the overlay definition was injected by the caller
+    overlay_definition: Literal["injected"] | None = None
+    # recorded only when the caller stages through its own task
+    stage_task: str | None = None
+    stage_command: NonEmptyText
+    build_command: NonEmptyText
+    validate_command: NonEmptyText
+
+
 class VivadoBackendArtifactValidation(BaseModel):
     manifest_path: Path
     command_plan_path: Path
@@ -210,18 +364,21 @@ class VivadoBackendArtifactValidation(BaseModel):
     resource_summary_path: Path | None
     timing_summary_path: Path | None
     vivado_log_path: Path | None
-    build_status: str | None
-    manifest_items: tuple[tuple[str, str], ...]
+    manifest: VivadoBackendManifest | None
     errors: tuple[str, ...]
 
     @property
     def ok(self) -> bool:
         return not self.errors
 
+    @property
+    def build_status(self) -> str | None:
+        return None if self.manifest is None else self.manifest.build_status
+
 
 class VivadoProjectArtifactValidation(BaseModel):
     project_manifest_path: Path
-    project_manifest_items: tuple[tuple[str, str], ...]
+    project_manifest: VivadoProjectManifest | None
     backend_validation: VivadoBackendArtifactValidation
     errors: tuple[str, ...]
 
@@ -347,58 +504,44 @@ def validate_vivado_backend_artifact_bundle(
     resolved_manifest_path = _build_artifact_path(build_root, manifest_path)
     resolved_command_plan_path = _build_artifact_path(build_root, command_plan_path)
     errors: list[str] = []
-    manifest_items: tuple[tuple[str, str], ...] = ()
-    overlay_tcl_path: Path | None = None
-    bitstream_path: Path | None = None
-    resource_summary_path: Path | None = None
-    timing_summary_path: Path | None = None
-    vivado_log_path: Path | None = None
-    build_status: str | None = None
+    manifest: VivadoBackendManifest | None = None
 
     if not resolved_manifest_path.is_file():
         errors.append(f"missing manifest: {resolved_manifest_path}")
     else:
-        manifest_items, parse_errors = _parse_manifest_text(resolved_manifest_path.read_text(encoding="utf-8"))
-        errors.extend(parse_errors)
-
-    manifest = dict(manifest_items)
-    if manifest:
-        errors.extend(
-            _validate_manifest_contract(build_root=build_root, manifest_path=manifest_path, command_plan_path=command_plan_path, manifest=manifest)
-        )
-        overlay_tcl_path = _build_artifact_path(build_root, Path(manifest["overlay"])) if "overlay" in manifest else None
-        bitstream_path = _build_artifact_path(build_root, Path(manifest["bitstream"])) if "bitstream" in manifest else None
-        resource_summary_path = _build_artifact_path(build_root, Path(manifest["resource_summary"])) if "resource_summary" in manifest else None
-        timing_summary_path = _build_artifact_path(build_root, Path(manifest["timing_summary"])) if "timing_summary" in manifest else None
-        vivado_log_path = _build_artifact_path(build_root, Path(manifest["vivado_log"])) if "vivado_log" in manifest else None
-        build_status = manifest.get("build_status")
+        try:
+            manifest = VivadoBackendManifest.read(resolved_manifest_path)
+        except KeyValueManifestError as exc:
+            errors.append(str(exc))
 
     if not resolved_command_plan_path.is_file():
         errors.append(f"missing command plan: {resolved_command_plan_path}")
-
     command_plan_text = resolved_command_plan_path.read_text(encoding="utf-8") if resolved_command_plan_path.is_file() else ""
-    overlay_tcl_text = ""
-    if overlay_tcl_path is not None:
+
+    if manifest is not None:
+        errors.extend(
+            _validate_manifest_contract(build_root=build_root, manifest_path=manifest_path, command_plan_path=command_plan_path, manifest=manifest)
+        )
+        overlay_tcl_path = _build_artifact_path(build_root, Path(manifest.overlay))
         if overlay_tcl_path.is_file():
-            overlay_tcl_text = overlay_tcl_path.read_text(encoding="utf-8")
+            errors.extend(_validate_overlay_tcl_contract(manifest=manifest, overlay_tcl_text=overlay_tcl_path.read_text(encoding="utf-8")))
         else:
             errors.append(f"missing overlay Tcl: {overlay_tcl_path}")
+        if command_plan_text:
+            errors.extend(_validate_command_plan_contract(build_root=build_root, manifest=manifest, command_plan_text=command_plan_text))
 
-    if manifest and command_plan_text:
-        errors.extend(_validate_command_plan_contract(build_root=build_root, manifest=manifest, command_plan_text=command_plan_text))
-    if manifest and overlay_tcl_text:
-        errors.extend(_validate_overlay_tcl_contract(manifest=manifest, overlay_tcl_text=overlay_tcl_text))
+    def output(path: str) -> Path | None:
+        return None if manifest is None else _build_artifact_path(build_root, Path(path))
 
     return VivadoBackendArtifactValidation(
         manifest_path=resolved_manifest_path,
         command_plan_path=resolved_command_plan_path,
-        overlay_tcl_path=overlay_tcl_path,
-        bitstream_path=bitstream_path,
-        resource_summary_path=resource_summary_path,
-        timing_summary_path=timing_summary_path,
-        vivado_log_path=vivado_log_path,
-        build_status=build_status,
-        manifest_items=manifest_items,
+        overlay_tcl_path=None if manifest is None else output(manifest.overlay),
+        bitstream_path=None if manifest is None else output(manifest.bitstream),
+        resource_summary_path=None if manifest is None else output(manifest.resource_summary),
+        timing_summary_path=None if manifest is None else output(manifest.timing_summary),
+        vivado_log_path=None if manifest is None else output(manifest.vivado_log),
+        manifest=manifest,
         errors=tuple(errors),
     )
 
@@ -417,17 +560,17 @@ def validate_vivado_project_artifact_bundle(
     )
     resolved_project_manifest_path = _build_artifact_path(build_root, project_manifest_path)
     errors = list(backend_validation.errors)
-    project_manifest_items: tuple[tuple[str, str], ...] = ()
+    project_manifest: VivadoProjectManifest | None = None
 
     if not resolved_project_manifest_path.is_file():
         errors.append(f"missing project manifest: {resolved_project_manifest_path}")
     else:
-        project_manifest_items, parse_errors = _parse_manifest_text(resolved_project_manifest_path.read_text(encoding="utf-8"))
-        errors.extend(parse_errors)
+        try:
+            project_manifest = VivadoProjectManifest.read(resolved_project_manifest_path)
+        except KeyValueManifestError as exc:
+            errors.append(str(exc))
 
-    project_manifest = dict(project_manifest_items)
-    backend_manifest = dict(backend_validation.manifest_items)
-    if project_manifest:
+    if project_manifest is not None:
         errors.extend(
             _validate_project_manifest_contract(
                 build_root=build_root,
@@ -435,58 +578,64 @@ def validate_vivado_project_artifact_bundle(
                 manifest_path=manifest_path,
                 command_plan_path=command_plan_path,
                 project_manifest=project_manifest,
-                backend_manifest=backend_manifest,
+                backend_manifest=backend_validation.manifest,
             )
         )
 
     return VivadoProjectArtifactValidation(
         project_manifest_path=resolved_project_manifest_path,
-        project_manifest_items=project_manifest_items,
+        project_manifest=project_manifest,
         backend_validation=backend_validation,
         errors=tuple(errors),
     )
 
 
-def vivado_backend_manifest(request: VivadoBackendRequest, *, artifact_bundle: ArtifactBundle | None = None) -> tuple[tuple[str, str], ...]:
+def vivado_backend_manifest(request: VivadoBackendRequest, *, artifact_bundle: ArtifactBundle | None = None) -> VivadoBackendManifest:
     vivado_path_base = _request_vivado_path_base(request)
-    return (
-        *dau_overlay_manifest(
-            request.dau_core_hdl_root,
-            overlay_tcl=request.overlay_tcl,
-            bitstream_path=request.bitstream_path,
-            dau_artifact_bundle_path=request.resolved_dau_artifact_bundle_path,
-            artifact_bundle=artifact_bundle,
-            vivado_path_base=vivado_path_base,
-            overlay_definition=request.overlay_definition,
-        ),
-        ("platform", request.platform),
-        ("shell", request.shell),
-        ("artifact_stem", request.artifact_stem),
-        ("build_root", request.build_root.as_posix()),
-        ("manifest", request.resolved_manifest_path.as_posix()),
-        ("command_plan", request.resolved_command_plan_path.as_posix()),
-        ("build_tcl", request.build_tcl.as_posix()),
-        ("resource_summary", request.resource_summary_path.as_posix()),
-        ("timing_summary", request.timing_summary_path.as_posix()),
-        ("vivado_log", request.vivado_log_path.as_posix()),
-        ("build_status", "planned"),
-        ("selected_module", "" if request.selected_module is None else request.selected_module),
-        ("register_map_version", request.register_map_version),
-        ("stream_protocol_version", request.stream_protocol_version),
-        ("operator_set", ",".join(request.operator_set)),
-        ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings.as_posix()),
-        ("vivado_executable", request.vivado_executable),
-        ("vivado_invocation", request.vivado_invocation),
-        ("vivado_mount_root", "" if request.resolved_vivado_mount_root is None else request.resolved_vivado_mount_root.as_posix()),
+    definition = request.overlay_definition if request.overlay_definition is not None else VivadoOverlayDefinition()
+    overlay_keys = tuple(
+        dict.fromkeys(key for key, _ in (*definition.hdl_source_vars, *definition.static_manifest_items, *definition.runtime_manifest_entries))
+    )
+    return VivadoBackendManifest.from_items(
+        (
+            ("overlay_keys", ",".join(overlay_keys)),
+            *dau_overlay_manifest(
+                request.dau_core_hdl_root,
+                overlay_tcl=request.overlay_tcl,
+                bitstream_path=request.bitstream_path,
+                dau_artifact_bundle_path=request.resolved_dau_artifact_bundle_path,
+                artifact_bundle=artifact_bundle,
+                vivado_path_base=vivado_path_base,
+                overlay_definition=request.overlay_definition,
+            ),
+            ("platform", request.platform),
+            ("shell", request.shell),
+            ("artifact_stem", request.artifact_stem),
+            ("build_root", request.build_root.as_posix()),
+            ("manifest", request.resolved_manifest_path.as_posix()),
+            ("command_plan", request.resolved_command_plan_path.as_posix()),
+            ("build_tcl", request.build_tcl.as_posix()),
+            ("resource_summary", request.resource_summary_path.as_posix()),
+            ("timing_summary", request.timing_summary_path.as_posix()),
+            ("vivado_log", request.vivado_log_path.as_posix()),
+            ("build_status", "planned"),
+            ("selected_module", "" if request.selected_module is None else request.selected_module),
+            ("register_map_version", request.register_map_version),
+            ("stream_protocol_version", request.stream_protocol_version),
+            ("operator_set", ",".join(request.operator_set)),
+            ("vivado_settings", "" if request.vivado_settings is None else request.vivado_settings.as_posix()),
+            ("vivado_executable", request.vivado_executable),
+            ("vivado_invocation", request.vivado_invocation),
+            ("vivado_mount_root", "" if request.resolved_vivado_mount_root is None else request.resolved_vivado_mount_root.as_posix()),
+        )
     )
 
 
 def vivado_backend_manifest_text(request: VivadoBackendRequest, *, artifact_bundle: ArtifactBundle | None = None) -> str:
-    lines = (f"{key}={value}" for key, value in vivado_backend_manifest(request, artifact_bundle=artifact_bundle))
-    return "\n".join(lines) + "\n"
+    return vivado_backend_manifest(request, artifact_bundle=artifact_bundle).to_text()
 
 
-def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) -> tuple[tuple[str, str], ...]:
+def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) -> VivadoProjectManifest:
     backend_request = request.backend_request
     items = [
         ("project_generator", "dau_build.vivado_backend.vivado_project"),
@@ -539,12 +688,11 @@ def vivado_project_generation_manifest(request: VivadoProjectGenerationRequest) 
             ("validate_command", vivado_project_validate_command(request)),
         )
     )
-    return tuple(items)
+    return VivadoProjectManifest.from_items(items)
 
 
 def vivado_project_generation_manifest_text(request: VivadoProjectGenerationRequest) -> str:
-    lines = (f"{key}={value}" for key, value in vivado_project_generation_manifest(request))
-    return "\n".join(lines) + "\n"
+    return vivado_project_generation_manifest(request).to_text()
 
 
 def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str:
@@ -618,105 +766,47 @@ def _task_command(executable: str, task: str, overrides: tuple[tuple[str, object
     return shlex.join([executable, f"task={task}", *model_overrides(dict(overrides))])
 
 
-def _parse_manifest_text(text: str) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
-    items: list[tuple[str, str]] = []
+def _validate_manifest_contract(
+    *, build_root: Path, manifest_path: Path, command_plan_path: Path, manifest: VivadoBackendManifest
+) -> tuple[str, ...]:
     errors: list[str] = []
-    for line_number, raw_line in enumerate(text.splitlines(), start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            errors.append(f"manifest line {line_number} is missing '='")
-            continue
-        key, value = line.split("=", 1)
-        if not key:
-            errors.append(f"manifest line {line_number} has an empty key")
-            continue
-        items.append((key, value))
-    return tuple(items), tuple(errors)
-
-
-def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, command_plan_path: Path, manifest: dict[str, str]) -> tuple[str, ...]:
-    errors: list[str] = []
-    required_keys = (
-        "backend",
-        "platform",
-        "shell",
-        "artifact_stem",
-        "build_root",
-        "manifest",
-        "command_plan",
-        "build_tcl",
-        "overlay",
-        "bitstream",
-        "resource_summary",
-        "timing_summary",
-        "vivado_log",
-        "build_status",
-        "register_map_version",
-        "stream_protocol_version",
-        "operator_set",
-        "vivado_settings",
-        "vivado_executable",
-        "vivado_invocation",
-        "vivado_mount_root",
-    )
-    optional_empty_keys = {"vivado_mount_root", "vivado_settings"}
-    for key in required_keys:
-        if key not in manifest or key not in optional_empty_keys and not manifest[key]:
-            errors.append(f"manifest missing required key: {key}")
-    if manifest.get("backend") and manifest["backend"] != "dau_build.vivado_backend.vivado_overlay":
-        errors.append(f"unexpected backend: {manifest['backend']}")
-    if manifest.get("build_root") and manifest["build_root"] != build_root.as_posix():
-        errors.append(f"manifest build_root mismatch: {manifest['build_root']} != {build_root.as_posix()}")
-    if manifest.get("manifest") and manifest["manifest"] != manifest_path.as_posix():
-        errors.append(f"manifest path mismatch: {manifest['manifest']} != {manifest_path.as_posix()}")
-    if manifest.get("command_plan") and manifest["command_plan"] != command_plan_path.as_posix():
-        errors.append(f"command plan path mismatch: {manifest['command_plan']} != {command_plan_path.as_posix()}")
-    build_status = manifest.get("build_status")
-    if build_status and build_status not in {"planned", "built", "timing-failed"}:
-        errors.append(f"unsupported build status: {build_status}")
-    if build_status in {"built", "timing-failed"}:
-        from dau_build.shell_build import ShellBuildError, ShellBuildRecord, _slack
-
-        errors.extend(_validate_built_output_paths(build_root=build_root, manifest=manifest))
-        try:
-            ShellBuildRecord.from_metadata({"build_status": build_status, "wns_ns": _slack(manifest.get("wns_ns", ""))})
-        except ShellBuildError as exc:
-            errors.append(str(exc))
-    if manifest.get("dau_artifact_bundle"):
-        errors.extend(_validate_dau_artifact_bundle_reference(build_root=build_root, manifest=manifest))
+    if manifest.build_root != build_root.as_posix():
+        errors.append(f"manifest build_root mismatch: {manifest.build_root} != {build_root.as_posix()}")
+    if manifest.manifest != manifest_path.as_posix():
+        errors.append(f"manifest path mismatch: {manifest.manifest} != {manifest_path.as_posix()}")
+    if manifest.command_plan != command_plan_path.as_posix():
+        errors.append(f"command plan path mismatch: {manifest.command_plan} != {command_plan_path.as_posix()}")
+    if manifest.build_status != "planned":
+        for key, value in (
+            ("bitstream", manifest.bitstream),
+            ("resource_summary", manifest.resource_summary),
+            ("timing_summary", manifest.timing_summary),
+            ("vivado_log", manifest.vivado_log),
+        ):
+            path = _build_artifact_path(build_root, Path(value))
+            if not path.is_file():
+                errors.append(f"build_status=built but missing {key}: {path}")
+    if manifest.dau_artifact_bundle:
+        errors.extend(_validate_dau_artifact_bundle_reference(build_root=build_root, manifest=manifest, bundle=manifest.dau_artifact_bundle))
     return tuple(errors)
 
 
-def _validate_built_output_paths(*, build_root: Path, manifest: dict[str, str]) -> tuple[str, ...]:
-    errors: list[str] = []
-    for key in ("bitstream", "resource_summary", "timing_summary", "vivado_log"):
-        value = manifest.get(key, "")
-        if not value:
-            continue
-        path = _build_artifact_path(build_root, Path(value))
-        if not path.is_file():
-            errors.append(f"build_status=built but missing {key}: {path}")
-    return tuple(errors)
-
-
-def _validate_dau_artifact_bundle_reference(*, build_root: Path, manifest: dict[str, str]) -> tuple[str, ...]:
-    bundle_path = _build_artifact_path(build_root, Path(manifest["dau_artifact_bundle"]))
+def _validate_dau_artifact_bundle_reference(*, build_root: Path, manifest: VivadoBackendManifest, bundle: str) -> tuple[str, ...]:
+    bundle_path = _build_artifact_path(build_root, Path(bundle))
     try:
         artifact_bundle = load_artifact_bundle((bundle_path,), required_roles=("generated-top",), validate_paths=True)
     except ArtifactBundleError as exc:
         return (f"invalid DAU artifact bundle: {exc}",)
-    expected_sources = tuple(_split_manifest_list(manifest.get("dau_bundle_hdl_sources", "")))
+    expected_sources = manifest.dau_bundle_hdl_sources
     actual_sources = tuple(path.as_posix() for path in _bundle_hdl_source_paths(artifact_bundle))
     resolved_expected_sources = tuple(_build_artifact_path(build_root, Path(path)).resolve(strict=False).as_posix() for path in expected_sources)
     if expected_sources and resolved_expected_sources != actual_sources:
         return (f"DAU artifact bundle source mismatch: {','.join(expected_sources)} != {','.join(actual_sources)}",)
     generated_top = _bundle_generated_top_path(artifact_bundle)
-    if generated_top is not None and manifest.get("dau_generated_top"):
-        resolved_expected_top = _build_artifact_path(build_root, Path(manifest["dau_generated_top"])).resolve(strict=False)
+    if generated_top is not None and manifest.dau_generated_top:
+        resolved_expected_top = _build_artifact_path(build_root, Path(manifest.dau_generated_top)).resolve(strict=False)
         if resolved_expected_top != generated_top:
-            return (f"DAU generated top mismatch: {manifest['dau_generated_top']} != {generated_top.as_posix()}",)
+            return (f"DAU generated top mismatch: {manifest.dau_generated_top} != {generated_top.as_posix()}",)
     return ()
 
 
@@ -726,71 +816,25 @@ def _validate_project_manifest_contract(
     project_manifest_path: Path,
     manifest_path: Path,
     command_plan_path: Path,
-    project_manifest: dict[str, str],
-    backend_manifest: dict[str, str],
+    project_manifest: VivadoProjectManifest,
+    backend_manifest: VivadoBackendManifest | None,
 ) -> tuple[str, ...]:
     errors: list[str] = []
-    required_keys = (
-        "project_generator",
-        "platform",
-        "shell",
-        "artifact_stem",
-        "source_shell_root",
-        "work_root",
-        "dau_core_root",
-        "dau_core_hdl_root",
-        "dau_driver_root",
-        "dau_utils_root",
-        "dau_build_manifest",
-        "dau_top_sv",
-        "dau_artifact_bundle",
-        "project_manifest",
-        "backend_manifest",
-        "backend_command_plan",
-        "overlay_tcl",
-        "build_tcl",
-        "bitstream",
-        "resource_summary",
-        "timing_summary",
-        "vivado_log",
-        "build_status",
-        "xdma_module",
-        "register_map_version",
-        "stream_protocol_version",
-        "operator_set",
-        "vivado_settings",
-        "vivado_executable",
-        "vivado_invocation",
-        "vivado_mount_root",
-        "stage_command",
-        "build_command",
-        "validate_command",
-    )
-    optional_empty_keys = {"dau_utils_root", "dau_build_manifest", "dau_top_sv", "dau_artifact_bundle", "vivado_mount_root", "vivado_settings"}
-    for key in required_keys:
-        if key not in project_manifest:
-            errors.append(f"project manifest missing required key: {key}")
-        elif key not in optional_empty_keys and not project_manifest[key]:
-            errors.append(f"project manifest has empty required key: {key}")
-
-    if project_manifest.get("project_generator") and project_manifest["project_generator"] != "dau_build.vivado_backend.vivado_project":
-        errors.append(f"unexpected project generator: {project_manifest['project_generator']}")
-    if project_manifest.get("work_root") and project_manifest["work_root"] != build_root.as_posix():
-        errors.append(f"project work root mismatch: {project_manifest['work_root']} != {build_root.as_posix()}")
-    if project_manifest.get("project_manifest") and project_manifest["project_manifest"] != project_manifest_path.as_posix():
-        errors.append(f"project manifest path mismatch: {project_manifest['project_manifest']} != {project_manifest_path.as_posix()}")
-    if project_manifest.get("backend_manifest") and project_manifest["backend_manifest"] != manifest_path.as_posix():
-        errors.append(f"project backend manifest mismatch: {project_manifest['backend_manifest']} != {manifest_path.as_posix()}")
-    if project_manifest.get("backend_command_plan") and project_manifest["backend_command_plan"] != command_plan_path.as_posix():
-        errors.append(f"project backend command plan mismatch: {project_manifest['backend_command_plan']} != {command_plan_path.as_posix()}")
-    if project_manifest.get("dau_core_root") and project_manifest.get("dau_core_hdl_root"):
-        expected_hdl_root = (Path(project_manifest["dau_core_root"]) / "dau_core" / "hdl").as_posix()
-        if project_manifest["dau_core_hdl_root"] != expected_hdl_root:
-            errors.append(f"project DAU HDL root mismatch: {project_manifest['dau_core_hdl_root']} != {expected_hdl_root}")
-
-    errors.extend(
-        _validate_project_backend_manifest_cross_refs(build_root=build_root, project_manifest=project_manifest, backend_manifest=backend_manifest)
-    )
+    if project_manifest.work_root != build_root.as_posix():
+        errors.append(f"project work root mismatch: {project_manifest.work_root} != {build_root.as_posix()}")
+    if project_manifest.project_manifest != project_manifest_path.as_posix():
+        errors.append(f"project manifest path mismatch: {project_manifest.project_manifest} != {project_manifest_path.as_posix()}")
+    if project_manifest.backend_manifest != manifest_path.as_posix():
+        errors.append(f"project backend manifest mismatch: {project_manifest.backend_manifest} != {manifest_path.as_posix()}")
+    if project_manifest.backend_command_plan != command_plan_path.as_posix():
+        errors.append(f"project backend command plan mismatch: {project_manifest.backend_command_plan} != {command_plan_path.as_posix()}")
+    expected_hdl_root = (Path(project_manifest.dau_core_root) / "dau_core" / "hdl").as_posix()
+    if project_manifest.dau_core_hdl_root != expected_hdl_root:
+        errors.append(f"project DAU HDL root mismatch: {project_manifest.dau_core_hdl_root} != {expected_hdl_root}")
+    if backend_manifest is not None:
+        errors.extend(
+            _validate_project_backend_manifest_cross_refs(build_root=build_root, project_manifest=project_manifest, backend_manifest=backend_manifest)
+        )
     errors.extend(
         _validate_project_manifest_commands(project_manifest=project_manifest, manifest_path=manifest_path, command_plan_path=command_plan_path)
     )
@@ -798,9 +842,11 @@ def _validate_project_manifest_contract(
 
 
 def _validate_project_backend_manifest_cross_refs(
-    *, build_root: Path, project_manifest: dict[str, str], backend_manifest: dict[str, str]
+    *, build_root: Path, project_manifest: VivadoProjectManifest, backend_manifest: VivadoBackendManifest
 ) -> tuple[str, ...]:
     errors: list[str] = []
+    project = dict(project_manifest.items())
+    backend = dict(backend_manifest.items())
     key_pairs = (
         ("platform", "platform"),
         ("shell", "shell"),
@@ -814,119 +860,99 @@ def _validate_project_backend_manifest_cross_refs(
         ("register_map_version", "register_map_version"),
         ("stream_protocol_version", "stream_protocol_version"),
         ("operator_set", "operator_set"),
-        ("dau_artifact_bundle", "dau_artifact_bundle"),
         ("vivado_settings", "vivado_settings"),
         ("vivado_executable", "vivado_executable"),
         ("vivado_invocation", "vivado_invocation"),
         ("vivado_mount_root", "vivado_mount_root"),
     )
     for project_key, backend_key in key_pairs:
-        project_value = project_manifest.get(project_key)
-        backend_value = backend_manifest.get(backend_key)
-        if project_key == "dau_artifact_bundle" and project_value and backend_value:
-            project_path = _build_artifact_path(build_root, Path(project_value)).resolve(strict=False)
-            backend_path = _build_artifact_path(build_root, Path(backend_value)).resolve(strict=False)
-            if project_path != backend_path:
-                errors.append(f"project {project_key} mismatch: {project_value} != backend {backend_key} {backend_value}")
-            continue
-        if project_value and backend_value and project_value != backend_value:
-            errors.append(f"project {project_key} mismatch: {project_value} != backend {backend_key} {backend_value}")
+        if project[project_key] != backend[backend_key]:
+            errors.append(f"project {project_key} mismatch: {project[project_key]} != backend {backend_key} {backend[backend_key]}")
+    if project_manifest.dau_artifact_bundle and backend_manifest.dau_artifact_bundle:
+        project_path = _build_artifact_path(build_root, Path(project_manifest.dau_artifact_bundle)).resolve(strict=False)
+        backend_path = _build_artifact_path(build_root, Path(backend_manifest.dau_artifact_bundle)).resolve(strict=False)
+        if project_path != backend_path:
+            errors.append(
+                f"project dau_artifact_bundle mismatch: {project_manifest.dau_artifact_bundle} != backend dau_artifact_bundle {backend_manifest.dau_artifact_bundle}"
+            )
     return tuple(errors)
 
 
 def _validate_project_manifest_commands(
     *,
-    project_manifest: dict[str, str],
+    project_manifest: VivadoProjectManifest,
     manifest_path: Path,
     command_plan_path: Path,
 ) -> tuple[str, ...]:
     """Each recorded command must compose under the current CLI, select the
     task it claims, and set the task fields this manifest records."""
     errors: list[str] = []
-    work_root = project_manifest.get("work_root", "")
-    overlay_tcl = project_manifest.get("overlay_tcl", "")
-    dau_artifact_bundle = project_manifest.get("dau_artifact_bundle", "")
-    vivado_settings = project_manifest.get("vivado_settings", "")
-    vivado_executable = project_manifest.get("vivado_executable", "")
-    vivado_invocation = project_manifest.get("vivado_invocation", "standard")
-    vivado_mount_root = project_manifest.get("vivado_mount_root", "")
-    project_manifest_path = project_manifest.get("project_manifest", "")
-
+    m = project_manifest
     stage_fields = {
-        "source_shell_root": project_manifest.get("source_shell_root", ""),
-        "work_root": work_root,
-        "dau_core_root": project_manifest.get("dau_core_root", ""),
-        "artifact_stem": project_manifest.get("artifact_stem", ""),
-        "backend_platform": project_manifest.get("platform", ""),
-        "backend_shell": project_manifest.get("shell", ""),
-        "register_map_version": project_manifest.get("register_map_version", ""),
-        "stream_protocol_version": project_manifest.get("stream_protocol_version", ""),
-        "overlay_tcl": overlay_tcl,
+        "source_shell_root": m.source_shell_root,
+        "work_root": m.work_root,
+        "dau_core_root": m.dau_core_root,
+        "artifact_stem": m.artifact_stem,
+        "backend_platform": m.platform,
+        "backend_shell": m.shell,
+        "register_map_version": m.register_map_version,
+        "stream_protocol_version": m.stream_protocol_version,
+        "overlay_tcl": m.overlay_tcl,
         "manifest_path": manifest_path.as_posix(),
         "command_plan_path": command_plan_path.as_posix(),
-        "vivado": vivado_executable,
-        "operator": project_manifest.get("operator_set", ""),
+        "vivado": m.vivado_executable,
+        "operator": ",".join(m.operator_set),
     }
-    if vivado_settings:
+    if m.vivado_settings:
         # recorded only when the host named one; an absent settings file is absent on replay too
-        stage_fields["vivado_settings"] = vivado_settings
-    if dau_artifact_bundle:
-        stage_fields["dau_artifact_bundle"] = dau_artifact_bundle
-    if vivado_invocation != "standard":
-        stage_fields["vivado_invocation"] = vivado_invocation
-    if vivado_mount_root:
-        stage_fields["vivado_mount_root"] = vivado_mount_root
-    stage_task = project_manifest.get("stage_task", "") or DEFAULT_STAGE_TASK_NAME
+        stage_fields["vivado_settings"] = m.vivado_settings
+    if m.dau_artifact_bundle:
+        stage_fields["dau_artifact_bundle"] = m.dau_artifact_bundle
+    if m.vivado_invocation != "standard":
+        stage_fields["vivado_invocation"] = m.vivado_invocation
+    if m.vivado_mount_root:
+        stage_fields["vivado_mount_root"] = m.vivado_mount_root
+    stage_task = m.stage_task or DEFAULT_STAGE_TASK_NAME
     # the artifacts came from a caller-injected overlay definition and no
     # caller staging task was recorded: the recorded stage_command must leave
     # the definition hydra-missing instead of re-staging the packaged default
     # overlay. A recorded caller task composes the injection itself.
-    require_missing = (
-        ("overlay_definition",) if project_manifest.get("overlay_definition") == "injected" and stage_task == DEFAULT_STAGE_TASK_NAME else ()
-    )
+    require_missing = ("overlay_definition",) if m.overlay_definition == "injected" and stage_task == DEFAULT_STAGE_TASK_NAME else ()
     errors.extend(
         _validate_project_command(
             label="stage_command",
-            command=project_manifest.get("stage_command", ""),
+            command=m.stage_command,
             expected_task=stage_task,
             expected_fields=stage_fields,
             missing_fields=require_missing,
         )
     )
     build_fields = {
-        "work_root": work_root,
-        "overlay_tcl": overlay_tcl,
+        "work_root": m.work_root,
+        "overlay_tcl": m.overlay_tcl,
         "manifest_path": manifest_path.as_posix(),
         "command_plan_path": command_plan_path.as_posix(),
-        "project_manifest_path": project_manifest_path,
-        "vivado": vivado_executable,
+        "project_manifest_path": m.project_manifest,
+        "vivado": m.vivado_executable,
     }
-    if vivado_settings:
-        build_fields["vivado_settings"] = vivado_settings
-    if vivado_invocation != "standard":
-        build_fields["vivado_invocation"] = vivado_invocation
-    if vivado_mount_root:
-        build_fields["vivado_mount_root"] = vivado_mount_root
+    if m.vivado_settings:
+        build_fields["vivado_settings"] = m.vivado_settings
+    if m.vivado_invocation != "standard":
+        build_fields["vivado_invocation"] = m.vivado_invocation
+    if m.vivado_mount_root:
+        build_fields["vivado_mount_root"] = m.vivado_mount_root
     errors.extend(
-        _validate_project_command(
-            label="build_command",
-            command=project_manifest.get("build_command", ""),
-            expected_task=BUILD_TASK_NAME,
-            expected_fields=build_fields,
-        )
+        _validate_project_command(label="build_command", command=m.build_command, expected_task=BUILD_TASK_NAME, expected_fields=build_fields)
     )
     validate_fields = {
-        "work_root": work_root,
+        "work_root": m.work_root,
         "manifest_path": manifest_path.as_posix(),
         "command_plan_path": command_plan_path.as_posix(),
-        "project_manifest_path": project_manifest_path,
+        "project_manifest_path": m.project_manifest,
     }
     errors.extend(
         _validate_project_command(
-            label="validate_command",
-            command=project_manifest.get("validate_command", ""),
-            expected_task=VALIDATE_TASK_NAME,
-            expected_fields=validate_fields,
+            label="validate_command", command=m.validate_command, expected_task=VALIDATE_TASK_NAME, expected_fields=validate_fields
         )
     )
     return tuple(errors)
@@ -984,35 +1010,21 @@ def _validate_project_command(
     return tuple(errors)
 
 
-def _validate_command_plan_contract(*, build_root: Path, manifest: dict[str, str], command_plan_text: str) -> tuple[str, ...]:
+def _validate_command_plan_contract(*, build_root: Path, manifest: VivadoBackendManifest, command_plan_text: str) -> tuple[str, ...]:
     errors: list[str] = []
-    overlay_tcl = manifest.get("overlay")
-    build_tcl = manifest.get("build_tcl")
-    vivado_invocation = manifest.get("vivado_invocation", "standard")
-    vivado_mount_root = Path(manifest["vivado_mount_root"]) if manifest.get("vivado_mount_root") else None
+    vivado_mount_root = Path(manifest.vivado_mount_root) if manifest.vivado_mount_root else None
     command_root = vivado_mount_root or build_root
     if f"cd {shlex.quote(str(command_root))}" not in command_plan_text:
         errors.append(f"command plan does not cd into Vivado command root: {command_root}")
-    overlay_tcl_for_command = (
-        _command_plan_tcl_path(build_root=build_root, tcl_path=Path(overlay_tcl), vivado_mount_root=vivado_mount_root) if overlay_tcl else None
-    )
-    build_tcl_for_command = (
-        _command_plan_tcl_path(build_root=build_root, tcl_path=Path(build_tcl), vivado_mount_root=vivado_mount_root) if build_tcl else None
-    )
-    if overlay_tcl and not _command_plan_sources_tcl(
-        command_plan_text=command_plan_text,
-        vivado_executable=manifest.get("vivado_executable", "vivado"),
-        tcl_path=overlay_tcl_for_command or Path(overlay_tcl),
-        vivado_invocation=vivado_invocation,
-    ):
-        errors.append(f"command plan does not source overlay Tcl: {overlay_tcl_for_command or overlay_tcl}")
-    if build_tcl and not _command_plan_sources_tcl(
-        command_plan_text=command_plan_text,
-        vivado_executable=manifest.get("vivado_executable", "vivado"),
-        tcl_path=build_tcl_for_command or Path(build_tcl),
-        vivado_invocation=vivado_invocation,
-    ):
-        errors.append(f"command plan does not source build Tcl: {build_tcl_for_command or build_tcl}")
+    for label, tcl in (("overlay", manifest.overlay), ("build", manifest.build_tcl)):
+        tcl_for_command = _command_plan_tcl_path(build_root=build_root, tcl_path=Path(tcl), vivado_mount_root=vivado_mount_root)
+        if not _command_plan_sources_tcl(
+            command_plan_text=command_plan_text,
+            vivado_executable=manifest.vivado_executable,
+            tcl_path=tcl_for_command,
+            vivado_invocation=manifest.vivado_invocation,
+        ):
+            errors.append(f"command plan does not source {label} Tcl: {tcl_for_command}")
     return tuple(errors)
 
 
@@ -1022,16 +1034,18 @@ def _command_plan_sources_tcl(*, command_plan_text: str, vivado_executable: str,
     return f"-source {shlex.quote(str(tcl_path))}" in command_plan_text
 
 
-def _validate_overlay_tcl_contract(*, manifest: dict[str, str], overlay_tcl_text: str) -> tuple[str, ...]:
+def _validate_overlay_tcl_contract(*, manifest: VivadoBackendManifest, overlay_tcl_text: str) -> tuple[str, ...]:
     errors: list[str] = []
-    for key in ("overlay", "bitstream", "resource_summary", "timing_summary", "vivado_log"):
-        value = manifest.get(key)
-        if value is None:
-            continue
-        expected = f'"{key}={value}"'
-        if expected not in overlay_tcl_text:
+    for key, value in (
+        ("overlay", manifest.overlay),
+        ("bitstream", manifest.bitstream),
+        ("resource_summary", manifest.resource_summary),
+        ("timing_summary", manifest.timing_summary),
+        ("vivado_log", manifest.vivado_log),
+    ):
+        if f'"{key}={value}"' not in overlay_tcl_text:
             errors.append(f"overlay Tcl does not write manifest field: {key}={value}")
-    for source in _split_manifest_list(manifest.get("dau_bundle_hdl_sources", "")):
+    for source in manifest.dau_bundle_hdl_sources:
         if source not in overlay_tcl_text:
             errors.append(f"overlay Tcl does not consume DAU bundle source: {source}")
     return tuple(errors)
@@ -1182,12 +1196,6 @@ def _selected_module_puts_tcl(selected_module: str | None) -> str:
     if selected_module is None:
         return ""
     return f'puts $manifest_file "selected_module={selected_module}"'
-
-
-def _split_manifest_list(value: str) -> tuple[str, ...]:
-    if not value:
-        return ()
-    return tuple(item for item in value.split(",") if item)
 
 
 def dau_overlay_manifest(

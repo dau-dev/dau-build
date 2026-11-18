@@ -27,9 +27,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from artlink.artifact import Artifact, Capability
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .packaging import ArtifactManifest, load_artifact_manifest
 from .shell_build import ShellBuildError, ShellBuildRecord
@@ -58,26 +59,54 @@ PUBLISHED_METADATA_KEYS: tuple[str, ...] = (
 # drops every other artifact by construction.
 
 
+class _ContractTile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    core: str = Field(min_length=1)
+    unit_kind: str | None
+    opcodes: tuple[str, ...]
+
+
+class _ContractLane(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    tile: _ContractTile
+
+
+class _PublishedContract(BaseModel):
+    """The part of a capability contract the inventory projects: each
+    lane's tile core, unit kind and opcodes. Every key read here is
+    required, so a missing or misspelled ``lanes``, ``tile``, ``core``,
+    ``unit_kind`` or ``opcodes`` fails instead of publishing an empty
+    inventory. The other contract keys (bitmaps, partition, chain, tile
+    config) belong to the contract's own schema, which this public module
+    does not restate, so they are not validated here."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    contract: Literal["dau-capability-contract"]
+    lanes: tuple[_ContractLane, ...]
+
+
 def _capabilities_from_contract(contract: Mapping[str, Any]) -> tuple[Capability, ...]:
     """The operator inventory a bitstream advertises, as artlink
     capabilities.
 
-    Takes the contract mapping as plain data — the shape
-    ``{"lanes": [{"tile": {"core": ..., "unit_kind": ..., "opcodes": [...]}}]}``
-    — so this module needs nothing from the package that produced it.
-    Identical lane tiles collapse into one capability with a count, which
-    is what makes the inventory readable for a wide composition.
+    Takes the contract mapping as plain data, so this module needs nothing
+    from the package that produced it. Identical lane tiles collapse into
+    one capability with a count, which is what makes the inventory readable
+    for a wide composition.
     """
+    try:
+        lanes = _PublishedContract.model_validate(contract).lanes
+    except ValidationError as exc:
+        raise ValueError(f"refusing to publish from an invalid capability contract: {exc}") from exc
     counts: dict[tuple[str, str], int] = {}
     opcodes: dict[tuple[str, str], tuple[str, ...]] = {}
-    for lane in contract.get("lanes", ()):
-        tile = lane.get("tile") or {}
-        core = tile.get("core")
-        if not core:
-            continue
-        key = (core, tile.get("unit_kind") or "")
+    for lane in lanes:
+        key = (lane.tile.core, lane.tile.unit_kind or "")
         counts[key] = counts.get(key, 0) + 1
-        opcodes.setdefault(key, tuple(tile.get("opcodes", ())))
+        opcodes.setdefault(key, lane.tile.opcodes)
     capabilities = []
     for (core, unit_kind), count in sorted(counts.items()):
         metadata: dict[str, Any] = {"count": count}

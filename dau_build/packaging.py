@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-from artlink import ARTLINK_MANIFEST_SCHEMA, Artifact, Capability, Manifest, ManifestError, capability_from_value
+from artlink import ARTLINK_MANIFEST_SCHEMA, Artifact, Capability, Manifest, ManifestError, capability_from_value, load_manifest
 from pydantic import ConfigDict, model_validator
 
 __all__ = (
@@ -13,7 +12,6 @@ __all__ = (
     "Artifact",
     "ArtifactManifest",
     "ArtifactManifestError",
-    "artifact_manifest_from_mapping",
     "artifact_modules",
     "artifact_path",
     "artifact_with_modules",
@@ -47,45 +45,22 @@ class ArtifactManifest(Manifest):
         return self
 
 
-def load_yaml_mapping(path: Path, *, description: str, error_type: type[Exception], schema: str | None = None) -> dict[str, Any]:
-    """Shared read -> safe_load -> mapping/schema-check skeleton for every
-    dau-build YAML surface (manifests, build specs, simulation profiles)."""
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise error_type(f"failed to read {description}: {path.as_posix()}: {exc}") from exc
-    except yaml.YAMLError as exc:
-        raise error_type(f"invalid {description} YAML: {path.as_posix()}") from exc
-    if not isinstance(raw, dict):
-        raise error_type(f"{description} must be a YAML mapping: {path.as_posix()}")
-    if schema is not None and raw.get("schema", "") != schema:
-        raise error_type(f"unsupported {description} schema {raw.get('schema')!r}: {path.as_posix()}")
-    return raw
-
-
 def load_artifact_manifest(path: Path, *, validate_paths: bool = False, root: Path | None = None) -> ArtifactManifest:
-    raw = load_yaml_mapping(path, description="artifact manifest", error_type=ArtifactManifestError)
-    manifest = artifact_manifest_from_mapping(raw)
-    if validate_paths:
-        validate_artifact_files(manifest, root=path.parent if root is None else root)
-    return manifest
-
-
-def artifact_manifest_from_mapping(raw: dict[str, Any]) -> ArtifactManifest:
-    raw_artifacts = raw.get("artifacts", [])
-    if not isinstance(raw_artifacts, list):
-        raise ArtifactManifestError("artifact manifest artifacts must be a list")
-    schema = raw.get("schema", ARTIFACT_MANIFEST_SCHEMA)
-    if schema != ARTIFACT_MANIFEST_SCHEMA:
-        raise ArtifactManifestError(f"unsupported artifact manifest schema: {schema}")
-
-    normalized = dict(raw)
-    normalized["schema"] = ARTIFACT_MANIFEST_SCHEMA
-    normalized["artifacts"] = tuple(_artifact_mapping_from_current_schema(item) for item in raw_artifacts)
+    """Read an artlink manifest with ``artlink.load_manifest`` and check it
+    against dau-build's artifact kinds. The document must name its
+    ``schema``: artlink fills in the current schema when the key is absent,
+    and a manifest that does not say which schema it was written for is
+    refused rather than assumed current."""
     try:
-        return ArtifactManifest(**normalized)
+        manifest = load_manifest(path)
     except ManifestError as exc:
-        raise ArtifactManifestError(str(exc)) from exc
+        raise ArtifactManifestError(f"invalid artifact manifest {path.as_posix()}: {exc}") from exc
+    if "schema_id" not in manifest.model_fields_set:
+        raise ArtifactManifestError(f"artifact manifest declares no schema: {path.as_posix()}")
+    artifact_manifest = ArtifactManifest(**manifest.model_dump())
+    if validate_paths:
+        validate_artifact_files(artifact_manifest, root=path.parent if root is None else root)
+    return artifact_manifest
 
 
 def validate_artifact_files(manifest: ArtifactManifest, *, root: Path) -> None:
@@ -131,16 +106,6 @@ def artifact_with_modules(
         provides.append(capability)
         existing_keys.add(capability.key)
     return _copy_artifact(artifact, provides=tuple(provides))
-
-
-def _artifact_mapping_from_current_schema(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ArtifactManifestError("artifact entries must be YAML mappings")
-    artifact = dict(value)
-    removed_fields = tuple(field for field in ("modules", "sha256") if field in artifact)
-    if removed_fields:
-        raise ArtifactManifestError("unsupported artifact field(s) in artlink.manifest/v0: " + ", ".join(removed_fields))
-    return artifact
 
 
 def _copy_artifact(artifact: Artifact, **changes: Any) -> Artifact:

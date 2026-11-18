@@ -382,3 +382,25 @@ def _main_exit_code(argv: list[str]) -> int:
     except SystemExit as exc:
         # sys.exit semantics: None is success, an int is the code, anything else is 1
         return exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+
+
+def test_the_build_manifest_reads_back_through_its_model(tmp_path: Path) -> None:
+    """The manifest a spec build writes is read back through the same model:
+    it round-trips, and a misspelled key or a source count that disagrees
+    with the source lines is refused instead of passing the required-key
+    check."""
+    from dau_build.build_spec import DauBuildManifest, DauBuildSpecError, validate_dau_build_artifact_bundle
+
+    spec = spec_from_text(_spec_text(tmp_path), tmp_path).resolve()
+    artifacts = write_dau_build_artifacts(spec, output_root=tmp_path / "out")
+    manifest = DauBuildManifest.read(artifacts.manifest_path)
+    assert manifest.to_text() == artifacts.manifest_text
+    assert manifest.source_files == tuple(source.as_posix() for source in spec.sources)
+
+    for broken in (
+        artifacts.manifest_text.replace("clock=", "clk="),
+        artifacts.manifest_text.replace(f"sources={len(spec.sources)}\n", f"sources={len(spec.sources) + 1}\n"),
+    ):
+        artifacts.manifest_path.write_text(broken, encoding="utf-8")
+        with pytest.raises(DauBuildSpecError):
+            validate_dau_build_artifact_bundle(artifacts.manifest_path)

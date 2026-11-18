@@ -295,7 +295,6 @@ def write_shell_build_manifest(
     bitstream: str = "dau_mm_job.bit",
 ) -> Path:
     """Build and write the shell-build manifest into the output root."""
-    import yaml
 
     manifest = shell_build_manifest(
         output_root,
@@ -305,7 +304,7 @@ def write_shell_build_manifest(
         metadata=metadata,
     )
     manifest_path = output_root / SHELL_BUILD_MANIFEST_NAME
-    manifest_path.write_text(yaml.safe_dump(manifest.model_dump(mode="json", exclude_defaults=True), sort_keys=False), encoding="utf-8")
+    manifest_path.write_text(manifest.to_yaml_text(), encoding="utf-8")
     return manifest_path
 
 
@@ -315,48 +314,40 @@ def write_overlay_build_manifest(work_root: Path, key_value_manifest_path: Path,
     mechanism; provenance converges on artlink). Returns None when the
     key=value manifest is still ``planned`` — there is nothing to package
     yet."""
-    from dau_build.vivado_backend import _parse_manifest_text
+    from dau_build.key_value_manifest import KeyValueManifestError
+    from dau_build.vivado_backend import VivadoBackendManifest
 
-    items, errors = _parse_manifest_text(key_value_manifest_path.read_text(encoding="utf-8"))
-    if errors:
-        raise ShellBuildError(f"invalid key=value manifest {key_value_manifest_path.as_posix()}: {'; '.join(errors)}")
-    manifest = dict(items)
-    build_status = manifest.get("build_status")
-    if build_status not in ("built", "timing-failed"):
+    try:
+        manifest = VivadoBackendManifest.read(key_value_manifest_path)
+    except KeyValueManifestError as exc:
+        raise ShellBuildError(f"invalid key=value manifest: {exc}") from exc
+    if manifest.build_status == "planned":
         return None
 
-    def resolve(key: str) -> Path | None:
-        value = manifest.get(key)
-        if not value:
-            return None
+    def resolve(value: str) -> Path:
         path = Path(value)
         return path if path.is_absolute() else work_root / path
 
-    bitstream_path = resolve("bitstream")
-    if bitstream_path is None or not bitstream_path.is_file():
+    bitstream_path = resolve(manifest.bitstream)
+    if not bitstream_path.is_file():
         raise ShellBuildError(f"built manifest names no existing bitstream: {key_value_manifest_path.as_posix()}")
 
     artifacts: list[Artifact] = [Artifact(path=bitstream_path, kind="binary", role="bitstream", digest=_digest(bitstream_path))]
-    for key, role in (
-        ("resource_summary", "report"),
-        ("timing_summary", "report"),
-        ("vivado_log", "build-log"),
-        ("overlay", "generated-project-input"),
+    for value, role in (
+        (manifest.resource_summary, "report"),
+        (manifest.timing_summary, "report"),
+        (manifest.vivado_log, "build-log"),
+        (manifest.overlay, "generated-project-input"),
     ):
-        path = resolve(key)
-        if path is not None and path.is_file():
+        path = resolve(value)
+        if path.is_file():
             artifacts.append(Artifact(path=path, kind="metadata" if role != "generated-project-input" else "source", role=role))
 
-    metadata: dict[str, Any] = {k: v for k, v in manifest.items() if k not in ("build_status", "wns_ns")}
-    metadata["build_status"] = build_status
-    if "wns_ns" in manifest:
-        # recorded as a number, the way the shell flow records it, so a
-        # consumer reads one representation
-        metadata["wns_ns"] = _slack(manifest["wns_ns"])
+    # the slack is recorded as a number, the way the shell flow records it,
+    # so a consumer reads one representation
+    metadata: dict[str, Any] = {**dict(manifest.items()), "build_status": manifest.build_status, "wns_ns": manifest.wns_ns}
     record = ShellBuildRecord.from_metadata(metadata)
     packaged = ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=record.model_dump(mode="json", exclude_none=True))
-    import yaml
-
     manifest_path = key_value_manifest_path.with_suffix(".artifacts.yaml")
-    manifest_path.write_text(yaml.safe_dump(packaged.model_dump(mode="json", exclude_defaults=True), sort_keys=False), encoding="utf-8")
+    manifest_path.write_text(packaged.to_yaml_text(), encoding="utf-8")
     return manifest_path

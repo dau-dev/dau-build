@@ -10,11 +10,13 @@ from dau_build.publish_inventory import PUBLISHED_METADATA_KEYS, publish_invento
 from dau_build.shell_build import shell_build_manifest
 
 _CONTRACT = {
+    "contract": "dau-capability-contract",
+    "name": "example",
     "lanes": [
         {"tile": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
         {"tile": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
         {"tile": {"core": "int32-example-sum", "unit_kind": "aggregation", "opcodes": ["sum", "count"]}},
-    ]
+    ],
 }
 
 
@@ -162,3 +164,19 @@ def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) 
             publish_inventory(manifest.model_copy(update={"metadata": metadata}), contract=_CONTRACT)
     with pytest.raises(ValueError, match="finite"):
         publish_inventory(manifest.model_copy(update={"metadata": {**manifest.metadata, "wns_ns": float("nan")}}), contract=_CONTRACT)
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [
+        {"contract": "dau-capability-contract", "lane": _CONTRACT["lanes"]},
+        {"contract": "dau-capability-contract", "lanes": [{"tile": {"core": "int32-example-sum", "unit_kind": "aggregation"}}]},
+        {"contract": "dau-capability-contract", "lanes": [{"tiles": {"core": "int32-example-sum"}}]},
+        {"lanes": _CONTRACT["lanes"]},
+    ],
+)
+def test_a_contract_missing_a_projected_key_is_refused(tmp_path: Path, contract) -> None:
+    """A misspelled or missing ``lanes`` used to publish an inventory with
+    no capabilities; every key the projection reads is now required."""
+    with pytest.raises(ValueError, match="invalid capability contract"):
+        publish_inventory(_private_manifest(tmp_path), contract=contract)

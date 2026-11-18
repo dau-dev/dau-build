@@ -3,26 +3,74 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+import yaml
 from dau_sim.integrations.profiles import SimulationProfile
 from dau_sim.integrations.verilator_profiles import VerilatorProfile
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Discriminator, Field, Tag, ValidationError
 
-from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest, load_yaml_mapping
+from dau_build.packaging import Artifact, ArtifactManifestError, artifact_path, load_artifact_manifest
+
+SIMULATION_PROFILE_SCHEMA = "dau.simulation-profile/v0"
+
+
+class _ArtifactSource(BaseModel):
+    """A source named by the id of an artifact in the same manifest."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    artifact: str = Field(min_length=1)
+
+
+class _PathSource(BaseModel):
+    """A source file, relative to the manifest that registers the profile."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str = Field(min_length=1)
+
+
+class _UriSource(BaseModel):
+    """A source inside an installed package (``package://<pkg>/<resource>``)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    uri: str = Field(min_length=1)
+
+
+def _source_tag(value: Any) -> str | None:
+    if isinstance(value, Mapping) and len(value) == 1:
+        return next(iter(value))
+    return None
+
+
+_TaggedSource = Annotated[
+    Annotated[_ArtifactSource, Tag("artifact")] | Annotated[_PathSource, Tag("path")] | Annotated[_UriSource, Tag("uri")],
+    Discriminator(_source_tag, custom_error_type="profile_source", custom_error_message="a profile source is one of artifact, path or uri"),
+]
+# a bare string is an artifact id
+_ProfileSource = Annotated[_TaggedSource, BeforeValidator(lambda value: {"artifact": value} if isinstance(value, str) else value)]
 
 
 class _ProfileEntry(BaseModel):
-    """Validates the scalar fields of a simulation-profile mapping (sources
-    are resolved separately against the artifact registry)."""
-
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(min_length=1)
     simulator: Literal["verilator", "cocotb"]
     top_module: str = Field(min_length=1)
     expect_stdout: str | None = None
     test_module: str | None = None
+    sources: tuple[_ProfileSource, ...] = ()
+
+
+class _ProfileDocument(BaseModel):
+    """A simulation-profile artifact: the schema line and its profiles."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+
+    schema_id: Literal["dau.simulation-profile/v0"] = Field(alias="schema")
+    profiles: tuple[_ProfileEntry, ...]
 
 
 class ManifestVerilatorProfile(VerilatorProfile):
@@ -40,7 +88,6 @@ class CocotbProfile(SimulationProfile):
     test_module: str
 
 
-SIMULATION_PROFILE_SCHEMA = "dau.simulation-profile/v0"
 SIMULATION_PROFILE_ROLE = "simulation-profile"
 SIMULATION_PROFILE_FORMAT = SIMULATION_PROFILE_SCHEMA
 PACKAGE_URI_PREFIX = "package://"
@@ -103,9 +150,8 @@ def load_verilator_profiles_from_manifest(manifest_path: Path) -> dict[str, Veri
         if artifact.format and artifact.format != SIMULATION_PROFILE_FORMAT:
             raise SimulationProfileError(f"unsupported simulation profile artifact format {artifact.format!r}: {artifact.location}")
         profile_path = _artifact_to_path(artifact, root=manifest_path.parent)
-        raw = _load_profile_yaml(profile_path)
-        for profile_data in _profile_entries(raw, profile_path=profile_path):
-            profile = _verilator_profile_from_mapping(profile_data, artifacts_by_id=artifacts_by_id, root=manifest_path.parent)
+        for entry in _load_profile_document(profile_path).profiles:
+            profile = _verilator_profile_from_entry(entry, artifacts_by_id=artifacts_by_id, root=manifest_path.parent)
             profiles[profile.name] = profile
     return profiles
 
@@ -117,33 +163,19 @@ def _load_verilator_profile_map(profile_manifests: Iterable[Path]) -> dict[str, 
     return profiles
 
 
-def _load_profile_yaml(path: Path) -> Mapping[str, Any]:
-    return load_yaml_mapping(path, description="simulation profile", error_type=SimulationProfileError, schema=SIMULATION_PROFILE_SCHEMA)
-
-
-def _profile_entries(raw: Mapping[str, Any], *, profile_path: Path) -> tuple[Mapping[str, Any], ...]:
-    profiles = raw.get("profiles")
-    if not isinstance(profiles, list):
-        raise SimulationProfileError(f"simulation profile artifact must contain a profiles list: {profile_path.as_posix()}")
-    entries: list[Mapping[str, Any]] = []
-    for index, profile in enumerate(profiles):
-        if not isinstance(profile, Mapping):
-            raise SimulationProfileError(f"profile entry {index} must be a mapping: {profile_path.as_posix()}")
-        entries.append(profile)
-    return tuple(entries)
-
-
-def _verilator_profile_from_mapping(
-    profile: Mapping[str, Any],
-    *,
-    artifacts_by_id: Mapping[str, Artifact],
-    root: Path,
-):
+def _load_profile_document(path: Path) -> _ProfileDocument:
     try:
-        entry = _ProfileEntry.model_validate(profile)
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise SimulationProfileError(f"cannot read simulation profile {path.as_posix()}: {exc}") from exc
+    try:
+        return _ProfileDocument.model_validate(raw)
     except ValidationError as exc:
-        raise SimulationProfileError(str(exc)) from exc
-    sources = _profile_sources(profile.get("sources", ()), artifacts_by_id=artifacts_by_id, root=root)
+        raise SimulationProfileError(f"invalid simulation profile {path.as_posix()}: {exc}") from exc
+
+
+def _verilator_profile_from_entry(entry: _ProfileEntry, *, artifacts_by_id: Mapping[str, Artifact], root: Path):
+    sources = tuple(_profile_source(source, artifacts_by_id=artifacts_by_id, root=root) for source in entry.sources)
     if entry.simulator == "verilator":
         if not entry.expect_stdout:
             raise SimulationProfileError(f"profile {entry.name!r} (verilator) requires expect_stdout")
@@ -154,30 +186,13 @@ def _verilator_profile_from_mapping(
     return CocotbProfile(name=entry.name, sources=sources, hdl_toplevel=entry.top_module, test_module=entry.test_module)
 
 
-def _profile_sources(value: Any, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> tuple[Path, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise SimulationProfileError("profile sources must be a list")
-    sources: list[Path] = []
-    for item in value:
-        sources.append(_profile_source(item, artifacts_by_id=artifacts_by_id, root=root))
-    return tuple(sources)
-
-
-def _profile_source(value: Any, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> Path:
-    if isinstance(value, str):
-        return _artifact_ref_to_path(value, artifacts_by_id=artifacts_by_id, root=root)
-    if not isinstance(value, Mapping):
-        raise SimulationProfileError("profile source entries must be artifact references or mappings")
-    if "artifact" in value:
-        return _artifact_ref_to_path(_required_str(value, "artifact"), artifacts_by_id=artifacts_by_id, root=root)
-    if "path" in value:
-        path = Path(_required_str(value, "path"))
+def _profile_source(source: _ArtifactSource | _PathSource | _UriSource, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> Path:
+    if isinstance(source, _ArtifactSource):
+        return _artifact_ref_to_path(source.artifact, artifacts_by_id=artifacts_by_id, root=root)
+    if isinstance(source, _PathSource):
+        path = Path(source.path)
         return path if path.is_absolute() else root / path
-    if "uri" in value:
-        return _package_uri_to_path(_required_str(value, "uri"))
-    raise SimulationProfileError("profile source mappings must contain artifact, path, or uri")
+    return _package_uri_to_path(source.uri)
 
 
 def _artifact_ref_to_path(artifact_id: str, *, artifacts_by_id: Mapping[str, Artifact], root: Path) -> Path:
@@ -215,13 +230,6 @@ def _artifacts_by_id(artifacts: tuple[Artifact, ...]) -> dict[str, Artifact]:
         if artifact_id:
             by_id[artifact_id] = artifact
     return by_id
-
-
-def _required_str(raw: Mapping[str, Any], key: str) -> str:
-    value = raw.get(key)
-    if not isinstance(value, str) or not value:
-        raise SimulationProfileError(f"missing required string field: {key}")
-    return value
 
 
 def _resource_path(resource) -> Path:
