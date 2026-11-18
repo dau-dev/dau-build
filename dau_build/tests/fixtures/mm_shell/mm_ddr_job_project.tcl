@@ -116,8 +116,8 @@ connect_bd_net [get_bd_pins xdma_0/axi_aresetn] \
     [get_bd_pins smc/aresetn] [get_bd_pins smc_lite/aresetn] [get_bd_pins xadc_0/s_axi_aresetn] \
     [get_bd_pins my_ddr_top_0/s_axi_aresetn]
 
-assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
-assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces my_ddr_top_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
+assign_bd_address -offset 0x00000000 -range 0x80000000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
+assign_bd_address -offset 0x00000000 -range 0x80000000 -target_address_space [get_bd_addr_spaces my_ddr_top_0/M_AXI] [get_bd_addr_segs mig_0/memmap/memaddr] -force
 assign_bd_address -offset 0x00001000 -range 0x00001000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs my_ddr_top_0/S_AXI/*] -force
 assign_bd_address -offset 0x00010000 -range 0x00010000 -target_address_space [get_bd_addr_spaces xdma_0/M_AXI_LITE] [get_bd_addr_segs xadc_0/s_axi_lite/*] -force
 

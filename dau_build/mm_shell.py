@@ -81,9 +81,12 @@ class MmDdrJobShellRequest(BaseModel):
     job shell with the block RAM staging replaced by the memory controller
     (MIG, configured from a caller-supplied .prj) shared between the XDMA
     memory path and the job top's AXI4 master. The target board is the
-    composed ``platform`` (required). The register aperture is
-    unchanged; the XADC feeds the controller's temperature compensation and
-    is host-readable in the upper half of the AXI-Lite BAR."""
+    composed ``platform`` (required); its memory tier states the addressed
+    DDR size and the name the MIG project is vendored under, and
+    ``mig_prj`` is where the caller keeps that project file. The register
+    aperture is unchanged; the XADC feeds the controller's temperature
+    compensation and is host-readable in the upper half of the AXI-Lite
+    BAR."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -96,7 +99,6 @@ class MmDdrJobShellRequest(BaseModel):
     part: str | None = None
     register_window_offset: int = 0x0000_1000
     xadc_window_offset: int = 0x0001_0000
-    ddr_bytes: int = 0x4000_0000  # 1 GiB
     # the job top's memory-read width (the width-tier knob): 64 = the classic
     # single shared M_AXI job master; wider tiers mean the top exposes a wide
     # read-only M_AXI_R plus the narrow write M_AXI_W, wired as two
@@ -112,6 +114,12 @@ class MmDdrJobShellRequest(BaseModel):
         # the catalog gate at the source: a width outside the platform's
         # tier list never reaches tcl generation
         return self.check_width_tier()
+
+    @model_validator(mode="after")
+    def _memory_names_its_mig_project(self) -> MmDdrJobShellRequest:
+        if not self.platform.memory.mig_prj:
+            raise ValueError(f"platform {self.platform.name!r} memory tier {self.platform.memory.name!r} names no mig_prj; the DDR shell needs one")
+        return self
 
     def check_width_tier(self) -> MmDdrJobShellRequest:
         """Refuse a data width outside the platform's tiers. The validator
@@ -131,10 +139,16 @@ class MmDdrJobShellRequest(BaseModel):
 
     @property
     def staged_mig_prj_name(self) -> str:
-        """The name the MIG ``.prj`` is vendored under inside the project —
-        the platform's registered name when it has one, else the caller's
-        filename."""
-        return self.platform.memory.mig_prj or self.mig_prj.name
+        """The name the MIG ``.prj`` is vendored under inside the project:
+        the platform memory tier's ``mig_prj``."""
+        mig_prj = self.platform.memory.mig_prj
+        assert mig_prj is not None, "checked at construction"
+        return mig_prj
+
+    @property
+    def ddr_bytes(self) -> int:
+        """The addressed DDR size: the platform memory tier's capacity."""
+        return self.platform.memory.capacity_bytes
 
 
 def _gt_channel_ref_name(lane_placements: tuple[tuple[int, str], ...]) -> str:
