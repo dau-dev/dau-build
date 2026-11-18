@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -326,3 +327,30 @@ def test_host_access_checks_pci_syntax_and_privilege_tokens() -> None:
         HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0; rm -rf /",), runtime_pm_patterns=())
     with pytest.raises(ValidationError, match="plain argv tokens"):
         HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=(), privilege_prefix=("sudo;", "true"))
+
+
+def test_a_calibration_is_dated_and_validated() -> None:
+    from dau_build.platforms import PlatformCalibration
+
+    measured = PlatformCalibration(measured_on="2026-07-31", proven_lane_count=4, overlap_batches=12, wide_front_out_width=128)
+    assert measured.proven_lane_count == 4
+    assert PlatformCalibration(measured_on="2026-11-15").overlap_batches is None  # each value is optional
+    bad: dict[str, Any]
+    for bad in (
+        {"measured_on": "last July"},
+        {"measured_on": "2026-07-31", "proven_lane_count": 3},
+        {"measured_on": "2026-07-31", "overlap_batches": 0},
+        {"measured_on": "2026-07-31", "wide_front_out_width": 100},
+    ):
+        with pytest.raises(ValidationError):
+            PlatformCalibration.model_validate(bad)
+    board = probe_platform().model_copy(update={"calibration": measured})
+    assert PlatformDefinition.model_validate(board.model_dump()).calibration == measured
+
+
+def test_host_link_measurements_are_validated() -> None:
+    link = HostLink(interface="pcie-xdma", pcie_lanes=4, dma_knee_bytes=15 << 20, job_tail_seconds=0.015)
+    assert link.dma_knee_bytes == 15 << 20
+    for bad in ({"dma_knee_bytes": 0}, {"job_tail_seconds": -1.0}, {"job_tail_seconds": float("inf")}):
+        with pytest.raises(ValidationError):
+            HostLink(interface="pcie-xdma", pcie_lanes=4, **bad)

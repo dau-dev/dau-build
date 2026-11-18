@@ -110,6 +110,26 @@ class HostLink(BaseModel):
     xdma_personality: XdmaPersonality = Field(default_factory=XdmaPersonality)
     expected_link_width: int | None = None
     expected_link_speed_gts: float | None = None
+    # measured on the host the board sits in, so set by the board-on-host
+    # option: below ``dma_knee_bytes`` a transfer is dominated by per-call
+    # overhead rather than the link rate, and ``job_tail_seconds`` is a job's
+    # setup plus the tail an overlapped runner cannot hide
+    dma_knee_bytes: int | None = None
+    job_tail_seconds: float | None = None
+
+    @field_validator("dma_knee_bytes")
+    @classmethod
+    def _positive_knee(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("dma_knee_bytes must be positive when set")
+        return value
+
+    @field_validator("job_tail_seconds")
+    @classmethod
+    def _finite_tail(cls, value: float | None) -> float | None:
+        if value is not None and not (value >= 0 and value != float("inf")):
+            raise ValueError("job_tail_seconds must be finite and non-negative when set")
+        return value
 
     @field_validator("interface")
     @classmethod
@@ -137,6 +157,59 @@ class HostLink(BaseModel):
     def _valid_expected_speed(cls, value: float | None) -> float | None:
         if value is not None and value <= 0:
             raise ValueError("expected_link_speed_gts must be positive when set")
+        return value
+
+
+class PlatformCalibration(BaseModel):
+    """Design-point tuning measured on one board, and when.
+
+    Pricing reads these instead of carrying one board's A/B results as
+    defaults for every board. Each value is optional: a board states what it
+    has measured, and a value it has not is priced untuned (one lane, no
+    overlap, the 64-bit front) with an audit note, never borrowed from
+    another board.
+
+    ``proven_lane_count`` is the key-masked fan-out width that closed timing
+    and measured faster; ``overlap_batches`` the staging depth that hid the
+    job tail best; ``wide_front_out_width`` the front unpacker's measured
+    output width. ``measured_on`` is the ISO date of the measurements.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    measured_on: str
+    proven_lane_count: int | None = None
+    overlap_batches: int | None = None
+    wide_front_out_width: int | None = None
+
+    @field_validator("measured_on")
+    @classmethod
+    def _iso_date(cls, value: str) -> str:
+        import datetime
+
+        datetime.date.fromisoformat(value)
+        return value
+
+    @field_validator("proven_lane_count")
+    @classmethod
+    def _power_of_two_lanes(cls, value: int | None) -> int | None:
+        # the key-mask dispatcher routes to a power of two
+        if value is not None and (value < 1 or value & (value - 1)):
+            raise ValueError(f"proven_lane_count must be a power of two, got {value}")
+        return value
+
+    @field_validator("overlap_batches")
+    @classmethod
+    def _positive_batches(cls, value: int | None) -> int | None:
+        if value is not None and value < 1:
+            raise ValueError(f"overlap_batches must be at least 1, got {value}")
+        return value
+
+    @field_validator("wide_front_out_width")
+    @classmethod
+    def _front_width(cls, value: int | None) -> int | None:
+        if value is not None and (value < 64 or value % 64):
+            raise ValueError(f"wide_front_out_width must be a multiple of 64 bits, got {value}")
         return value
 
 
@@ -337,6 +410,9 @@ class PlatformDefinition(BaseModel):
     # Anything that needs the actual frequency (pricing against measured
     # resource points, rate models) must ask effective_job_clock_mhz().
     job_clock_mhz: int | None = None
+    # the board's measured design-point tuning; None prices every design
+    # untuned and says so (see PlatformCalibration)
+    calibration: PlatformCalibration | None = None
     placeholders: tuple[str, ...] = ()
 
     @model_validator(mode="after")
