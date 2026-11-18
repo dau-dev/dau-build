@@ -419,7 +419,13 @@ known-good core byte for byte.</p>
 <code class="docutils literal notranslate"><span class="pre">mig_prj</span></code>, <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>); <code class="docutils literal notranslate"><span class="pre">platform.memory</span></code> selects the active shared
 tier.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">HostLink</span></code> (<code class="docutils literal notranslate"><span class="pre">interface</span></code>, <code class="docutils literal notranslate"><span class="pre">pcie_lanes</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma_personality</span></code>,
-<code class="docutils literal notranslate"><span class="pre">expected_link_width</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>).</p></li>
+<code class="docutils literal notranslate"><span class="pre">expected_link_width</span></code>, <code class="docutils literal notranslate"><span class="pre">expected_link_speed_gts</span></code>, <code class="docutils literal notranslate"><span class="pre">dma_knee_bytes</span></code>,
+<code class="docutils literal notranslate"><span class="pre">job_tail_seconds</span></code>). The last two are measured on the host the board sits
+in, so a board-on-host option sets them.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">calibration</span></code> (<code class="docutils literal notranslate"><span class="pre">PlatformCalibration</span></code>: <code class="docutils literal notranslate"><span class="pre">measured_on</span></code>, <code class="docutils literal notranslate"><span class="pre">proven_lane_count</span></code>,
+<code class="docutils literal notranslate"><span class="pre">overlap_batches</span></code>, <code class="docutils literal notranslate"><span class="pre">wide_front_out_width</span></code>): the board’s measured
+design-point tuning, which pricing reads. A value the board has not
+measured is priced untuned rather than taken from another board.</p></li>
 <li><p>The board-level <code class="docutils literal notranslate"><span class="pre">constraints_xdc</span></code>: pin constraint text the shell project
 generators emit behind their banner.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">lane_placements</span></code>: the GT lane swizzle, applied as a pre-<code class="docutils literal notranslate"><span class="pre">opt_design</span></code>
