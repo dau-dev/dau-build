@@ -24,11 +24,12 @@ composition without one emits byte-identically to before the table existed.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType
 
 from ccflow import BaseModel
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, field_serializer, field_validator
 
 __all__ = (
     "HANDLE_CONTROL_FREE_BIT",
@@ -84,8 +85,10 @@ class TileInstance(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     module: str
-    config: dict[str, str] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
-    params: dict[str, int] = {}  # noqa: RUF012  # pydantic deep-copies field defaults per instance
+    # read-only once built: the walker emits HDL from these maps, so a
+    # caller mutating one after validation would change the generated top
+    config: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
+    params: Mapping[str, int] = Field(default_factory=lambda: MappingProxyType({}))
     # a CHAIN STAGE that emits a success close-out per batch (a terminal-shaped
     # tile fused mid-lane: the as-of join, the grouped aggregator). The lane
     # status mux allows exactly one close-out, so such a stage's status is
@@ -95,6 +98,15 @@ class TileInstance(BaseModel):
     # upstream-first mux. The private bridge sets this from the registry; this
     # public generator cannot consult it.
     closes_out: bool = False
+
+    @field_validator("config", "params")
+    @classmethod
+    def _read_only(cls, value: Mapping) -> Mapping:
+        return MappingProxyType(dict(value))
+
+    @field_serializer("config", "params")
+    def _serialize_map(self, value: Mapping) -> dict:
+        return dict(value)
 
 
 class LaneTile(TileInstance):
@@ -129,6 +141,8 @@ class RegisterLayout(BaseModel):
     broadcast-NoC lane register block: one ``lane_stride``-sized window per
     lane starting at ``lane_base``, lane registers relative to the lane
     window."""
+
+    model_config = ConfigDict(frozen=True)
 
     last_error: int = 0x02C
     job_control: int = 0x050

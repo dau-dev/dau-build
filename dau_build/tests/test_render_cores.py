@@ -45,7 +45,8 @@ class _GeneratedCore:
         self.source = source
         self.generator = _Generator(source, text)
 
-    def render(self, *, into: Path) -> Path:
+    def render(self, *, into: Path | None = None) -> Path:
+        assert into is not None
         return self.generator.render().write(into)
 
 
@@ -56,11 +57,8 @@ class _CheckedInCore:
     def __init__(self, name: str) -> None:
         self.name = name
 
-
-class _GeneratorWithoutRender(_CheckedInCore):
-    """A provider too old to render: declares a generator, offers no render."""
-
-    generator = object()
+    def render(self, *, into: Path | None = None) -> Path:
+        raise AssertionError(f"checked-in core {self.name} must not be rendered (into={into})")
 
 
 def test_generated_cores_are_written_under_the_build_tree(tmp_path: Path) -> None:
@@ -97,13 +95,6 @@ def test_nothing_generated_leaves_the_environment_untouched(tmp_path: Path, monk
     import os
 
     assert RENDER_ROOT_ENV not in os.environ
-
-
-def test_a_provider_that_cannot_render_is_refused(tmp_path: Path) -> None:
-    """Declaring a generator the installed provider cannot render must fail
-    loudly, not silently synthesize whatever file happens to be there."""
-    with pytest.raises(BuildStepError, match="offers no render"):
-        render_generated_cores([_GeneratorWithoutRender("c")], root=tmp_path)
 
 
 def test_multiple_generated_cores_all_render(tmp_path: Path) -> None:

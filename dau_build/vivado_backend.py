@@ -25,6 +25,8 @@ class VivadoOverlayDefinition(BaseModel):
     block-design edit, no lane placements) — the same pattern as the
     injectable ``smoke_command``."""
 
+    model_config = ConfigDict(frozen=True)
+
     hdl_source_vars: tuple[tuple[str, str], ...] = ()
     source_management_tcl: str = ""
     bd_overlay_tcl: str = ""

@@ -5,8 +5,10 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Literal, TypeVar
 
 from ccflow import BaseModel, CallableModel, Flow, NullContext, ResultBase
-from pydantic import ConfigDict, Field, ValidationError, field_validator
+from pydantic import ConfigDict, Field, ValidationError, field_serializer, field_validator
 
+from dau_build.build_config import BackendConfig, BoardConfig, DriverConfig, MemoryConfig, ResolvedBuildConfig
+from dau_build.build_spec import BuildSpec
 from dau_build.hardware_plan import (
     HardwarePlan,
     HardwareToolchainConfig,
@@ -19,6 +21,7 @@ from dau_build.hardware_plan import (
     validate_vivado_artifacts_step,
     vivado_overlay_build_step,
 )
+from dau_build.platforms import PlatformDefinition
 from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
     VivadoBackendArtifactValidation,
@@ -30,18 +33,12 @@ from dau_build.vivado_backend import (
 
 
 def _build_spec_api():
-    """Deferred: dau_build.build_spec pulls the SV parser stack (amaranth,
-    pyslang), which hardware hosts running flash/shell tasks never need."""
+    """Deferred: building artifacts from a spec pulls the SV parser stack
+    (amaranth, pyslang), which hardware hosts running flash/shell tasks
+    never need. The spec module itself loads that stack only on use."""
     from dau_build import build_spec
 
     return build_spec
-
-
-def _resolve_build_config(spec, *, board=None, backend=None, backend_name=None, driver=None, memory=None):
-    """Deferred for the same reason: build_config imports build_spec."""
-    from dau_build.build_config import ResolvedBuildConfig
-
-    return ResolvedBuildConfig.from_spec(spec, board=board, backend=backend, backend_name=backend_name, driver=driver, memory=memory)
 
 
 class BuildStepError(ValueError):
@@ -71,32 +68,36 @@ class BuildCallableModel(CallableModel):
 
 
 class SpecTaskModel(BuildCallableModel):
-    # `spec` is composed by the Hydra `spec=` group (a BuildSpec): a packaged
-    # option, or one in a --config-dir overlay. `board`/`backend` are composed
-    # by the `board=`/`backend=` groups (BoardConfig/BackendConfig) and win
-    # over the spec-derived defaults. Typed Any, not the models, so importing
-    # build_steps stays light — build_spec pulls the SV-parser stack (F51).
-    spec: Any = None
-    board: Any = None
-    backend: Any = None
-    driver: Any = None
-    memory: Any = None
+    # `spec` is composed by the Hydra `spec=` group: a packaged option, or one
+    # in a --config-dir overlay. `board`/`backend`/`driver`/`memory` are
+    # composed by their groups and win over the spec-derived defaults; the
+    # `backend` group composes either a label or a synthesis engine.
+    spec: BuildSpec | None = None
+    board: BoardConfig | None = None
+    backend: "BackendConfig | SynthesisEngine | None" = None
+    driver: DriverConfig | None = None
+    memory: MemoryConfig | None = None
 
     def _resolved(self, spec, *, backend_name=None):
-        return _resolve_build_config(spec, board=self.board, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory)
+        return ResolvedBuildConfig.from_spec(
+            spec, board=self.board, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory
+        )
 
-    def load_spec(self):
+    def _required_spec(self) -> BuildSpec:
         if self.spec is None:
             raise BuildStepError("a spec is required: pass spec=specs/<name> (a packaged option, or one in a --config-dir overlay)")
-        return self.spec.resolve()
+        return self.spec
+
+    def load_spec(self):
+        return self._required_spec().resolve()
 
     @property
     def spec_base_dir(self) -> Path:
-        return Path(self.spec.base_dir)
+        return Path(self._required_spec().base_dir)
 
     @property
     def spec_label(self) -> str:
-        return self.spec.name
+        return self._required_spec().name
 
 
 class ModuleSelectionModel(SpecTaskModel):
@@ -265,18 +266,11 @@ class SimulateTask(ModuleSelectionModel):
     module: str = ""
     output_root: Path | None = None
     # the simulator is the composed `simulator` group option; default svparser
-    simulator: Any = None
+    simulator: Simulator | None = None
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
-        return self._simulator().simulate(task=self)
-
-    def _simulator(self) -> Simulator:
-        if isinstance(self.simulator, Simulator):
-            return self.simulator
-        if self.simulator is None:
-            return SvparserSimulator()
-        raise BuildStepError(f"simulator {getattr(self.simulator, 'name', self.simulator)!r} is not a simulator")
+        return (self.simulator or SvparserSimulator()).simulate(task=self)
 
     def _no_spec(self) -> bool:
         return self.spec is None
@@ -398,7 +392,12 @@ class SynthesizeTask(ModuleSelectionModel):
             return self.backend
         if self.backend is None:
             return VivadoEngine()
-        raise BuildStepError(f"backend {getattr(self.backend, 'name', self.backend)!r} is not a synthesis engine")
+        raise BuildStepError(f"backend {self.backend.name!r} is not a synthesis engine")
+
+
+# the spec tasks above name SynthesisEngine before it is defined
+for _spec_task in (SpecTaskModel, ModuleSelectionModel, InspectTask, BuildArtifactsTask, ValidateTask, SimulateTask, SynthesizeTask):
+    _spec_task.model_rebuild()
 
 
 def bitstream_from_shell_build_manifest(manifest_path: Path, *, role: str = "bitstream") -> Path:
@@ -454,9 +453,18 @@ class BuildShellProjectTask(BuildCallableModel):
     vivado: str = "vivado"
     manifest_name: str = "dau-shell"
     source_paths: tuple[Path, ...] = ()
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    platform: Any = None
+    metadata: Mapping[str, Any] = Field(default_factory=lambda: MappingProxyType({}))
+    platform: PlatformDefinition | None = None
     execute: bool = False
+
+    @field_validator("metadata")
+    @classmethod
+    def _read_only_metadata(cls, value: Mapping[str, Any]) -> Mapping[str, Any]:
+        return MappingProxyType(dict(value))
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: Mapping[str, Any]) -> dict[str, Any]:
+        return dict(value)
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)
@@ -512,8 +520,7 @@ class StageTask(BuildCallableModel):
         return_code = execute_plan_steps(steps)
         if return_code != 0:
             raise BuildStepError(f"stage task {self.task_name!r} failed with exit code {return_code}")
-        backend = getattr(self, "backend", None)
-        backend_segment = f" backend={backend}" if backend else ""
+        backend_segment = f" backend={self.backend}" if isinstance(self, OverlayStageTask) else ""
         return BuildStepResult(
             step=self.task_name,
             message=f"dau-build-stage\ttask={self.task_name}{backend_segment} steps={len(steps)} status=executed",

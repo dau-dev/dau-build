@@ -27,11 +27,13 @@ import shlex
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
 
 from ccflow import BaseModel, Flow, NullContext
+from pydantic import Field, field_serializer, field_validator
 
 from dau_build.build_steps import BuildCallableModel, BuildStepError, BuildStepResult
+from dau_build.platforms import PlatformDefinition
 
 __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
@@ -235,7 +237,7 @@ class SynthesizeCoresTask(BuildCallableModel):
     cores: tuple[str, ...]
     output_root: Path
     # part source: explicit `part` wins, else the composed `platform=` group
-    platform: Any = None
+    platform: PlatformDefinition | None = None
     part: str | None = None
     clock_period_ns: float = 8.0
     # per-core `-generic` overrides, keyed by core name then parameter name;
@@ -243,14 +245,23 @@ class SynthesizeCoresTask(BuildCallableModel):
     # A value may be an int or a type spelling ("int32", "q16.16") for the
     # parameters a core declares as element types -- the registry decides
     # which, so this annotation must not pre-empt it by demanding an int.
-    parameters: Mapping[str, Mapping[str, int | str]] = {}
+    parameters: Mapping[str, Mapping[str, int | str]] = Field(default_factory=lambda: MappingProxyType({}))
     # per-core clock port when it is not the tile contract's `clk`
     # (identity-axil's s_axi_aclk); empty string = combinational, no clock
     # constraint and no timing report
-    clock_ports: Mapping[str, str] = {}
+    clock_ports: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
     # run the plan (the synthesis host has vivado); false = handoff only
     execute: bool = False
     vivado: str = "vivado"
+
+    @field_validator("parameters", "clock_ports")
+    @classmethod
+    def _read_only(cls, value: Mapping) -> Mapping:
+        return MappingProxyType({key: MappingProxyType(dict(item)) if isinstance(item, Mapping) else item for key, item in value.items()})
+
+    @field_serializer("parameters", "clock_ports")
+    def _serialize_map(self, value: Mapping) -> dict:
+        return {key: dict(item) if isinstance(item, Mapping) else item for key, item in value.items()}
 
     @Flow.call
     def __call__(self, context: NullContext) -> BuildStepResult:  # noqa: ARG002 (ccflow requires the name `context`)

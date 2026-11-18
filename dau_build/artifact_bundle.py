@@ -5,6 +5,7 @@ from typing import Any
 
 from artlink import Artifact
 from ccflow import BaseModel
+from pydantic import ConfigDict
 
 from dau_build.packaging import ArtifactManifestError, artifact_modules, artifact_path, load_artifact_manifest
 
@@ -28,12 +29,16 @@ class ArtifactBundleError(ValueError):
 
 
 class ArtifactBundleEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     artifact: Artifact
     origin: str
     manifest_path: Path | None = None
 
 
 class ArtifactBundle(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     name: str
     entries: tuple[ArtifactBundleEntry, ...]
     manifest_paths: tuple[Path, ...] = ()

@@ -113,12 +113,11 @@ def test_unknown_core_and_bad_path_are_rejected(tmp_path: Path) -> None:
 
 
 def test_part_falls_back_to_platform_and_errors_without_either(tmp_path: Path) -> None:
-    class FakePlatform:
-        part = "xc7k325tffg900-2"
+    from dau_build.tests.platform_fixtures import probe_platform
 
-    task = SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path, platform=FakePlatform())
+    task = SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path, platform=probe_platform())
     task(NullContext())
-    assert "-part xc7k325tffg900-2" in (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
+    assert f"-part {probe_platform().part}" in (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
     with pytest.raises(BuildStepError, match="no part selected"):
         SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path / "x")(NullContext())
 
