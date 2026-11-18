@@ -556,12 +556,12 @@ def test_ddr_shell_maps_the_platform_memory_and_needs_its_mig_project(tmp_path: 
         "mig_prj": prj,
     }
     eight_gib = _probe_platform()
-    request = MmDdrJobShellRequest(platform=eight_gib, **fields)
+    request = MmDdrJobShellRequest.model_validate({"platform": eight_gib, **fields})
     assert request.ddr_bytes == 8 << 30
     assert "-range 0x200000000 " in mm_ddr_job_shell_project_tcl(request)
 
     tier = eight_gib.storage_tiers[0].model_copy(update={"mig_prj": None})
     with pytest.raises(ValidationError, match="names no mig_prj"):
-        MmDdrJobShellRequest(platform=eight_gib.model_copy(update={"storage_tiers": (tier,)}), **fields)
+        MmDdrJobShellRequest.model_validate({"platform": eight_gib.model_copy(update={"storage_tiers": (tier,)}), **fields})
     with pytest.raises(ValidationError, match="ddr_bytes"):
-        MmDdrJobShellRequest(platform=eight_gib, ddr_bytes=1 << 30, **fields)
+        MmDdrJobShellRequest.model_validate({"platform": eight_gib, "ddr_bytes": 1 << 30, **fields})
