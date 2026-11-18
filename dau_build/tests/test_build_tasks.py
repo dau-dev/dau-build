@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shlex
 import tomllib
 from pathlib import Path
@@ -610,3 +611,31 @@ def test_overlay_build_and_validate_tasks_refuse_inert_fields() -> None:
         unknown: dict[str, Any] = {field: value}
         with pytest.raises(ValidationError):
             ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), **unknown)
+
+
+def test_list_fields_take_lists_not_comma_strings(tmp_path: Path) -> None:
+    """Operator sets and profile manifests are tuple fields set with Hydra
+    list overrides; a comma-joined string is a validation error instead of
+    being split."""
+    from pydantic import ValidationError
+
+    from dau_build.build_steps import VerilatorSimulator, VivadoOverlayStageTask
+
+    composed = run_request_config(
+        "task",
+        "tasks/stage/stage-vivado-overlay",
+        overrides=[f"model.work_root={tmp_path}", f"model.dau_core_root={tmp_path}", "model.operator_set=[identity,sum_i64]"],
+    )
+    assert (
+        "operator_set=identity,sum_i64"
+        in base64.b64decode(
+            next(line for line in composed.message.splitlines() if line.startswith("write-dau-manifest"))
+            .split("printf %s ")[1]
+            .split(" ")[0]
+            .strip("'")
+        ).decode()
+    )
+    with pytest.raises(ValidationError, match="operator_set"):
+        VivadoOverlayStageTask.model_validate({"work_root": tmp_path, "register_map_version": "0.3", "operator_set": "identity,sum_i64"})
+    with pytest.raises(ValidationError, match="profile_manifest"):
+        VerilatorSimulator.model_validate({"profile_manifest": "a.yaml,b.yaml"})

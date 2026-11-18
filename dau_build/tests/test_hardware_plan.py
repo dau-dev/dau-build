@@ -496,7 +496,7 @@ def test_structured_vivado_project_generation_request_records_workdir_inputs() -
     stage = shlex.split(manifest["stage_command"])
     assert stage[:2] == ["dau-build", "task=tasks/stage/stage-vivado-overlay"]
     assert "model.source_shell_root='/repo/projects/vivado-shell'" in stage
-    assert "model.operator='identity,sum_i64'" in stage
+    assert "model.operator_set=['identity','sum_i64']" in stage
     build = shlex.split(manifest["build_command"])
     assert build[:2] == ["dau-build", "task=tasks/build/build-vivado-artifacts"]
     assert {"model.manifest_path='dau-ci.manifest'", "model.command_plan_path='dau-ci.plan'", "model.project_manifest_path='dau-ci.project'"} <= set(

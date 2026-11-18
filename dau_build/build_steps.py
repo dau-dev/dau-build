@@ -169,11 +169,6 @@ class CocotbSimulator(Simulator):
     profile: str | None = None
     profile_manifest: tuple[Path, ...] = ()
 
-    @field_validator("profile_manifest", mode="before")
-    @classmethod
-    def _split_profile_manifest_paths(cls, value):
-        return _split_path_tuple(value)
-
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
             from dau_sim.integrations.cocotb import run_cocotb_testbench
@@ -206,11 +201,6 @@ class VerilatorSimulator(Simulator):
     expect_stdout: str | None = None
     verilator: str = "verilator"
     extra_args: str = ""
-
-    @field_validator("profile_manifest", mode="before")
-    @classmethod
-    def _split_profile_manifest_paths(cls, value):
-        return _split_path_tuple(value)
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
@@ -561,7 +551,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
     artifact_stem: str = "dau-vivado"
     backend_platform: str = "vivado-xdma"
     backend_shell: str = "xdma-shell"
-    operator: str | None = None
+    operator_set: tuple[str, ...] = Field(min_length=1)
     # the wire contract the grafted identity registers implement; set by the
     # task config, never defaulted here
     register_map_version: str
@@ -583,7 +573,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
             artifact_stem=self.artifact_stem,
             platform=self.backend_platform,
             shell=self.backend_shell,
-            operator_set=self._operator_set(),
+            operator_set=self.operator_set,
             register_map_version=self.register_map_version,
             stream_protocol_version=self.stream_protocol_version,
             overlay_tcl=self.overlay_tcl,
@@ -604,11 +594,6 @@ class VivadoOverlayStageTask(OverlayStageTask):
             vivado_mount_root=self.vivado_mount_root,
             bitstream_path=self.bitstream,
         )
-
-    def _operator_set(self) -> tuple[str, ...]:
-        if self.operator is None:
-            return ("identity",)
-        return tuple(operator for operator in self.operator.split(",") if operator) or ("identity",)
 
     def _required_root(self, field_name: str) -> Path:
         value = getattr(self, field_name)
@@ -639,7 +624,7 @@ class VivadoProjectStageTask(VivadoOverlayStageTask):
             artifact_stem=self.artifact_stem,
             platform=self.backend_platform,
             shell=self.backend_shell,
-            operator_set=self._operator_set(),
+            operator_set=self.operator_set,
             register_map_version=self.register_map_version,
             stream_protocol_version=self.stream_protocol_version,
             overlay_tcl=self.overlay_tcl,
@@ -1009,18 +994,6 @@ def _run_verilator_bench(spec, *, extra_sources, top_module, expect_stdout, veri
     if expect_stdout and expect_stdout not in result.stdout:
         raise BuildStepError(f"verilator stdout did not contain expected text {expect_stdout!r}")
     return result
-
-
-def _split_path_tuple(value) -> tuple[Path, ...]:
-    if value in (None, ""):
-        return ()
-    if isinstance(value, Path):
-        return (value,)
-    if isinstance(value, str):
-        return tuple(Path(item) for item in value.split(",") if item)
-    if isinstance(value, Iterable):
-        return tuple(Path(item) for item in value)
-    return value
 
 
 def _vivado_artifact_validation_message(validation: VivadoBackendArtifactValidation | VivadoProjectArtifactValidation) -> str:
