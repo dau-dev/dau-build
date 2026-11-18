@@ -343,6 +343,8 @@ def test_structured_vivado_backend_request_records_ci_artifact_contract() -> Non
 
 def test_structured_vivado_backend_request_supports_source_only_vivado_wrapper() -> None:
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
         build_root=Path("/repo/dau-build/outputs/vivado"),
@@ -378,6 +380,8 @@ def test_structured_vivado_backend_request_supports_source_only_mount_root(tmp_p
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=repo_root / "dau-core" / "dau_core" / "hdl",
         build_root=build_root,
@@ -428,6 +432,8 @@ def test_structured_vivado_backend_request_consumes_dau_artifact_bundle(tmp_path
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
         build_root=tmp_path / "vivado-xdma",
@@ -534,6 +540,8 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
         dau_driver_root=Path("/repo/dau-driver"),
         artifact_stem="dau-ci",
         register_map_version="0.3",
+        platform="vivado-xdma",
+        shell="xdma-shell",
         **variant,
     )
     project = vivado_backend.vivado_project_generation_manifest(request)
@@ -561,6 +569,8 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
 
 def test_project_command_validation_refuses_a_command_that_does_not_compose() -> None:
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         source_shell_root=Path("/repo/projects/vivado-shell"),
         work_root=Path("/repo/out/vivado"),
         dau_core_root=Path("/repo/dau-core"),
@@ -582,6 +592,8 @@ def test_project_command_validation_refuses_a_command_that_does_not_compose() ->
 
 def test_structured_vivado_project_generation_records_source_only_vivado_wrapper() -> None:
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/vivado-shell"),
         work_root=Path("/repo/dau-build/outputs/vivado"),
@@ -637,6 +649,8 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
 def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -669,6 +683,8 @@ def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_p
 def test_validate_structured_backend_artifact_bundle_rejects_built_status_without_reports(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -733,6 +749,8 @@ def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tm
 def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mismatch(tmp_path: Path) -> None:
     artifacts = _write_project_artifacts(
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=Path("/repo/projects/vivado-shell"),
             work_root=tmp_path,
@@ -759,6 +777,8 @@ def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mi
 def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -1030,6 +1050,8 @@ def test_stage_vivado_overlay_plan_writes_backend_artifacts_without_running_viva
 
     steps = stage_vivado_overlay_plan(
         config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_root=Path("/repo/dau-core"),
     )
@@ -1048,6 +1070,8 @@ def test_stage_vivado_overlay_plan_can_stage_shell_seed_into_workdir() -> None:
 
     steps = stage_vivado_overlay_plan(
         config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/reference/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
@@ -1425,9 +1449,18 @@ def test_vivado_invocation_is_validated_at_model_construction(tmp_path: Path) ->
     with pytest.raises(pydantic.ValidationError):
         HardwareToolchainConfig(work_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
     with pytest.raises(pydantic.ValidationError):
-        VivadoBackendRequest(register_map_version="0.3", dau_core_hdl_root=tmp_path, build_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
+        VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
+            register_map_version="0.3",
+            dau_core_hdl_root=tmp_path,
+            build_root=tmp_path,
+            vivado_invocation="bogus",  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
+        )
     with pytest.raises(pydantic.ValidationError):
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=tmp_path,
             work_root=tmp_path,
@@ -1513,7 +1546,12 @@ def test_empty_lane_placements_omit_the_placement_block() -> None:
 def test_backend_request_overlay_definition_threads_into_generated_artifacts(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoBackendRequest(
-        register_map_version="0.3", dau_core_hdl_root=Path("/repo/acme/hdl"), build_root=tmp_path, overlay_definition=definition
+        platform="vivado-xdma",
+        shell="xdma-shell",
+        register_map_version="0.3",
+        dau_core_hdl_root=Path("/repo/acme/hdl"),
+        build_root=tmp_path,
+        overlay_definition=definition,
     )
 
     artifacts = generate_vivado_backend_artifacts(request)
@@ -1527,6 +1565,8 @@ def test_backend_request_overlay_definition_threads_into_generated_artifacts(tmp
 def test_project_request_forwards_the_overlay_definition_to_the_backend(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1548,7 +1588,14 @@ def test_stage_vivado_overlay_plan_stages_the_injected_definition(tmp_path: Path
     definition = _acme_overlay_definition()
     config = HardwareToolchainConfig(work_root=tmp_path)
 
-    steps = stage_vivado_overlay_plan(config, register_map_version="0.3", dau_core_root=Path("/repo/acme"), overlay_definition=definition)
+    steps = stage_vivado_overlay_plan(
+        config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
+        register_map_version="0.3",
+        dau_core_root=Path("/repo/acme"),
+        overlay_definition=definition,
+    )
 
     overlay_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-dau-overlay"))
     build_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-vivado-build-script"))
@@ -1578,6 +1625,8 @@ def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Pa
     definition = _acme_overlay_definition()
     request_kwargs: dict[str, Any] = {
         "register_map_version": "0.3",
+        "platform": "vivado-xdma",
+        "shell": "xdma-shell",
         "source_shell_root": Path("/repo/projects/nite"),
         "work_root": tmp_path,
         "dau_core_root": Path("/repo/acme"),
@@ -1600,6 +1649,8 @@ def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Pa
 def test_project_command_validation_requires_the_injected_definition_marker(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1739,6 +1790,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
     monkeypatch.setattr(vivado_backend, "_compose_recorded_command", lambda overrides: compose_config(overrides, config_dir=str(config_dir)).cfg)
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1775,6 +1828,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
     default = dict(
         vivado_backend.vivado_project_generation_manifest(
             VivadoProjectGenerationRequest(
+                platform="vivado-xdma",
+                shell="xdma-shell",
                 register_map_version="0.3",
                 source_shell_root=Path("/repo/projects/nite"),
                 work_root=tmp_path,
@@ -1814,6 +1869,8 @@ def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="stage_task_name"):
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=Path("/repo/projects/nite"),
             work_root=tmp_path,
@@ -2267,6 +2324,8 @@ def test_backend_manifest_reads_through_its_model(tmp_path: Path) -> None:
     from dau_build.vivado_backend import VivadoBackendManifest
 
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         dau_core_hdl_root=Path("/repo/acme/hdl"),
         build_root=tmp_path,
         register_map_version="0.3",
@@ -2291,6 +2350,8 @@ def test_project_manifest_refuses_an_unknown_key(tmp_path: Path) -> None:
     from dau_build.vivado_backend import VivadoProjectManifest
 
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -2301,3 +2362,16 @@ def test_project_manifest_refuses_an_unknown_key(tmp_path: Path) -> None:
     assert VivadoProjectManifest.from_text(text).work_root == tmp_path.as_posix()
     with pytest.raises(KeyValueManifestError, match="xdma_modul"):
         VivadoProjectManifest.from_text(text.replace("xdma_module=", "xdma_modul="))
+
+
+def test_platform_and_shell_labels_come_from_config() -> None:
+    """The manifest's platform and shell labels are set by the task config or
+    the caller; no model supplies one board's names as a default."""
+    from dau_build.build_steps import VivadoOverlayStageTask
+
+    for model, fields in (
+        (VivadoBackendRequest, ("platform", "shell")),
+        (VivadoProjectGenerationRequest, ("platform", "shell")),
+        (VivadoOverlayStageTask, ("backend_platform", "backend_shell")),
+    ):
+        assert all(model.model_fields[field].is_required() for field in fields), model.__name__

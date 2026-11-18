@@ -53,8 +53,8 @@ class VivadoBackendRequest(BaseModel):
     build_root: Path
     dau_artifact_bundle_path: Path | None = None
     artifact_stem: str = "dau-vivado"
-    platform: str = "vivado-xdma"
-    shell: str = "xdma-shell"
+    platform: str
+    shell: str
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
     register_map_version: str
@@ -108,8 +108,8 @@ class VivadoProjectGenerationRequest(BaseModel):
     dau_top_sv_path: Path | None = None
     dau_artifact_bundle_path: Path | None = None
     artifact_stem: str = "dau-vivado"
-    platform: str = "vivado-xdma"
-    shell: str = "xdma-shell"
+    platform: str
+    shell: str
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
     register_map_version: str

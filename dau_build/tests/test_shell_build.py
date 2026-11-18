@@ -265,6 +265,8 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     kv = work / "dau-vivado.manifest"
     planned = vivado_backend_manifest_text(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             dau_core_hdl_root=tmp_path / "hdl",
             build_root=work,
             register_map_version="0.3",

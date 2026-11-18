@@ -286,6 +286,8 @@ def test_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
     _write_backend_artifacts(
         generate_vivado_backend_artifacts(
             VivadoBackendRequest(
+                platform="vivado-xdma",
+                shell="xdma-shell",
                 register_map_version="0.3",
                 dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
                 build_root=tmp_path,
@@ -335,6 +337,8 @@ def test_overlay_build_tcl_records_the_slack_and_names_a_timing_miss() -> None:
 def _built_overlay_artifacts(tmp_path: Path, *, status_line: str):
     artifacts = generate_vivado_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,

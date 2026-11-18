@@ -549,8 +549,9 @@ class VivadoOverlayStageTask(OverlayStageTask):
     dau_artifact_bundle: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     artifact_stem: str = "dau-vivado"
-    backend_platform: str = "vivado-xdma"
-    backend_shell: str = "xdma-shell"
+    # the platform and shell labels the manifest records, set by the task config
+    backend_platform: str
+    backend_shell: str
     operator_set: tuple[str, ...] = Field(min_length=1)
     # the wire contract the grafted identity registers implement; set by the
     # task config, never defaulted here
