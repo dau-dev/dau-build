@@ -1,9 +1,8 @@
 # @package programmer
 
-# programmer=programmers/openfpgaloader — JTAG programming via openFPGALoader
-# (the dpv1 flow). executable/jtag_cable default to the composed toolchain
-# config (host_access cable, HardwarePlanTask.openfpgaloader); pin them here
-# to override.
+# programmer=programmers/openfpgaloader — JTAG programming via openFPGALoader.
+# A null executable/jtag_cable follows the composed toolchain config
+# (HardwarePlanTask.openfpgaloader, the host_access cable); a value pins it.
 _target_: dau_build.programmers.OpenFpgaLoaderProgrammer
 name: openfpgaloader
 executable: openFPGALoader

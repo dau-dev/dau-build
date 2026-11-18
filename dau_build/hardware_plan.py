@@ -709,7 +709,7 @@ def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
     it and therefore the only thing holding it awake. On a hot-plug path
     (Thunderbolt) the bridges above then suspend and cut power to the card,
     the FPGA loses its configuration, and the programmer fails with `TDO is
-    stuck at 0` — measured on a NUC-attached dpv1, 2026-08-06. The bridges
+    stuck at 0` (observed on a Thunderbolt-attached board). The bridges
     must be held BEFORE the endpoint goes away and must stay held across the
     reprogram, so they are held here rather than per-device.
 

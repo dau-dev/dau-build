@@ -75,7 +75,7 @@ class XdmaPersonality(BaseModel):
 
     def axi_clock_mhz(self) -> int:
         """The XDMA ``axi_aclk`` frequency in MHz from ``axisten_freq`` —
-        the clock the endpoint presents its AXI interfaces on (125 on dpv1's
+        the clock the endpoint presents its AXI interfaces on (125 for a
         Gen2 x4 personality; the IP forces 250 at Gen2 x8/128-bit)."""
         freq = self.params.get("axisten_freq", "")
         if not freq.isdigit():
@@ -102,12 +102,12 @@ class ResourceBudget(BaseModel):
 
 
 class HostLink(BaseModel):
-    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards.
+    """The host interface, e.g. PCIe/XDMA.
 
     ``pcie_lanes`` is the endpoint's electrical width;
     ``expected_link_width``/``expected_link_speed_gts`` are what the link
-    actually trains at on the proven host (dpv1 negotiates x2 at 5.0 GT/s
-    over Thunderbolt despite the X4 personality) — bring-up checks compare
+    actually trains at on the host it sits in (a Thunderbolt enclosure can
+    negotiate x2 for an X4 personality) — bring-up checks compare
     against these, not the electrical maximum."""
 
     model_config = ConfigDict(frozen=True)
@@ -370,8 +370,8 @@ class PlatformDefinition(BaseModel):
     frequency from ``axi_aclk`` (MMCM) and clock-convert both the register
     aperture and the memory path in the smartconnects, so a personality
     that forces a faster ``axi_aclk`` (250 MHz at Gen2 x8) never drags the
-    proven job-logic timing closure with it. ``None`` (the dpv1 default)
-    keeps the job logic on ``axi_aclk`` unchanged."""
+    proven job-logic timing closure with it. ``None`` keeps the job logic
+    on ``axi_aclk`` unchanged."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -392,9 +392,9 @@ class PlatformDefinition(BaseModel):
     lane_placements: tuple[tuple[int, str], ...] = ()
     # the platform's on-wire identity word (1–4 ASCII bytes) advertised in the
     # PLATFORM_ID register: the shell generators encode it into the identity
-    # block so first-power reads back the right platform. REQUIRED: a board
-    # that forgot to state one used to become dpv1 silently, and the shell
-    # would then stamp that identity into a device which is not that board.
+    # block so first-power reads back the right platform. REQUIRED: with a
+    # default, a board that forgot to state one would carry another board's
+    # identity into its shell.
     platform_id: str
     # how this board is programmed when no `programmer=` group is composed
     # (a Programmer model, e.g. OpenFpgaLoaderProgrammer for a JTAG board)
@@ -419,7 +419,7 @@ class PlatformDefinition(BaseModel):
     # job_clock_mhz is a CONVERSION REQUEST, not a frequency fact: its
     # presence makes the shell insert a clock converter and run the job logic
     # at this rate; its absence means the job inherits the XDMA axi_aclk
-    # unconverted. dpv1 deliberately leaves it None and still runs at 125.
+    # unconverted (a Gen2 x4 board leaving it None still runs at 125 MHz).
     # Anything that needs the actual frequency (pricing against measured
     # resource points, rate models) must ask effective_job_clock_mhz().
     job_clock_mhz: int | None = None
@@ -456,7 +456,7 @@ class PlatformDefinition(BaseModel):
     def effective_job_clock_mhz(self) -> int:
         """The frequency the job logic actually runs at: ``job_clock_mhz``
         when a converter is requested, otherwise the XDMA ``axi_aclk`` the
-        job inherits (125 on dpv1's Gen2 x4 personality). This is the clock
+        job inherits (125 for a Gen2 x4 personality). This is the clock
         to price and rate-model against; ``job_clock_mhz`` alone cannot
         answer that question because ``None`` there means "unconverted", not
         "unknown"."""

@@ -131,10 +131,10 @@ class VivadoProjectGenerationRequest(BaseModel):
     plan_executable: str = "dau-build"
     overlay_definition: VivadoOverlayDefinition | None = None
     # the task name recorded in the replayable stage_command. Callers that
-    # inject an overlay definition through their own task overlay (e.g. a
-    # private dpv1-stage-vivado-overlay) pass that task's name so replaying
-    # the recorded command re-composes the injection instead of demanding a
-    # definition on a flat command line.
+    # inject an overlay definition through their own task overlay (e.g. an
+    # integration package's tasks/stage/<board>-stage-vivado-overlay) pass
+    # that task's name so replaying the recorded command re-composes the
+    # injection instead of demanding a definition on a flat command line.
     stage_task_name: str = DEFAULT_STAGE_TASK_NAME
 
     @field_validator("stage_task_name")
