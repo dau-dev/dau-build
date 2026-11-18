@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -228,7 +229,9 @@ def test_task_composes_build_vivado_artifacts_surface() -> None:
     assert result.message.splitlines()[0].startswith("vivado-overlay-build\tbash -lc ")
     assert result.message.splitlines()[1] == (
         "validate-vivado-artifacts\tdau-build task=tasks/validate/validate-vivado-artifacts "
-        "work_root=/repo/projects/vivado-shell manifest_path=dau-ci.manifest command_plan_path=dau-ci.plan"
+        + shlex.join(
+            ("model.work_root='/repo/projects/vivado-shell'", "model.manifest_path='dau-ci.manifest'", "model.command_plan_path='dau-ci.plan'")
+        )
     )
 
 
@@ -282,6 +285,7 @@ def test_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
     _write_backend_artifacts(
         generate_vivado_backend_artifacts(
             VivadoBackendRequest(
+                register_map_version="0.3",
                 dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
                 build_root=tmp_path,
                 artifact_stem="dau-ci",
@@ -330,6 +334,7 @@ def test_overlay_build_tcl_records_the_slack_and_names_a_timing_miss() -> None:
 def _built_overlay_artifacts(tmp_path: Path, *, status_line: str):
     artifacts = generate_vivado_backend_artifacts(
         VivadoBackendRequest(
+            register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
             artifact_stem="dau-ci",

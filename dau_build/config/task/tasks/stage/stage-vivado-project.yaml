@@ -19,7 +19,9 @@ artifact_stem: dau-vivado
 backend_platform: vivado-xdma
 backend_shell: xdma-shell
 operator: null
-register_map_version: "0.1"
+# the register map version the overlay's grafted identity registers
+# implement, recorded in the manifest; required, no code default
+register_map_version: "0.3"
 stream_protocol_version: "0.1"
 manifest_path: null
 command_plan_path: null

@@ -554,9 +554,9 @@ class VivadoOverlayStageTask(OverlayStageTask):
     backend_platform: str = "vivado-xdma"
     backend_shell: str = "xdma-shell"
     operator: str | None = None
-    # the current wire contract; a shell that stamps an older version makes
-    # its capability words undecodable by consumers that read them
-    register_map_version: str = "0.2"
+    # the wire contract the grafted identity registers implement; set by the
+    # task config, never defaulted here
+    register_map_version: str
     stream_protocol_version: str = "0.1"
     manifest_path: Path | None = None
     command_plan_path: Path | None = None
