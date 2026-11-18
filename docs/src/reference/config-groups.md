@@ -165,7 +165,13 @@ known-good core byte for byte.
   `mig_prj`, `constraints_xdc`); `platform.memory` selects the active shared
   tier.
 - `HostLink` (`interface`, `pcie_lanes`, `xdma_personality`,
-  `expected_link_width`, `expected_link_speed_gts`).
+  `expected_link_width`, `expected_link_speed_gts`, `dma_knee_bytes`,
+  `job_tail_seconds`). The last two are measured on the host the board sits
+  in, so a board-on-host option sets them.
+- `calibration` (`PlatformCalibration`: `measured_on`, `proven_lane_count`,
+  `overlap_batches`, `wide_front_out_width`): the board's measured
+  design-point tuning, which pricing reads. A value the board has not
+  measured is priced untuned rather than taken from another board.
 - The board-level `constraints_xdc`: pin constraint text the shell project
   generators emit behind their banner.
 - `lane_placements`: the GT lane swizzle, applied as a pre-`opt_design`
