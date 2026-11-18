@@ -237,6 +237,7 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
 
 def _probe_platform(**overrides):
     from dau_build.platforms import HostLink, PlatformDefinition, ResourceBudget, StorageTier, XdmaPersonality
+    from dau_build.programmers import OpenFpgaLoaderProgrammer
 
     base: dict[str, Any] = {
         "name": "probe-k7",
@@ -251,7 +252,7 @@ def _probe_platform(**overrides):
         "constraints_xdc": "set_property CFGBVS GND [current_design]\n",
     }
     base.update(overrides)
-    return PlatformDefinition(**base, platform_id="TEST")
+    return PlatformDefinition(**base, platform_id="TEST", programmer=OpenFpgaLoaderProgrammer())
 
 
 def _with_xdma_params(platform, **updates):

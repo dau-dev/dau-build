@@ -5,13 +5,14 @@ _target_: dau_build.build_steps.HardwarePlanTask
 # plan=plans/local-build-and-program plan.dau_core_root=... plan.smoke_command=...
 plan: ${oc.select:plan,null}
 # hardware access composes from the platform group's host_access
-# (platform=platforms/<vendor>/<board>); the explicit fields below override
-# it, and with neither the facts stay unset — steps that need them fail
-# with guidance (dau-build carries no board defaults)
+# (platform=platforms/<vendor>/<board>-<host>) and is changed there
+# (platform.host_access.<field>=...); without a platform the facts stay
+# unset and steps that need them fail with guidance (dau-build carries no
+# board defaults)
 platform: ${oc.select:platform,null}
 # the programmer composes from the `programmer` group
-# (programmer=programmers/<name>); with none, the platform's program_method
-# selects the default (jtag->openfpgaloader, flash->vivado-hwserver)
+# (programmer=programmers/<name>); with none, the platform's own
+# programmer is used
 programmer: ${oc.select:programmer,null}
 work_root: ???
 # the built shell manifest whose bitstream a programming plan loads
@@ -22,13 +23,4 @@ vivado: vivado
 vivado_invocation: standard
 vivado_mount_root: null
 openfpgaloader: openFPGALoader
-jtag_cable: null
-endpoint_bdf: null
-reset_bridge_bdf: null
-expected_endpoint_id: null
-runtime_pm_executable: null
-deadman_executable: null
-runtime_pm_patterns: null
-rescan_bdfs: null
-privilege_prefix: null
 execute: false

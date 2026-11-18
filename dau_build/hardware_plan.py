@@ -8,11 +8,12 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, ClassVar, Literal, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from ccflow import BaseModel
 from pydantic import ConfigDict
 
+from dau_build.programmers import Programmer, VivadoHwServerProgrammer
 from dau_build.vivado_backend import (
     VALIDATE_TASK_NAME,
     VivadoBackendArtifactValidation,
@@ -30,6 +31,9 @@ from dau_build.vivado_backend import (
     validate_vivado_project_artifact_bundle,
     vivado_build_tcl,
 )
+
+if TYPE_CHECKING:
+    from dau_build.platforms import PlatformDefinition
 
 SHELL_STAGE_EXCLUDES = (
     ".Xil",
@@ -81,24 +85,22 @@ class HardwareToolchainConfig(BaseModel):
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader_executable: str = "openFPGALoader"
-    # the console scripts dau-utils actually installs
-    runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
-    deadman_executable: str = "dau-utils-deadman"
     # host access is board/host configuration, never code defaults: compose
-    # it from a platform's host_access (for_platform) or set the fields
-    # explicitly. Steps that need an unset (None) fact fail with guidance;
-    # an explicit empty tuple is meaningful (global rescan only / no
-    # runtime-PM holds) and renders as such.
+    # it from a platform's host_access (for_platform). Steps that need an
+    # unset (None) fact fail with guidance; an explicit empty tuple is
+    # meaningful (global rescan only / no runtime-PM holds) and renders as
+    # such.
+    runtime_pm_executable: str | None = None
+    deadman_executable: str | None = None
     runtime_pm_patterns: tuple[str, ...] | None = None
     jtag_cable: str | None = None
     endpoint_bdf: str | None = None
     reset_bridge_bdf: str | None = None
     expected_endpoint_id: str | None = None
     rescan_bdfs: tuple[str, ...] | None = None
-    # the board's default programming method (PlatformDefinition.program_method:
-    # jtag->openFPGALoader, flash->vivado-hwserver); an explicit `programmer`
-    # (a Programmer model composed from the `programmer` group) wins.
-    program_method: str = "jtag"
+    # the board's default programmer (PlatformDefinition.programmer); an
+    # explicit `programmer` (composed from the `programmer` group) wins
+    default_programmer: Programmer | None = None
     # only 4 is supported: the cfgmem generator writes SPIx4 (see
     # PlatformDefinition.spi_boot_buswidth)
     spi_boot_buswidth: Literal[4] | None = None
@@ -111,28 +113,31 @@ class HardwareToolchainConfig(BaseModel):
     # both to reach the configuration flash
     fpga_part: str | None = None
     spi_bridge_bitstream: str | None = None
-    programmer: Any = None
+    programmer: Programmer | None = None
 
     @classmethod
-    def for_platform(cls, platform, *, work_root: Path, programmer=None, **overrides) -> HardwareToolchainConfig:
-        """Compose the toolchain config from a registered platform's
-        ``host_access`` (board/host config, not code defaults) and its
-        ``program_method``. Explicit keyword overrides win; with neither, the
-        host-access facts stay unset and any step that needs them fails with
-        guidance. An explicit ``programmer`` model overrides the
-        ``program_method``-selected default. ``platform`` may be ``None``
-        (a platform-less compose), in which case every board fact stays
-        unset and only the explicit overrides apply."""
+    def for_platform(
+        cls, platform: PlatformDefinition | None, *, work_root: Path, programmer: Programmer | None = None, **toolchain: Any
+    ) -> HardwareToolchainConfig:
+        """Compose the toolchain config from a registered platform: its
+        ``host_access`` (board/host config, not code defaults), part, SPI
+        boot width and default programmer. ``toolchain`` sets the tool
+        fields (Vivado, openFPGALoader, bitstream); host access is changed
+        through the platform (``platform.host_access.<field>=...``), never
+        here. ``platform`` may be ``None`` (a platform-less compose), in
+        which case every board fact stays unset and steps that need one
+        fail with guidance."""
+        values: dict[str, Any] = {}
         access = platform.host_access if platform is not None else None
-        values: dict = {}
         if access is not None:
             values = {
                 "expected_endpoint_id": access.pci_id,
                 "endpoint_bdf": access.endpoint_bdf,
                 "jtag_cable": access.jtag_cable,
                 "runtime_pm_executable": access.runtime_pm_executable,
+                "deadman_executable": access.deadman_executable,
                 # authoritative including empty (global rescan only / no
-                # runtime-PM holds) — never silently the dpv1 defaults
+                # runtime-PM holds)
                 "rescan_bdfs": access.rescan_bdfs,
                 "runtime_pm_patterns": access.runtime_pm_patterns,
                 "reset_bridge_bdf": access.reset_bridge_bdf,
@@ -140,27 +145,22 @@ class HardwareToolchainConfig(BaseModel):
                 "spi_bridge_bitstream": access.spi_bridge_bitstream,
             }
         if platform is not None:
-            values["program_method"] = platform.program_method
+            values["default_programmer"] = platform.programmer
             values["spi_boot_buswidth"] = platform.spi_boot_buswidth
             values["fpga_part"] = platform.part
-        if programmer is not None:
-            values["programmer"] = programmer
-        values.update({key: value for key, value in overrides.items() if value is not None})
-        return cls(work_root=work_root, **values)
+        return cls(work_root=work_root, programmer=programmer, **values, **toolchain)
 
-    def resolve_programmer(self, *, vivado_settings: Path | None = None):
+    def resolve_programmer(self, *, vivado_settings: Path | None = None) -> Programmer:
         """The composed ``Programmer``: an explicit ``programmer`` override,
-        else the ``program_method`` default (``jtag`` openFPGALoader with this
-        config's executable/cable, ``flash`` the Vivado hw_server path).
-        ``vivado_settings`` supplies the flash plan's settings path to the
-        default Vivado programmer (an explicit ``programmer`` carries its own)."""
-        from dau_build.programmers import OpenFpgaLoaderProgrammer, Programmer, VivadoHwServerProgrammer
-
-        if isinstance(self.programmer, Programmer):
-            return self.programmer
-        if self.program_method == "flash":
-            return VivadoHwServerProgrammer() if vivado_settings is None else VivadoHwServerProgrammer(vivado_settings=vivado_settings)
-        return OpenFpgaLoaderProgrammer(executable=self.openfpgaloader_executable)
+        else the platform's default programmer. ``vivado_settings`` (the
+        flash plan's settings path) fills in a Vivado programmer that names
+        none of its own."""
+        programmer = self.programmer if self.programmer is not None else self.default_programmer
+        if programmer is None:
+            raise ValueError("no programmer is composed: select programmer=programmers/<name>, or a platform that declares its programmer")
+        if isinstance(programmer, VivadoHwServerProgrammer) and programmer.vivado_settings is None and vivado_settings is not None:
+            return programmer.model_copy(update={"vivado_settings": vivado_settings})
+        return programmer
 
     @property
     def project_tcl(self) -> Path:
@@ -183,7 +183,17 @@ class HardwareToolchainConfig(BaseModel):
 
     @overload
     def required_host_access(
-        self, field_name: Literal["endpoint_bdf", "expected_endpoint_id", "jtag_cable", "reset_bridge_bdf", "fpga_part", "spi_bridge_bitstream"]
+        self,
+        field_name: Literal[
+            "endpoint_bdf",
+            "expected_endpoint_id",
+            "jtag_cable",
+            "reset_bridge_bdf",
+            "runtime_pm_executable",
+            "deadman_executable",
+            "fpga_part",
+            "spi_bridge_bitstream",
+        ],
     ) -> str: ...
 
     def required_host_access(self, field_name: str) -> str | tuple[str, ...]:
@@ -194,9 +204,29 @@ class HardwareToolchainConfig(BaseModel):
         if value is None:
             raise ValueError(
                 f"{field_name} is unset: hardware access is host configuration — "
-                f"compose platform=platforms/<vendor>/<board>-<host> with host_access (or set {field_name}=...)"
+                f"compose platform=platforms/<vendor>/<board>-<host> with host_access (or set {_PLATFORM_FIELD[field_name]}=...)"
             )
         return value
+
+
+# where each host-access fact of the toolchain config is set on the composed platform
+_PLATFORM_FIELD = {
+    "expected_endpoint_id": "platform.host_access.pci_id",
+    "fpga_part": "platform.part",
+    **{
+        name: f"platform.host_access.{name}"
+        for name in (
+            "endpoint_bdf",
+            "jtag_cable",
+            "reset_bridge_bdf",
+            "runtime_pm_executable",
+            "deadman_executable",
+            "runtime_pm_patterns",
+            "rescan_bdfs",
+            "spi_bridge_bitstream",
+        )
+    },
+}
 
 
 # resolve forward-ref annotations (this module uses `from __future__ import
@@ -613,8 +643,8 @@ def thunderbolt_hold_step(config: HardwareToolchainConfig, *, dau_utils_root: Pa
         _runtime_pm_argv(config, "hold")
         if dau_utils_root is None
         else ("sh", "-c", _local_runtime_pm_script(config, "hold", dau_utils_root, python)),
-        required_executable=config.runtime_pm_executable if dau_utils_root is None else python,
-        executable_override="model.runtime_pm_executable" if dau_utils_root is None else "plan.python",
+        required_executable=config.required_host_access("runtime_pm_executable") if dau_utils_root is None else python,
+        executable_override="platform.host_access.runtime_pm_executable" if dau_utils_root is None else "plan.python",
     )
 
 
@@ -624,8 +654,8 @@ def thunderbolt_release_step(config: HardwareToolchainConfig, *, dau_utils_root:
         _runtime_pm_argv(config, "release")
         if dau_utils_root is None
         else ("sh", "-c", _local_runtime_pm_script(config, "release", dau_utils_root, python)),
-        required_executable=config.runtime_pm_executable if dau_utils_root is None else python,
-        executable_override="model.runtime_pm_executable" if dau_utils_root is None else "plan.python",
+        required_executable=config.required_host_access("runtime_pm_executable") if dau_utils_root is None else python,
+        executable_override="platform.host_access.runtime_pm_executable" if dau_utils_root is None else "plan.python",
     )
 
 
@@ -697,7 +727,7 @@ def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
     bdf = config.required_host_access("endpoint_bdf")
     patterns = tuple(config.required_host_access("runtime_pm_patterns"))
     quoted_bdf = shlex.quote(str(bdf))
-    hold_endpoint = shlex.join((config.runtime_pm_executable, "hold", "--device", str(bdf)))
+    hold_endpoint = shlex.join((config.required_host_access("runtime_pm_executable"), "hold", "--device", str(bdf)))
     # tolerate ONLY an absent endpoint (recovering a wedged device); a hold
     # failure with the device present propagates — proceeding into a
     # reprogram without the PM hold is exactly the wedge class this guards
@@ -709,8 +739,8 @@ def pm_hold_path_step(config: HardwareToolchainConfig) -> ToolStep:
     return ToolStep(
         "pm-hold-path",
         (*config.privilege_prefix, "sh", "-c", script),
-        required_executable=config.runtime_pm_executable,
-        executable_override="model.runtime_pm_executable",
+        required_executable=config.required_host_access("runtime_pm_executable"),
+        executable_override="platform.host_access.runtime_pm_executable",
         executable_requires_absolute=bool(config.privilege_prefix),
     )
 
@@ -724,9 +754,9 @@ def deadman_arm_step(config: HardwareToolchainConfig, *, timeout_s: int = 180) -
     reboot to the SPI-resident design (timeout is SECONDS)."""
     return ToolStep(
         "deadman-arm",
-        (config.deadman_executable, "arm", "--timeout", str(timeout_s)),
-        required_executable=config.deadman_executable,
-        executable_override="model.deadman_executable",
+        (config.required_host_access("deadman_executable"), "arm", "--timeout", str(timeout_s)),
+        required_executable=config.required_host_access("deadman_executable"),
+        executable_override="platform.host_access.deadman_executable",
     )
 
 
@@ -735,9 +765,9 @@ def deadman_disarm_step(config: HardwareToolchainConfig) -> ToolStep:
     # only *release steps, and the deadman must stay armed on failure
     return ToolStep(
         "deadman-disarm",
-        (config.deadman_executable, "disarm"),
-        required_executable=config.deadman_executable,
-        executable_override="model.deadman_executable",
+        (config.required_host_access("deadman_executable"), "disarm"),
+        required_executable=config.required_host_access("deadman_executable"),
+        executable_override="platform.host_access.deadman_executable",
     )
 
 
@@ -758,7 +788,7 @@ def lspci_endpoint_step(config: HardwareToolchainConfig) -> ToolStep:
 
 
 def _runtime_pm_argv(config: HardwareToolchainConfig, mode: str) -> tuple[str, ...]:
-    argv = [config.runtime_pm_executable, mode]
+    argv = [config.required_host_access("runtime_pm_executable"), mode]
     for pattern in config.required_host_access("runtime_pm_patterns"):
         argv.extend(("--pattern", pattern))
     return tuple(argv)

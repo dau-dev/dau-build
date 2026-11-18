@@ -10,6 +10,7 @@ from ccflow import CallableModel
 
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask
 from dau_build.cli import main
+from dau_build.config import run_request_config
 from dau_build.tests.spec_option import write_spec_option
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
@@ -498,38 +499,31 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
     from dau_build.platforms import PlaceholderPlatformError
     from dau_build.tests.platform_fixtures import probe_platform
 
-    explicit = HardwarePlanTask(
-        plan=RecoveryPlan(),
-        work_root=Path("/repo/projects/vivado-shell"),
-        jtag_cable="digilent_hs2",
-        endpoint_bdf="0000:01:00.0",
-        # the endpoint's upstream bridge: the diagnostic dmesg filter names
-        # both slots, so an explicit task that omitted it would no longer
-        # reproduce the composed board's plan text
-        reset_bridge_bdf="0000:00:1c.4",
-        expected_endpoint_id="10ee:9034",
-        runtime_pm_patterns=("Xilinx", "10ee:9034"),
-        rescan_bdfs=(
-            "0000:00:1c.4",
-            "0000:00:1c.0",
-        ),
-        privilege_prefix=("sudo",),
-    )(None)
     composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=probe_platform())(None)
-    # the board's host_access reproduces the explicit bench-fact plan text
-    # byte-identically; without either, hardware steps refuse to render
-    assert composed == explicit
-    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+    assert "openFPGALoader -c digilent_hs2 " in composed.message
+    assert "lspci -Dnn -d 10ee:9034" in composed.message
+    # without a platform, hardware steps refuse to render
+    with pytest.raises(ValueError, match="runtime_pm_executable is unset.*platform.host_access.runtime_pm_executable"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
 
-    # explicit task fields override the platform's host_access
-    overridden = HardwarePlanTask(
-        plan=RecoveryPlan(),
-        work_root=Path("/repo/projects/vivado-shell"),
-        platform=probe_platform(),
-        jtag_cable="ft4232",
-    )(None)
+    # host access is changed on the platform, the one place it is declared
+    overridden = run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=[
+            "plan=plans/recovery",
+            "platform=platforms/example/probe",
+            "platform.host_access.jtag_cable=ft4232",
+            "model.work_root=/repo/projects/vivado-shell",
+        ],
+    )
     assert "-c ft4232" in overridden.message
+    with pytest.raises(Exception, match="jtag_cable"):
+        run_request_config(
+            "task",
+            "tasks/hardware/hardware-plan",
+            overrides=["plan=plans/recovery", "platform=platforms/example/probe", "model.jtag_cable=ft4232", "model.work_root=/w"],
+        )
 
     # a placeholder board is refused for hardware-affecting execution
     placeholder = probe_platform().model_copy(update={"name": "probe", "placeholders": ("host_access",)})
@@ -598,7 +592,7 @@ def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
     # plan-only composition also needs the facts to render hardware steps
     # (dau-build carries no board defaults to fall back on)
-    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+    with pytest.raises(ValueError, match="runtime_pm_executable is unset"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
 
 

@@ -19,7 +19,10 @@ name: probe
 placeholders: [part, platform_id, budget, lane_placements, constraints_xdc, memory, host_link, host_access]
 part: xc7k325tffg676-2
 platform_id: PRBE
-program_method: jtag
+# programmed over JTAG; the executable and cable follow the toolchain and
+# host_access unless pinned here
+programmer:
+  _target_: dau_build.programmers.OpenFpgaLoaderProgrammer
 spi_boot_buswidth: 4
 width_tiers: [64, 128, 256]
 # lane index -> GT channel site. A swizzled mapping like a real board's, so
@@ -86,6 +89,7 @@ host_access:
     - Xilinx
     - "10ee:9034"
   runtime_pm_executable: dau-utils-pci-runtime-pm
+  deadman_executable: dau-utils-deadman
   jtag_cable: digilent_hs2
 
 storage_tiers:

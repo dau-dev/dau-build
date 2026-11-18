@@ -27,6 +27,8 @@ from typing import Literal, Protocol
 from ccflow import BaseModel
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from dau_build.programmers import Programmer
+
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
 _PCI_ID = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{4}")
 _BDF = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
@@ -288,8 +290,11 @@ class HostAccess(BaseModel):
     # only / no runtime-PM holds), so each board states its own values
     rescan_bdfs: tuple[str, ...]
     runtime_pm_patterns: tuple[str, ...]
-    runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
-    jtag_cable: str = "digilent_hs2"
+    # the dau-utils console scripts as this host resolves them (a full path
+    # when the privileged steps run under a prefix whose PATH differs)
+    runtime_pm_executable: str
+    deadman_executable: str
+    jtag_cable: str
     # the endpoint's direct upstream bridge, for the secondary-bus reset
     # (PERST#-equivalent) that re-inits the PCIe core after a volatile
     # reprogram; a measured bench fact, explicit rather than inferred from
@@ -352,7 +357,8 @@ class PlatformDefinition(BaseModel):
     ``require_measured`` refuses such boards for real builds while config-only
     generation stays open. ``host_access`` carries the bench host's measured
     access facts (PCI identity, endpoint/bridge BDFs, runtime-PM patterns,
-    JTAG cable) that ``HardwareToolchainConfig.for_platform`` composes from.
+    JTAG cable, dau-utils executables) that ``HardwareToolchainConfig.for_platform``
+    composes from.
 
     ``job_clock_mhz`` decouples the job logic's clock from the XDMA's
     ``axi_aclk``: when set, the shell generators derive a job clock at that
@@ -385,7 +391,9 @@ class PlatformDefinition(BaseModel):
     # that forgot to state one used to become dpv1 silently, and the shell
     # would then stamp that identity into a device which is not that board.
     platform_id: str
-    program_method: str = "jtag"
+    # how this board is programmed when no `programmer=` group is composed
+    # (a Programmer model, e.g. OpenFpgaLoaderProgrammer for a JTAG board)
+    programmer: Programmer
     # the flash device's boot bus width when the board self-configures from
     # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a
     # flash leaves the board memory-dead — persistent programming must go
@@ -454,13 +462,6 @@ class PlatformDefinition(BaseModel):
     def _nonempty(cls, value: str, info) -> str:
         if not value:
             raise ValueError(f"platform {info.field_name} must be non-empty")
-        return value
-
-    @field_validator("program_method")
-    @classmethod
-    def _valid_program_method(cls, value: str) -> str:
-        if value not in ("jtag", "flash"):
-            raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
         return value
 
     @field_validator("width_tiers")

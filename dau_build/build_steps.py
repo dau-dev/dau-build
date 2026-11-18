@@ -22,6 +22,7 @@ from dau_build.hardware_plan import (
     vivado_overlay_build_step,
 )
 from dau_build.platforms import PlatformDefinition
+from dau_build.programmers import Programmer
 from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
     VivadoBackendArtifactValidation,
@@ -825,15 +826,16 @@ class HardwarePlanTask(BuildCallableModel):
     # the plan is the composed `plan` group option (a HardwarePlan model that
     # owns its own required fields); the task holds the shared toolchain
     # config. Hardware access (endpoint identity, BDFs, runtime-PM patterns,
-    # JTAG cable) composes from the `platform=` group's host_access when
-    # given; explicit task fields override it; with neither, the facts stay
+    # JTAG cable, dau-utils executables) composes from the `platform=`
+    # group's host_access and is changed there
+    # (platform.host_access.<field>=...); without a platform the facts stay
     # unset and steps that need them fail with guidance (dau-build carries
     # no board defaults).
-    plan: Any = None
-    platform: Any = None
-    # the programmer is the composed `programmer` group option (a Programmer
-    # model); with none, the platform's program_method selects the default
-    programmer: Any = None
+    plan: HardwarePlan | None = None
+    platform: PlatformDefinition | None = None
+    # the programmer is the composed `programmer` group option; with none,
+    # the platform's own programmer is used
+    programmer: Programmer | None = None
     work_root: Path
     # the built shell manifest (shell-build.artifacts.yaml) whose bitstream
     # the plan programs: status and digest verified, the bytes snapshotted
@@ -844,15 +846,6 @@ class HardwarePlanTask(BuildCallableModel):
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader: str = "openFPGALoader"
-    jtag_cable: str | None = None
-    endpoint_bdf: str | None = None
-    reset_bridge_bdf: str | None = None
-    expected_endpoint_id: str | None = None
-    runtime_pm_executable: str | None = None
-    deadman_executable: str | None = None
-    runtime_pm_patterns: tuple[str, ...] | None = None
-    rescan_bdfs: tuple[str, ...] | None = None
-    privilege_prefix: tuple[str, ...] | None = None
     execute: bool = False
 
     @Flow.call
@@ -877,15 +870,6 @@ class HardwarePlanTask(BuildCallableModel):
             vivado_mount_root=self.vivado_mount_root,
             bitstream_path=bitstream_path,
             openfpgaloader_executable=self.openfpgaloader,
-            jtag_cable=self.jtag_cable,
-            endpoint_bdf=self.endpoint_bdf,
-            reset_bridge_bdf=self.reset_bridge_bdf,
-            expected_endpoint_id=self.expected_endpoint_id,
-            runtime_pm_executable=self.runtime_pm_executable,
-            deadman_executable=self.deadman_executable,
-            runtime_pm_patterns=self.runtime_pm_patterns,
-            rescan_bdfs=self.rescan_bdfs,
-            privilege_prefix=self.privilege_prefix,
         )
         plan_result = plan.compose(config)
         if self.execute:
@@ -901,7 +885,7 @@ class HardwarePlanTask(BuildCallableModel):
         return BuildStepResult(step="hardware-plan", message=format_plan_steps(plan_result))
 
     def _plan(self) -> HardwarePlan:
-        if isinstance(self.plan, HardwarePlan):
+        if self.plan is not None:
             return self.plan
         raise BuildStepError("task=hardware-plan requires plan=plans/<name> (see dau_build/config/plan)")
 

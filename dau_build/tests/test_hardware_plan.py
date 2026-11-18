@@ -21,6 +21,7 @@ from dau_build.hardware_plan import (
     thunderbolt_release_plan,
     validate_bitstream_plan,
 )
+from dau_build.programmers import OpenFpgaLoaderProgrammer, VivadoHwServerProgrammer
 from dau_build.vivado_backend import (
     VivadoBackendRequest,
     VivadoProjectGenerationRequest,
@@ -94,6 +95,9 @@ DPV1_HOST_ACCESS: dict[str, Any] = {
     "jtag_cable": "digilent_hs2",
     "runtime_pm_patterns": ("Xilinx", "10ee:9034"),
     "rescan_bdfs": EXPECTED_PCI_RESCAN_BDFS,
+    "runtime_pm_executable": "dau-utils-pci-runtime-pm",
+    "deadman_executable": "dau-utils-deadman",
+    "default_programmer": OpenFpgaLoaderProgrammer(),
 }
 
 
@@ -1174,10 +1178,12 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
     assert dau_overlay_manifest_text(Path("/repo/dau-core/dau_core/hdl")).splitlines()[0] == "backend=dau_build.vivado_backend.vivado_overlay"
 
 
-def test_flash_plan_routes_through_the_program_method_selector() -> None:
+def test_flash_plan_routes_through_the_platform_programmer() -> None:
     # a flash board flashes through the Vivado hw_server path (byte-identical
     # to the pre-adapter flash step)
-    flash_config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado", program_method="flash")
+    flash_config = _bench_config(
+        work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado", default_programmer=VivadoHwServerProgrammer()
+    )
     steps = flash_plan(flash_config)
     assert [step.name for step in steps] == ["thunderbolt-hold", "flash", "thunderbolt-release"]
     assert steps[1].argv[0:2] == ("bash", "-lc")
@@ -1662,8 +1668,9 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     assert "lspci -Dnn -d 10ee:9038" in by_name["lspci-endpoint"].argv[2]
     assert "0000:64:00.0" in by_name["lspci-endpoint"].argv[2]
 
-    # explicit overrides beat platform data
-    assert HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2").jtag_cable == "digilent_hs2"
+    # host access is not a toolchain argument: it changes only through the platform
+    with pytest.raises(TypeError, match="jtag_cable"):
+        HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2")
 
 
 def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
@@ -1685,11 +1692,10 @@ def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
     )
 
 
-def test_program_method_flash_selects_the_vivado_programmer() -> None:
-    from dau_build.programmers import VivadoHwServerProgrammer
+def test_a_flash_board_declares_the_vivado_programmer() -> None:
     from dau_build.tests.platform_fixtures import probe_platform
 
-    flash_board = probe_platform().model_copy(update={"program_method": "flash"})
+    flash_board = probe_platform().model_copy(update={"programmer": VivadoHwServerProgrammer()})
     config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
     programmer = config.resolve_programmer()
     assert isinstance(programmer, VivadoHwServerProgrammer)
@@ -1702,7 +1708,7 @@ def test_program_method_flash_selects_the_vivado_programmer() -> None:
         programmer.program_step(config)
 
 
-def test_explicit_programmer_override_beats_program_method() -> None:
+def test_explicit_programmer_override_beats_the_platform_programmer() -> None:
     from dau_build.programmers import VivadoHwServerProgrammer
 
     # an explicit programmer wins over a jtag board's default (symmetric to
@@ -1715,7 +1721,7 @@ def test_detect_less_programmer_yields_a_plan_without_a_detect_step() -> None:
     # detection is optional (Vivado has no JTAG detect step) — but a flash
     # board refuses the volatile build-and-program plan outright: persistent
     # SPI writes only happen through an explicit flash request
-    config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", program_method="flash")
+    config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", default_programmer=VivadoHwServerProgrammer())
     assert config.resolve_programmer().detect_step(config) is None
     with pytest.raises(ValueError, match="no volatile programming path"):
         build_and_program_plan(config)
@@ -1935,18 +1941,11 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
         "tasks/hardware/hardware-plan",
         overrides=[
             "plan=plans/sram-program",
-            *model_overrides(
-                {
-                    "work_root": str(tmp_path),
-                    "manifest": str(_built_manifest(tmp_path)[0]),
-                    "endpoint_bdf": "0000:01:00.0",
-                    "reset_bridge_bdf": "0000:00:1c.4",
-                    "expected_endpoint_id": "10ee:9034",
-                    "jtag_cable": "digilent_hs2",
-                    "runtime_pm_patterns": (),
-                    "rescan_bdfs": ("0000:00:1c.4",),
-                }
-            ),
+            "platform=platforms/example/probe",
+            "platform.placeholders=[]",
+            "platform.host_access.runtime_pm_patterns=[]",
+            "platform.host_access.rescan_bdfs=['0000:00:1c.4']",
+            *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
@@ -1959,7 +1958,7 @@ def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path
         overrides=[
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
-            "model.deadman_executable=/opt/dau/bin/deadman",
+            "platform.host_access.deadman_executable=/opt/dau/bin/deadman",
             *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
@@ -1988,7 +1987,7 @@ def test_execute_refuses_missing_deadman_before_any_step(monkeypatch, tmp_path: 
     message = str(exc_info.value)
     assert missing in message
     assert "deadman-arm" in message
-    assert "model.deadman_executable" in message
+    assert "platform.host_access.deadman_executable" in message
 
 
 def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_path: Path) -> None:
@@ -2012,19 +2011,19 @@ def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_
     message = str(exc_info.value)
     assert executable in message
     assert "pm-hold-path" in message
-    assert "model.runtime_pm_executable" in message
+    assert "platform.host_access.runtime_pm_executable" in message
 
 
 def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) -> None:
-    """`model.privilege_prefix` must be declared in the packaged task config so
-    Hydra's struct mode accepts the override (e.g. clear it to run as root)."""
+    """The privilege prefix is a host_access fact, overridden on the composed
+    platform (e.g. clear it to run as root)."""
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
         overrides=[
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
-            "model.privilege_prefix=[]",
+            "platform.host_access.privilege_prefix=[]",
             *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
