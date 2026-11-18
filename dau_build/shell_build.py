@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from artlink import Artifact, Digest
-from ccflow import BaseModel
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from .packaging import ArtifactManifest
 
 __all__ = (
     "SHELL_BUILD_MANIFEST_NAME",
     "ShellBuildError",
+    "ShellBuildRecord",
     "ShellBuildStatus",
     "parse_shell_build_console",
     "run_shell_project_build",
@@ -49,12 +50,54 @@ class ShellBuildStatus(BaseModel):
     ``built`` means the bitstream exists and the routed worst slack is a
     number at or above zero. ``timing-failed`` means the bitstream exists
     but the slack is negative or could not be read: an image that must not
-    be flashed, and must not be mistaken for one that can."""
+    be flashed, and must not be mistaken for one that can. The validator
+    holds that rule for every status built, parsed or read back, so no
+    reader can accept a ``built`` that never proved it closed timing."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     build_status: Literal["built", "timing-failed", "failed", "unknown"]
     wns_ns: float | None = None
     failed_stage: str | None = None
     return_code: int | None = None
+
+    @model_validator(mode="after")
+    def _built_closed_timing(self):
+        if self.build_status == "built" and (self.wns_ns is None or not math.isfinite(self.wns_ns) or self.wns_ns < 0.0):
+            raise ValueError(
+                f"build_status=built needs a finite, non-negative wns_ns, got wns_ns={self.wns_ns}: "
+                "a build that missed timing or recorded no slack is timing-failed"
+            )
+        return self
+
+
+class ShellBuildRecord(ShellBuildStatus):
+    """The metadata of a shell-build manifest, read through one model.
+
+    The status fields and the timing rule come from ``ShellBuildStatus``;
+    the identity fields are the keys the design cache, the advertisement
+    check and the flash path read back. Every writer adds its own
+    provenance keys (source repositories, priced resources, the backend's
+    key=value items), so keys beyond these are kept as they are rather
+    than refused: the typed keys are the contract, the rest is record."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    platform: str | None = None
+    part: str | None = None
+    spec_hash: str | None = None
+    # canonical JSON texts, decoded by the packages that own their schemas
+    composition_spec: str | None = None
+    capability_contract: str | None = None
+    job_clock_mhz: float | None = None
+
+    @classmethod
+    def from_metadata(cls, metadata: Any) -> ShellBuildRecord:
+        """Validate a manifest's metadata mapping, raising ShellBuildError."""
+        try:
+            return cls.model_validate(metadata or {})
+        except ValidationError as exc:
+            raise ShellBuildError(f"invalid shell-build metadata: {exc}") from exc
 
 
 def run_shell_project_build(
@@ -81,11 +124,10 @@ def run_shell_project_build(
             check=False,
         )
     status = parse_shell_build_console(log_path.read_text(encoding="utf-8"))
-    status.return_code = completed.returncode
     if completed.returncode != 0 and status.build_status == "built":
         # the marker says built but vivado did not exit cleanly: not provable
-        status.build_status = "unknown"
-    return status
+        return status.model_copy(update={"build_status": "unknown", "return_code": completed.returncode})
+    return status.model_copy(update={"return_code": completed.returncode})
 
 
 def describe_failure(status: ShellBuildStatus, log_path: Path) -> str:
@@ -240,7 +282,8 @@ def shell_build_manifest(
     manifest_metadata: dict[str, Any] = {"source_repositories": source_repos}
     if metadata:
         manifest_metadata.update(metadata)
-    return ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=manifest_metadata)
+    record = ShellBuildRecord.from_metadata(manifest_metadata)
+    return ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=record.model_dump(mode="json", exclude_none=True))
 
 
 def write_shell_build_manifest(
@@ -310,7 +353,8 @@ def write_overlay_build_manifest(work_root: Path, key_value_manifest_path: Path,
         # recorded as a number, the way the shell flow records it, so a
         # consumer reads one representation
         metadata["wns_ns"] = _slack(manifest["wns_ns"])
-    packaged = ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=metadata)
+    record = ShellBuildRecord.from_metadata(metadata)
+    packaged = ArtifactManifest(name=name, intent="output", artifacts=tuple(artifacts), metadata=record.model_dump(mode="json", exclude_none=True))
     import yaml
 
     manifest_path = key_value_manifest_path.with_suffix(".artifacts.yaml")

@@ -640,7 +640,7 @@ def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_p
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("built\n", encoding="utf-8")
     artifacts.manifest_path.write_text(
-        artifacts.manifest_text.replace("build_status=planned", "build_status=built"),
+        artifacts.manifest_text.replace("build_status=planned", "wns_ns=0.125\nbuild_status=built"),
         encoding="utf-8",
     )
 
@@ -1259,6 +1259,25 @@ def test_a_manifest_that_is_not_built_is_not_programmable(tmp_path: Path) -> Non
     text = manifest_path.read_text().replace("build_status: built", "build_status: timing-failed")
     manifest_path.write_text(text)
     with pytest.raises(BuildStepError, match="not programmable.*not built"):
+        _run_plan("sram-program", work_root=str(tmp_path / "work"), manifest=str(manifest_path))
+
+
+@pytest.mark.parametrize("wns_ns", [None, -0.348, float("nan"), float("inf")])
+def test_a_built_manifest_without_closed_timing_is_not_programmable(tmp_path: Path, wns_ns) -> None:
+    """The flash gate reads the metadata through the build record, so a
+    manifest that says built but carries no slack, a negative one or a
+    non-finite one is refused, the same as the publisher refuses it."""
+    import yaml
+
+    manifest_path, _ = _built_manifest(tmp_path)
+    document = yaml.safe_load(manifest_path.read_text())
+    assert document["metadata"]["build_status"] == "built"
+    if wns_ns is None:
+        del document["metadata"]["wns_ns"]
+    else:
+        document["metadata"]["wns_ns"] = wns_ns
+    manifest_path.write_text(yaml.safe_dump(document))
+    with pytest.raises(BuildStepError, match="(?s)not programmable.*wns_ns"):
         _run_plan("sram-program", work_root=str(tmp_path / "work"), manifest=str(manifest_path))
 
 

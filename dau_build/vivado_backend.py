@@ -675,14 +675,13 @@ def _validate_manifest_contract(*, build_root: Path, manifest_path: Path, comman
     if build_status and build_status not in {"planned", "built", "timing-failed"}:
         errors.append(f"unsupported build status: {build_status}")
     if build_status in {"built", "timing-failed"}:
+        from dau_build.shell_build import ShellBuildError, ShellBuildRecord, _slack
+
         errors.extend(_validate_built_output_paths(build_root=build_root, manifest=manifest))
-    if build_status == "built" and "wns_ns" in manifest:
         try:
-            wns = float(manifest["wns_ns"])
-        except ValueError:
-            wns = None
-        if wns is None or wns < 0.0:
-            errors.append(f"build_status=built but wns_ns={manifest['wns_ns']!r}: a build that missed timing is timing-failed")
+            ShellBuildRecord.from_metadata({"build_status": build_status, "wns_ns": _slack(manifest.get("wns_ns", ""))})
+        except ShellBuildError as exc:
+            errors.append(str(exc))
     if manifest.get("dau_artifact_bundle"):
         errors.extend(_validate_dau_artifact_bundle_reference(build_root=build_root, manifest=manifest))
     return tuple(errors)

@@ -362,8 +362,9 @@ def test_a_timing_failed_overlay_manifest_validates_as_what_it_is(tmp_path: Path
     assert "build_status=timing-failed" in result.message
 
 
-def test_a_built_overlay_manifest_with_negative_slack_is_refused(tmp_path: Path) -> None:
-    _built_overlay_artifacts(tmp_path, status_line="wns_ns=-0.301\nbuild_status=built")
+@pytest.mark.parametrize("status_line", ["wns_ns=-0.301\nbuild_status=built", "build_status=built", "wns_ns=nan\nbuild_status=built"])
+def test_a_built_overlay_manifest_without_closed_timing_is_refused(tmp_path: Path, status_line: str) -> None:
+    _built_overlay_artifacts(tmp_path, status_line=status_line)
     with pytest.raises(BuildStepError, match="timing-failed"):
         _run(
             "task=tasks/validate/validate-vivado-artifacts",

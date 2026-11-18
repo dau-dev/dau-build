@@ -404,14 +404,20 @@ class SynthesizeTask(ModuleSelectionModel):
 def bitstream_from_shell_build_manifest(manifest_path: Path, *, role: str = "bitstream") -> Path:
     """Resolve and verify the image of ``role`` (the bitstream, or the cfgmem
     image of an SPI-boot board) from an artlink shell-build manifest:
-    build_status must be built and the file must match its recorded digest —
-    a flashed image is identified by provenance, never by filename."""
+    the metadata must read as a ``built`` ShellBuildRecord (which carries
+    a finite, non-negative WNS) and the file must match its recorded digest
+    — a flashed image is identified by provenance, never by filename."""
     import hashlib
 
     from dau_build.packaging import load_artifact_manifest
+    from dau_build.shell_build import ShellBuildError, ShellBuildRecord
 
     manifest = load_artifact_manifest(manifest_path)
-    if manifest.metadata.get("build_status") != "built":
+    try:
+        record = ShellBuildRecord.from_metadata(manifest.metadata)
+    except ShellBuildError as exc:
+        raise BuildStepError(f"shell-build manifest is not flashable: {manifest_path.as_posix()}: {exc}") from exc
+    if record.build_status != "built":
         raise BuildStepError(f"shell-build manifest is not built: {manifest_path.as_posix()}")
     bitstreams = [artifact for artifact in manifest.artifacts if artifact.role == role]
     if len(bitstreams) != 1:
