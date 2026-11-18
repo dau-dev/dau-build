@@ -1491,3 +1491,14 @@ def test_the_sim_harness_surfaces_the_handle_table_as_ports() -> None:
     assert "module dau_shell_handle_table #(" in text
     # the table's own resolve_request still comes off the harness start
     assert ".resolve_request(start && length_ok)," in text
+
+
+def test_tile_instance_maps_are_read_only() -> None:
+    """The walker emits HDL from a tile's config and params; a caller that
+    mutates them after validation must not change what is generated."""
+    tile = TileInstance(module="m", config={"cfg_x": "8'd1"}, params={"WIDTH": 8})
+    with pytest.raises(TypeError):
+        tile.config["cfg_x"] = "8'd2"  # ty: ignore[invalid-assignment]
+    with pytest.raises(TypeError):
+        tile.params["WIDTH"] = 16  # ty: ignore[invalid-assignment]
+    assert tile.model_dump()["params"] == {"WIDTH": 8}

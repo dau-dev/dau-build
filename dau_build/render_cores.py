@@ -16,7 +16,9 @@ rendering are not, and a generator is just a callable on the definition the
 registry handed back.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 from ccflow import Flow, NullContext
 
@@ -32,7 +34,20 @@ RENDER_ROOT_ENV = "DAU_CORE_RENDER_ROOT"
 RENDER_DIRNAME = "generated"
 
 
-def render_generated_cores(definitions, *, root: Path) -> tuple[Path, ...]:
+class RenderableCore(Protocol):
+    """The part of a registry core definition this task reads: its name,
+    whether it declares a generator, and the render call."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def generator(self) -> object | None: ...
+
+    def render(self, *, into: Path | None = None) -> Path: ...
+
+
+def render_generated_cores(definitions: Sequence[RenderableCore], *, root: Path) -> tuple[Path, ...]:
     """Render every generated core in ``definitions`` under ``root``.
 
     Returns the written paths. Cores with a checked-in source are skipped —
@@ -49,12 +64,9 @@ def render_generated_cores(definitions, *, root: Path) -> tuple[Path, ...]:
     target = root / RENDER_DIRNAME
     written: list[Path] = []
     for definition in definitions:
-        if getattr(definition, "generator", None) is None:
+        if definition.generator is None:
             continue
-        render = getattr(definition, "render", None)
-        if render is None:
-            raise BuildStepError(f"core {getattr(definition, 'name', '?')!r} declares a generator but the core provider offers no render()")
-        written.append(render(into=target))
+        written.append(definition.render(into=target))
     if written:
         os.environ[RENDER_ROOT_ENV] = str(target)
     return tuple(written)
@@ -76,8 +88,8 @@ class RenderCoresTask(BuildCallableModel):
         root.mkdir(parents=True, exist_ok=True)
         written = render_generated_cores(definitions, root=root)
 
-        generated = [d.name for d in definitions if getattr(d, "generator", None) is not None]
-        skipped = [d.name for d in definitions if getattr(d, "generator", None) is None]
+        generated = [d.name for d in definitions if d.generator is not None]
+        skipped = [d.name for d in definitions if d.generator is None]
         return BuildStepResult(
             step="render-cores",
             message=(

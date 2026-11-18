@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from ccflow import BaseModel
 from pydantic import ConfigDict, Field, StringConstraints
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
-from dau_build.svparser import Design
+
+if TYPE_CHECKING:
+    from dau_build.svparser import Design
 
 _NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 
@@ -145,6 +147,9 @@ class BuildSpec(BaseModel):
 
 
 def generate_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> DauBuildArtifacts:
+    # the SV-parser stack (amaranth, pyslang) loads only when a top is generated
+    from dau_build.svparser import Design
+
     design = Design.from_files(list(spec.sources))
     missing_modules = tuple(module_name for module_name in spec.modules if module_name not in design.modules)
     if missing_modules:

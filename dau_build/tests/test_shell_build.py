@@ -287,3 +287,10 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     assert missed_path is not None
     missed = load_artifact_manifest(missed_path)
     assert (missed.metadata["build_status"], missed.metadata["wns_ns"]) == ("timing-failed", -0.117)
+
+
+def test_shell_project_task_metadata_is_read_only(tmp_path: Path) -> None:
+    task = BuildShellProjectTask(output_root=tmp_path, metadata={"shell": "bar-noc"})
+    with pytest.raises(TypeError):
+        task.metadata["shell"] = "other"  # ty: ignore[invalid-assignment]
+    assert task.model_dump()["metadata"] == {"shell": "bar-noc"}

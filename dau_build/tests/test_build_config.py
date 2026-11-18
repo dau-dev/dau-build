@@ -52,3 +52,25 @@ def _identity_spec():
     from dau_build.config import compose_config
 
     return instantiate(compose_config(["spec=specs/identity"]).cfg.spec)
+
+
+def test_a_composed_board_must_build_what_the_spec_names() -> None:
+    spec = _identity_spec().resolve()
+    with pytest.raises(ValueError, match="builds for platform"):
+        ResolvedBuildConfig.from_spec(spec, board=BoardConfig(name="other", platform="other-xdma", shell=spec.shell))
+
+
+def test_the_driver_is_reported_only_when_composed() -> None:
+    spec = _identity_spec().resolve()
+    resolved = ResolvedBuildConfig.from_spec(spec)
+    assert resolved.driver is None
+    assert "driver\tnone" in resolved.to_text().splitlines()
+
+
+def test_composed_build_config_models_are_frozen() -> None:
+    board = BoardConfig(name="probe", platform="p", shell="s")
+    with pytest.raises(ValidationError):
+        board.name = "other"  # ty: ignore[invalid-assignment]
+    memory = MemoryConfig()
+    with pytest.raises(ValidationError):
+        memory.host_staging_bytes = 1  # ty: ignore[invalid-assignment]

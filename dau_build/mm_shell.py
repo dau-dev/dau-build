@@ -85,6 +85,8 @@ class MmDdrJobShellRequest(BaseModel):
     unchanged; the XADC feeds the controller's temperature compensation and
     is host-readable in the upper half of the AXI-Lite BAR."""
 
+    model_config = ConfigDict(frozen=True)
+
     output_root: Path
     hdl_sources: tuple[Path, ...]
     generated_sources: tuple[tuple[str, str], ...]
