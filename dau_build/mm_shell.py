@@ -27,7 +27,7 @@ from pathlib import Path
 from ccflow import BaseModel
 from pydantic import ConfigDict, model_validator
 
-from dau_build.platforms import PlatformDefinition
+from dau_build.platforms import PlatformDefinition, WidthTier
 
 
 class MmJobShellRequest(BaseModel):
@@ -103,7 +103,7 @@ class MmDdrJobShellRequest(BaseModel):
     # single shared M_AXI job master; wider tiers mean the top exposes a wide
     # read-only M_AXI_R plus the narrow write M_AXI_W, wired as two
     # smartconnect slaves. Mirrors the composition's data_width.
-    data_width: int = 64
+    data_width: WidthTier = 64
     jobs: int = 12
     # see MmJobShellRequest.post_route_phys_opt and impl_strategy
     post_route_phys_opt: bool = False

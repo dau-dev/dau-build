@@ -90,6 +90,7 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
         constraints_xdc="set_property CFGBVS GND [current_design]\n",
         lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
         programmer=VivadoHwServerProgrammer(),
+        width_tiers=(64,),
         placeholders=("host_link.xdma_personality",),
         platform_id="TEST",
     )
@@ -156,17 +157,17 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
 
 
-def test_width_tiers_default_and_composed_config() -> None:
-    # the model default is the universal 64-bit tier; a board's config names
-    # the tiers its memory system actually supports
-    assert PlatformDefinition.model_fields["width_tiers"].default == (64,)
+def test_width_tiers_are_required_board_config() -> None:
+    # a board's config names the tiers its memory system actually supports;
+    # the model assumes none
+    assert PlatformDefinition.model_fields["width_tiers"].is_required()
     assert probe_platform().width_tiers == (64, 128, 256)
 
 
 def test_width_tiers_validation() -> None:
     with pytest.raises(ValidationError, match="at least one tier"):
         _probe_with(width_tiers=())
-    with pytest.raises(ValidationError, match="64/128/256/512"):
+    with pytest.raises(ValidationError, match="width_tiers"):
         _probe_with(width_tiers=(64, 96))
     with pytest.raises(ValidationError, match="duplicates"):
         _probe_with(width_tiers=(64, 64))
@@ -178,8 +179,8 @@ def test_min_lanes_for_full_rate_follows_the_sizing_law() -> None:
     assert min_lanes_for_full_rate(128) == 2
     assert min_lanes_for_full_rate(256) == 4
     assert min_lanes_for_full_rate(512) == 8
-    with pytest.raises(ValueError, match="64/128/256/512"):
-        min_lanes_for_full_rate(96)
+    with pytest.raises(ValueError, match=r"\(64, 128, 256, 512\)"):
+        min_lanes_for_full_rate(96)  # ty: ignore[invalid-argument-type]  # deliberately outside the tiers
 
 
 def test_max_lanes_is_the_budget_ceiling() -> None:
@@ -236,7 +237,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     overlay = tmp_path / "user-configs"
     (overlay / "platform").mkdir(parents=True)
     (overlay / "platform" / "myboard.yaml").write_text(
-        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\nplatform_id: MYBD\nprogrammer:\n  _target_: dau_build.programmers.OpenFpgaLoaderProgrammer\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
+        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\nplatform_id: MYBD\nwidth_tiers: [64]\nprogrammer:\n  _target_: dau_build.programmers.OpenFpgaLoaderProgrammer\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
     )
     board = resolve_platform("myboard", config_dir=str(overlay))
     assert board.name == "myboard"

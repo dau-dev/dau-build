@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 from ccflow import BaseModel
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
@@ -30,6 +30,11 @@ from pydantic import ConfigDict, Field, field_serializer, field_validator, model
 from dau_build.programmers import Programmer
 
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
+
+# the memory-read widths (bits) a shell can be built at: a platform's
+# width_tiers, a request's data_width and the walker's DATA_WIDTH all take one
+WidthTier = Literal[64, 128, 256, 512]
+WIDTH_TIERS: tuple[WidthTier, ...] = get_args(WidthTier)
 _PCI_ID = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{4}")
 _BDF = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
 _ARGV_TOKEN = re.compile(r"[A-Za-z0-9_./=:,+@-]+")
@@ -410,7 +415,7 @@ class PlatformDefinition(BaseModel):
     # selection on this board. Bounded by the memory system's AXI width and
     # by what has closed timing on the part — a build request outside the
     # list is refused before any tool runs.
-    width_tiers: tuple[int, ...] = (64,)
+    width_tiers: tuple[WidthTier, ...]
     # job_clock_mhz is a CONVERSION REQUEST, not a frequency fact: its
     # presence makes the shell insert a clock converter and run the job logic
     # at this rate; its absence means the job inherits the XDMA axi_aclk
@@ -466,12 +471,9 @@ class PlatformDefinition(BaseModel):
 
     @field_validator("width_tiers")
     @classmethod
-    def _valid_width_tiers(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+    def _valid_width_tiers(cls, value: tuple[WidthTier, ...]) -> tuple[WidthTier, ...]:
         if not value:
             raise ValueError("width_tiers must name at least one tier")
-        bad = [tier for tier in value if tier not in (64, 128, 256, 512)]
-        if bad:
-            raise ValueError(f"width_tiers entries must be 64/128/256/512, got {bad}")
         if len(set(value)) != len(value):
             raise ValueError(f"width_tiers has duplicates: {value}")
         return value
@@ -553,7 +555,7 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
     return FitReport(fits=all(value >= 0 for value in headroom.values()), headroom=headroom, utilization=utilization)
 
 
-def min_lanes_for_full_rate(data_width: int) -> int:
+def min_lanes_for_full_rate(data_width: WidthTier) -> int:
     """The width-tier sizing law: a W-bit front delivers W/128 quad rows per
     beat and each lane drains one row per two cycles, so a catalog image
     sized to the front's delivered bandwidth needs ``lanes >= 2 * (W/128)``
@@ -561,8 +563,8 @@ def min_lanes_for_full_rate(data_width: int) -> int:
     Today's wide dispatcher serializes to one row per cycle, which two lanes
     already saturate; the law sizes for the front's full rate so precompiled
     images do not under-lane when parallel dispatch lands."""
-    if data_width not in (64, 128, 256, 512):
-        raise ValueError(f"data_width must be 64/128/256/512, got {data_width}")
+    if data_width not in WIDTH_TIERS:
+        raise ValueError(f"data_width must be one of {WIDTH_TIERS}, got {data_width}")
     return max(1, 2 * (data_width // 128))
 
 

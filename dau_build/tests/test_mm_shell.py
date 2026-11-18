@@ -252,7 +252,7 @@ def _probe_platform(**overrides):
         "constraints_xdc": "set_property CFGBVS GND [current_design]\n",
     }
     base.update(overrides)
-    return PlatformDefinition(**base, platform_id="TEST", programmer=OpenFpgaLoaderProgrammer())
+    return PlatformDefinition(**base, platform_id="TEST", programmer=OpenFpgaLoaderProgrammer(), width_tiers=(64,))
 
 
 def _with_xdma_params(platform, **updates):
