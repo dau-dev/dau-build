@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from artlink import Artifact
 from ccflow import BaseModel
 from pydantic import ConfigDict
 
-from dau_build.packaging import ArtifactManifestError, artifact_modules, artifact_path, load_artifact_manifest
+from dau_build.packaging import ArtifactManifestError, _copy_artifact, artifact_modules, artifact_path, load_artifact_manifest
 
 SUPPORTED_SOURCE_LANGUAGES = frozenset(("python", "systemverilog", "verilog"))
 HDL_SOURCE_LANGUAGES = frozenset(("systemverilog", "verilog"))
@@ -165,23 +164,3 @@ def _origin_summary(bundle: ArtifactBundle) -> str:
     if bundle.manifest_paths:
         return ", ".join(path.as_posix() for path in bundle.manifest_paths)
     return bundle.name
-
-
-def _copy_artifact(artifact: Artifact, **changes: Any) -> Artifact:
-    data = {
-        "id": artifact.id,
-        "name": artifact.name,
-        "path": artifact.path,
-        "uri": artifact.uri,
-        "kind": artifact.kind,
-        "role": artifact.role,
-        "format": artifact.format,
-        "media_type": artifact.media_type,
-        "language": artifact.language,
-        "provides": artifact.provides,
-        "requires": artifact.requires,
-        "digest": artifact.digest,
-        "metadata": artifact.metadata,
-    }
-    data.update(changes)
-    return Artifact(**data)

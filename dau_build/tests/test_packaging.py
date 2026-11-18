@@ -182,3 +182,27 @@ def test_shell_build_manifests_are_written_with_their_schema(tmp_path: Path) -> 
     manifest_path = write_shell_build_manifest(tmp_path, name="t", metadata={"build_status": "built", "wns_ns": 0.2})
     assert manifest_path.read_text(encoding="utf-8").startswith("schema: artlink.manifest/v0\n")
     assert load_artifact_manifest(manifest_path).name == "t"
+
+
+def test_artifact_copies_keep_every_field_and_validate() -> None:
+    """Copies go through the artlink model, so a field artlink adds is
+    carried over without a hand-kept field list, and a bad change fails."""
+    import pydantic
+    from artlink import Artifact, Capability, Digest
+
+    from dau_build.packaging import _copy_artifact
+
+    original = Artifact(
+        id="top",
+        path=Path("top.sv"),
+        kind="source",
+        role="hdl-source",
+        language="systemverilog",
+        provides=(Capability(kind="hdl-module", name="top"),),
+        digest=Digest(algorithm="sha256", value="0" * 64),
+        metadata={"owner": "example"},
+    )
+    copied = _copy_artifact(original, role="generated-top")
+    assert copied.model_dump() == {**original.model_dump(), "role": "generated-top"}
+    with pytest.raises(pydantic.ValidationError):
+        _copy_artifact(original, no_such_field="x")

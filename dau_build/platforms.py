@@ -22,12 +22,19 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 from ccflow import BaseModel
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from dau_build.programmers import Programmer
+
 _PCIE_LANE_WIDTHS = (1, 2, 4, 8, 16)
+
+# the memory-read widths (bits) a shell can be built at: a platform's
+# width_tiers, a request's data_width and the walker's DATA_WIDTH all take one
+WidthTier = Literal[64, 128, 256, 512]
+WIDTH_TIERS: tuple[WidthTier, ...] = get_args(WidthTier)
 _PCI_ID = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{4}")
 _BDF = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
 _ARGV_TOKEN = re.compile(r"[A-Za-z0-9_./=:,+@-]+")
@@ -68,7 +75,7 @@ class XdmaPersonality(BaseModel):
 
     def axi_clock_mhz(self) -> int:
         """The XDMA ``axi_aclk`` frequency in MHz from ``axisten_freq`` —
-        the clock the endpoint presents its AXI interfaces on (125 on dpv1's
+        the clock the endpoint presents its AXI interfaces on (125 for a
         Gen2 x4 personality; the IP forces 250 at Gen2 x8/128-bit)."""
         freq = self.params.get("axisten_freq", "")
         if not freq.isdigit():
@@ -95,12 +102,12 @@ class ResourceBudget(BaseModel):
 
 
 class HostLink(BaseModel):
-    """The host interface — PCIe/XDMA for the dpv1/dpv2 boards.
+    """The host interface, e.g. PCIe/XDMA.
 
     ``pcie_lanes`` is the endpoint's electrical width;
     ``expected_link_width``/``expected_link_speed_gts`` are what the link
-    actually trains at on the proven host (dpv1 negotiates x2 at 5.0 GT/s
-    over Thunderbolt despite the X4 personality) — bring-up checks compare
+    actually trains at on the host it sits in (a Thunderbolt enclosure can
+    negotiate x2 for an X4 personality) — bring-up checks compare
     against these, not the electrical maximum."""
 
     model_config = ConfigDict(frozen=True)
@@ -288,8 +295,11 @@ class HostAccess(BaseModel):
     # only / no runtime-PM holds), so each board states its own values
     rescan_bdfs: tuple[str, ...]
     runtime_pm_patterns: tuple[str, ...]
-    runtime_pm_executable: str = "dau-utils-pci-runtime-pm"
-    jtag_cable: str = "digilent_hs2"
+    # the dau-utils console scripts as this host resolves them (a full path
+    # when the privileged steps run under a prefix whose PATH differs)
+    runtime_pm_executable: str
+    deadman_executable: str
+    jtag_cable: str
     # the endpoint's direct upstream bridge, for the secondary-bus reset
     # (PERST#-equivalent) that re-inits the PCIe core after a volatile
     # reprogram; a measured bench fact, explicit rather than inferred from
@@ -352,15 +362,16 @@ class PlatformDefinition(BaseModel):
     ``require_measured`` refuses such boards for real builds while config-only
     generation stays open. ``host_access`` carries the bench host's measured
     access facts (PCI identity, endpoint/bridge BDFs, runtime-PM patterns,
-    JTAG cable) that ``HardwareToolchainConfig.for_platform`` composes from.
+    JTAG cable, dau-utils executables) that ``HardwareToolchainConfig.for_platform``
+    composes from.
 
     ``job_clock_mhz`` decouples the job logic's clock from the XDMA's
     ``axi_aclk``: when set, the shell generators derive a job clock at that
     frequency from ``axi_aclk`` (MMCM) and clock-convert both the register
     aperture and the memory path in the smartconnects, so a personality
     that forces a faster ``axi_aclk`` (250 MHz at Gen2 x8) never drags the
-    proven job-logic timing closure with it. ``None`` (the dpv1 default)
-    keeps the job logic on ``axi_aclk`` unchanged."""
+    proven job-logic timing closure with it. ``None`` keeps the job logic
+    on ``axi_aclk`` unchanged."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -381,11 +392,13 @@ class PlatformDefinition(BaseModel):
     lane_placements: tuple[tuple[int, str], ...] = ()
     # the platform's on-wire identity word (1–4 ASCII bytes) advertised in the
     # PLATFORM_ID register: the shell generators encode it into the identity
-    # block so first-power reads back the right platform. REQUIRED: a board
-    # that forgot to state one used to become dpv1 silently, and the shell
-    # would then stamp that identity into a device which is not that board.
+    # block so first-power reads back the right platform. REQUIRED: with a
+    # default, a board that forgot to state one would carry another board's
+    # identity into its shell.
     platform_id: str
-    program_method: str = "jtag"
+    # how this board is programmed when no `programmer=` group is composed
+    # (a Programmer model, e.g. OpenFpgaLoaderProgrammer for a JTAG board)
+    programmer: Programmer
     # the flash device's boot bus width when the board self-configures from
     # SPI (e.g. 4 for an SPIx4 part): a raw-bit JTAG `-f` write to such a
     # flash leaves the board memory-dead — persistent programming must go
@@ -402,11 +415,11 @@ class PlatformDefinition(BaseModel):
     # selection on this board. Bounded by the memory system's AXI width and
     # by what has closed timing on the part — a build request outside the
     # list is refused before any tool runs.
-    width_tiers: tuple[int, ...] = (64,)
+    width_tiers: tuple[WidthTier, ...]
     # job_clock_mhz is a CONVERSION REQUEST, not a frequency fact: its
     # presence makes the shell insert a clock converter and run the job logic
     # at this rate; its absence means the job inherits the XDMA axi_aclk
-    # unconverted. dpv1 deliberately leaves it None and still runs at 125.
+    # unconverted (a Gen2 x4 board leaving it None still runs at 125 MHz).
     # Anything that needs the actual frequency (pricing against measured
     # resource points, rate models) must ask effective_job_clock_mhz().
     job_clock_mhz: int | None = None
@@ -443,7 +456,7 @@ class PlatformDefinition(BaseModel):
     def effective_job_clock_mhz(self) -> int:
         """The frequency the job logic actually runs at: ``job_clock_mhz``
         when a converter is requested, otherwise the XDMA ``axi_aclk`` the
-        job inherits (125 on dpv1's Gen2 x4 personality). This is the clock
+        job inherits (125 for a Gen2 x4 personality). This is the clock
         to price and rate-model against; ``job_clock_mhz`` alone cannot
         answer that question because ``None`` there means "unconverted", not
         "unknown"."""
@@ -456,21 +469,11 @@ class PlatformDefinition(BaseModel):
             raise ValueError(f"platform {info.field_name} must be non-empty")
         return value
 
-    @field_validator("program_method")
-    @classmethod
-    def _valid_program_method(cls, value: str) -> str:
-        if value not in ("jtag", "flash"):
-            raise ValueError(f"program_method must be 'jtag' or 'flash', got {value!r}")
-        return value
-
     @field_validator("width_tiers")
     @classmethod
-    def _valid_width_tiers(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+    def _valid_width_tiers(cls, value: tuple[WidthTier, ...]) -> tuple[WidthTier, ...]:
         if not value:
             raise ValueError("width_tiers must name at least one tier")
-        bad = [tier for tier in value if tier not in (64, 128, 256, 512)]
-        if bad:
-            raise ValueError(f"width_tiers entries must be 64/128/256/512, got {bad}")
         if len(set(value)) != len(value):
             raise ValueError(f"width_tiers has duplicates: {value}")
         return value
@@ -552,7 +555,7 @@ def fits(used: ResourceUse, platform: PlatformDefinition) -> FitReport:
     return FitReport(fits=all(value >= 0 for value in headroom.values()), headroom=headroom, utilization=utilization)
 
 
-def min_lanes_for_full_rate(data_width: int) -> int:
+def min_lanes_for_full_rate(data_width: WidthTier) -> int:
     """The width-tier sizing law: a W-bit front delivers W/128 quad rows per
     beat and each lane drains one row per two cycles, so a catalog image
     sized to the front's delivered bandwidth needs ``lanes >= 2 * (W/128)``
@@ -560,8 +563,8 @@ def min_lanes_for_full_rate(data_width: int) -> int:
     Today's wide dispatcher serializes to one row per cycle, which two lanes
     already saturate; the law sizes for the front's full rate so precompiled
     images do not under-lane when parallel dispatch lands."""
-    if data_width not in (64, 128, 256, 512):
-        raise ValueError(f"data_width must be 64/128/256/512, got {data_width}")
+    if data_width not in WIDTH_TIERS:
+        raise ValueError(f"data_width must be one of {WIDTH_TIERS}, got {data_width}")
     return max(1, 2 * (data_width // 128))
 
 

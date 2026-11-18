@@ -53,8 +53,8 @@ class VivadoBackendRequest(BaseModel):
     build_root: Path
     dau_artifact_bundle_path: Path | None = None
     artifact_stem: str = "dau-vivado"
-    platform: str = "vivado-xdma"
-    shell: str = "xdma-shell"
+    platform: str
+    shell: str
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
     register_map_version: str
@@ -108,8 +108,8 @@ class VivadoProjectGenerationRequest(BaseModel):
     dau_top_sv_path: Path | None = None
     dau_artifact_bundle_path: Path | None = None
     artifact_stem: str = "dau-vivado"
-    platform: str = "vivado-xdma"
-    shell: str = "xdma-shell"
+    platform: str
+    shell: str
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
     register_map_version: str
@@ -131,10 +131,10 @@ class VivadoProjectGenerationRequest(BaseModel):
     plan_executable: str = "dau-build"
     overlay_definition: VivadoOverlayDefinition | None = None
     # the task name recorded in the replayable stage_command. Callers that
-    # inject an overlay definition through their own task overlay (e.g. a
-    # private dpv1-stage-vivado-overlay) pass that task's name so replaying
-    # the recorded command re-composes the injection instead of demanding a
-    # definition on a flat command line.
+    # inject an overlay definition through their own task overlay (e.g. an
+    # integration package's tasks/stage/<board>-stage-vivado-overlay) pass
+    # that task's name so replaying the recorded command re-composes the
+    # injection instead of demanding a definition on a flat command line.
     stage_task_name: str = DEFAULT_STAGE_TASK_NAME
 
     @field_validator("stage_task_name")
@@ -725,7 +725,7 @@ def vivado_project_stage_command(request: VivadoProjectGenerationRequest) -> str
         # mark the field hydra-missing so replaying the recorded command
         # refuses to silently re-stage the packaged default overlay instead
         overrides.append(("overlay_definition", "???"))
-    overrides.append(("operator", ",".join(request.operator_set)))
+    overrides.append(("operator_set", request.operator_set))
     return _task_command(request.plan_executable, request.stage_task_name, tuple(overrides))
 
 
@@ -901,7 +901,7 @@ def _validate_project_manifest_commands(
         "manifest_path": manifest_path.as_posix(),
         "command_plan_path": command_plan_path.as_posix(),
         "vivado": m.vivado_executable,
-        "operator": ",".join(m.operator_set),
+        "operator_set": ",".join(m.operator_set),
     }
     if m.vivado_settings:
         # recorded only when the host named one; an absent settings file is absent on replay too
@@ -983,7 +983,7 @@ def _validate_project_command(
     if tasks != [expected_task]:
         return (f"project {label} task mismatch: {','.join(tasks) or '<none>'} != {expected_task}",)
     from hydra.errors import HydraException
-    from omegaconf import OmegaConf
+    from omegaconf import ListConfig, OmegaConf
     from omegaconf.errors import OmegaConfBaseException
 
     try:
@@ -1005,6 +1005,9 @@ def _validate_project_command(
             errors.append(f"project {label} task has no field: {field}")
             continue
         actual = cfg.model[field]
+        if isinstance(actual, ListConfig):
+            # list fields are recorded comma-joined in the key=value manifest
+            actual = ",".join(str(item) for item in actual)
         if expected and (actual is None or str(actual) != expected):
             errors.append(f"project {label} field {field} mismatch: {actual} != {expected}")
     return tuple(errors)

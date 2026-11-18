@@ -31,6 +31,8 @@ from types import MappingProxyType
 from ccflow import BaseModel
 from pydantic import ConfigDict, Field, field_serializer, field_validator
 
+from dau_build.platforms import WIDTH_TIERS, WidthTier
+
 __all__ = (
     "HANDLE_CONTROL_FREE_BIT",
     "HANDLE_CONTROL_INSTALL_BIT",
@@ -217,7 +219,7 @@ class ScanComposition(BaseModel):
     # M_AXI byte-identical; 128/256/512 split a wide read-only M_AXI_R off from
     # the narrow write M_AXI_W (the record writers stay 64-bit) so a wide DDR
     # read never forces narrow writes on a wide bus.
-    data_width: int = 64
+    data_width: WidthTier = 64
     wide_lane: bool = False
     # the byte size of ONE record the composition's first consumer reads.
     # 16 is the standard quad row; a fused chain whose head takes a wider
@@ -329,12 +331,11 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     # fan-out (the rows/cycle framing the dispatcher accepts). A front unpacker
     # widens packed rows; a front gearbox emits one input record; without either
     # front stage the feed IS the reader stream.
-    _WIDTHS = (64, 128, 256, 512)
     # both the gearbox and the record dispatcher elaboration-guard RECORD_WORDS
     _MAX_RECORD_WORDS = 16
     data_width = composition.data_width
-    if data_width not in _WIDTHS:
-        raise ScanCompositionError(f"data_width must be one of {_WIDTHS}, got {data_width}")
+    if data_width not in WIDTH_TIERS:
+        raise ScanCompositionError(f"data_width must be one of {WIDTH_TIERS}, got {data_width}")
     if composition.wide_lane and data_width not in (128, 256, 512):
         raise ScanCompositionError(f"wide_lane data_width must be one of (128, 256, 512), got {data_width}")
     if composition.front_unpack is not None and composition.front_gearbox is not None:
@@ -398,8 +399,8 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     # RECORD_WORDS to [1, 16], and a $fatal is a far worse failure than a
     # composition error — it surfaces mid-synthesis with no attribution.
     if composition.front_gearbox is None:
-        if fanout_width not in _WIDTHS:
-            raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {_WIDTHS}, got {fanout_width}")
+        if fanout_width not in WIDTH_TIERS:
+            raise ScanCompositionError(f"the shared partitioner's IN_WIDTH must be one of {WIDTH_TIERS}, got {fanout_width}")
     elif not (64 <= fanout_width <= _MAX_RECORD_WORDS * 64) or fanout_width % 64:
         raise ScanCompositionError(
             f"a geared record bus must be a whole number of 64-bit words, at most {_MAX_RECORD_WORDS}; got {fanout_width} bits "

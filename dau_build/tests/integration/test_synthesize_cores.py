@@ -15,7 +15,7 @@ _TOP_K = "/dau-core/streaming-top-k"
 
 
 def _task(tmp_path: Path, **kwargs) -> SynthesizeCoresTask:
-    defaults: dict[str, Any] = {"cores": (_TOP_K,), "output_root": tmp_path, "part": "xc7a200tfbg484-2"}
+    defaults: dict[str, Any] = {"cores": (_TOP_K,), "output_root": tmp_path, "part": "xc7a200tfbg484-2", "clock_period_ns": 8.0}
     defaults.update(kwargs)
     return SynthesizeCoresTask(**defaults)
 
@@ -112,14 +112,20 @@ def test_unknown_core_and_bad_path_are_rejected(tmp_path: Path) -> None:
         _task(tmp_path, cores=("/elsewhere/thing",))(NullContext())
 
 
-def test_part_falls_back_to_platform_and_errors_without_either(tmp_path: Path) -> None:
+def test_part_and_clock_fall_back_to_platform_and_error_without_either(tmp_path: Path) -> None:
     from dau_build.tests.platform_fixtures import probe_platform
 
-    task = SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path, platform=probe_platform())
+    # the example board's job clock is its 125 MHz axi_aclk: an 8 ns period;
+    # at a 150 MHz job clock the constraint follows the platform
+    platform = probe_platform().model_copy(update={"job_clock_mhz": 150})
+    task = SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path, platform=platform)
     task(NullContext())
-    assert f"-part {probe_platform().part}" in (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
+    assert "-part xc7k325tffg676-2" in (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
+    assert "create_clock -period 6.667 " in (tmp_path / "dau_streaming_top_k.ooc.xdc").read_text()
     with pytest.raises(BuildStepError, match="no part selected"):
         SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path / "x")(NullContext())
+    with pytest.raises(BuildStepError, match="no clock selected"):
+        SynthesizeCoresTask(cores=(_TOP_K,), output_root=tmp_path / "y", part="xc7a200tfbg484-2")(NullContext())
 
 
 _UTIL_RPT = """
@@ -211,6 +217,7 @@ def test_task_composes_from_the_config_group(tmp_path: Path) -> None:
             f"model.cores=[{_TOP_K}]",
             f"model.output_root={tmp_path}",
             "model.part=xc7a200tfbg484-2",
+            "model.clock_period_ns=8.0",
         ]
     )
     outcome = cfg_run(result.cfg)

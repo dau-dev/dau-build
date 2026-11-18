@@ -7,9 +7,8 @@ model selected from the ``programmer`` config group
 delegate to ``detect_step``/``program_step``; there is no
 programmer ``Literal``, string→type table, or dispatch ``if``.
 
-The default programmer follows a board's ``PlatformDefinition.program_method``
-(``jtag`` → ``OpenFpgaLoaderProgrammer``, ``flash`` →
-``VivadoHwServerProgrammer``); an explicit ``programmer=`` override wins.
+The default programmer is the board's ``PlatformDefinition.programmer`` (a
+model composed with the platform); an explicit ``programmer=`` override wins.
 
 Detection is optional: ``detect_step`` returns ``None`` for a programmer with
 no separate detect step (e.g. the Vivado hw_server path), and every plan that
@@ -53,12 +52,12 @@ class Programmer(BaseModel):
 
 class OpenFpgaLoaderProgrammer(Programmer):
     """JTAG programming via ``openFPGALoader``. ``executable``/``jtag_cable``
-    default to the composed toolchain config (so a board's ``host_access``
-    cable and a ``HardwarePlanTask.openfpgaloader`` override still flow
-    through); an explicitly composed programmer may pin them."""
+    left unset follow the composed toolchain config (the task's
+    ``openfpgaloader`` executable and the board's ``host_access`` cable); a
+    composed programmer may pin them."""
 
     name: str = "openfpgaloader"
-    executable: str = "openFPGALoader"
+    executable: str | None = None
     jtag_cable: str | None = None
 
     def _cable(self, config: HardwareToolchainConfig) -> str:
@@ -66,14 +65,22 @@ class OpenFpgaLoaderProgrammer(Programmer):
             return self.jtag_cable
         return config.required_host_access("jtag_cable")
 
+    def _executable(self, config: HardwareToolchainConfig) -> str:
+        return self.executable if self.executable is not None else config.openfpgaloader_executable
+
+    def _executable_override(self, config: HardwareToolchainConfig) -> str:
+        if self.executable is None:
+            return "model.openfpgaloader"
+        return "programmer.executable" if config.programmer is self else "platform.programmer.executable"
+
     def detect_step(self, config: HardwareToolchainConfig) -> ToolStep:
         from dau_build.hardware_plan import ToolStep
 
         return ToolStep(
             "jtag-detect",
-            (self.executable, "-c", self._cable(config), "--detect"),
-            required_executable=self.executable,
-            executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+            (self._executable(config), "-c", self._cable(config), "--detect"),
+            required_executable=self._executable(config),
+            executable_override=self._executable_override(config),
         )
 
     def program_step(self, config: HardwareToolchainConfig, *, mode: Literal["volatile", "persistent"] = "volatile") -> ToolStep:
@@ -88,15 +95,15 @@ class OpenFpgaLoaderProgrammer(Programmer):
                 )
             return ToolStep(
                 "program-persistent",
-                (self.executable, "-c", self._cable(config), "-f", str(config.bitstream)),
-                required_executable=self.executable,
-                executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+                (self._executable(config), "-c", self._cable(config), "-f", str(config.bitstream)),
+                required_executable=self._executable(config),
+                executable_override=self._executable_override(config),
             )
         return ToolStep(
             "program-volatile",
-            (self.executable, "-c", self._cable(config), str(config.bitstream)),
-            required_executable=self.executable,
-            executable_override="programmer.executable" if config.programmer is self else "model.openfpgaloader",
+            (self._executable(config), "-c", self._cable(config), str(config.bitstream)),
+            required_executable=self._executable(config),
+            executable_override=self._executable_override(config),
         )
 
 

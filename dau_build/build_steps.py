@@ -22,6 +22,7 @@ from dau_build.hardware_plan import (
     vivado_overlay_build_step,
 )
 from dau_build.platforms import PlatformDefinition
+from dau_build.programmers import Programmer
 from dau_build.vivado_backend import (
     VivadoBackendArtifacts,
     VivadoBackendArtifactValidation,
@@ -168,11 +169,6 @@ class CocotbSimulator(Simulator):
     profile: str | None = None
     profile_manifest: tuple[Path, ...] = ()
 
-    @field_validator("profile_manifest", mode="before")
-    @classmethod
-    def _split_profile_manifest_paths(cls, value):
-        return _split_path_tuple(value)
-
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
             from dau_sim.integrations.cocotb import run_cocotb_testbench
@@ -205,11 +201,6 @@ class VerilatorSimulator(Simulator):
     expect_stdout: str | None = None
     verilator: str = "verilator"
     extra_args: str = ""
-
-    @field_validator("profile_manifest", mode="before")
-    @classmethod
-    def _split_profile_manifest_paths(cls, value):
-        return _split_path_tuple(value)
 
     def simulate(self, *, task: "SimulateTask") -> BuildStepResult:
         if self.profile and task._no_spec():
@@ -558,9 +549,10 @@ class VivadoOverlayStageTask(OverlayStageTask):
     dau_artifact_bundle: Path | None = None
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     artifact_stem: str = "dau-vivado"
-    backend_platform: str = "vivado-xdma"
-    backend_shell: str = "xdma-shell"
-    operator: str | None = None
+    # the platform and shell labels the manifest records, set by the task config
+    backend_platform: str
+    backend_shell: str
+    operator_set: tuple[str, ...] = Field(min_length=1)
     # the wire contract the grafted identity registers implement; set by the
     # task config, never defaulted here
     register_map_version: str
@@ -582,7 +574,7 @@ class VivadoOverlayStageTask(OverlayStageTask):
             artifact_stem=self.artifact_stem,
             platform=self.backend_platform,
             shell=self.backend_shell,
-            operator_set=self._operator_set(),
+            operator_set=self.operator_set,
             register_map_version=self.register_map_version,
             stream_protocol_version=self.stream_protocol_version,
             overlay_tcl=self.overlay_tcl,
@@ -603,11 +595,6 @@ class VivadoOverlayStageTask(OverlayStageTask):
             vivado_mount_root=self.vivado_mount_root,
             bitstream_path=self.bitstream,
         )
-
-    def _operator_set(self) -> tuple[str, ...]:
-        if self.operator is None:
-            return ("identity",)
-        return tuple(operator for operator in self.operator.split(",") if operator) or ("identity",)
 
     def _required_root(self, field_name: str) -> Path:
         value = getattr(self, field_name)
@@ -638,7 +625,7 @@ class VivadoProjectStageTask(VivadoOverlayStageTask):
             artifact_stem=self.artifact_stem,
             platform=self.backend_platform,
             shell=self.backend_shell,
-            operator_set=self._operator_set(),
+            operator_set=self.operator_set,
             register_map_version=self.register_map_version,
             stream_protocol_version=self.stream_protocol_version,
             overlay_tcl=self.overlay_tcl,
@@ -825,15 +812,16 @@ class HardwarePlanTask(BuildCallableModel):
     # the plan is the composed `plan` group option (a HardwarePlan model that
     # owns its own required fields); the task holds the shared toolchain
     # config. Hardware access (endpoint identity, BDFs, runtime-PM patterns,
-    # JTAG cable) composes from the `platform=` group's host_access when
-    # given; explicit task fields override it; with neither, the facts stay
+    # JTAG cable, dau-utils executables) composes from the `platform=`
+    # group's host_access and is changed there
+    # (platform.host_access.<field>=...); without a platform the facts stay
     # unset and steps that need them fail with guidance (dau-build carries
     # no board defaults).
-    plan: Any = None
-    platform: Any = None
-    # the programmer is the composed `programmer` group option (a Programmer
-    # model); with none, the platform's program_method selects the default
-    programmer: Any = None
+    plan: HardwarePlan | None = None
+    platform: PlatformDefinition | None = None
+    # the programmer is the composed `programmer` group option; with none,
+    # the platform's own programmer is used
+    programmer: Programmer | None = None
     work_root: Path
     # the built shell manifest (shell-build.artifacts.yaml) whose bitstream
     # the plan programs: status and digest verified, the bytes snapshotted
@@ -844,15 +832,6 @@ class HardwarePlanTask(BuildCallableModel):
     vivado_invocation: Literal["standard", "source-only"] = "standard"
     vivado_mount_root: Path | None = None
     openfpgaloader: str = "openFPGALoader"
-    jtag_cable: str | None = None
-    endpoint_bdf: str | None = None
-    reset_bridge_bdf: str | None = None
-    expected_endpoint_id: str | None = None
-    runtime_pm_executable: str | None = None
-    deadman_executable: str | None = None
-    runtime_pm_patterns: tuple[str, ...] | None = None
-    rescan_bdfs: tuple[str, ...] | None = None
-    privilege_prefix: tuple[str, ...] | None = None
     execute: bool = False
 
     @Flow.call
@@ -877,15 +856,6 @@ class HardwarePlanTask(BuildCallableModel):
             vivado_mount_root=self.vivado_mount_root,
             bitstream_path=bitstream_path,
             openfpgaloader_executable=self.openfpgaloader,
-            jtag_cable=self.jtag_cable,
-            endpoint_bdf=self.endpoint_bdf,
-            reset_bridge_bdf=self.reset_bridge_bdf,
-            expected_endpoint_id=self.expected_endpoint_id,
-            runtime_pm_executable=self.runtime_pm_executable,
-            deadman_executable=self.deadman_executable,
-            runtime_pm_patterns=self.runtime_pm_patterns,
-            rescan_bdfs=self.rescan_bdfs,
-            privilege_prefix=self.privilege_prefix,
         )
         plan_result = plan.compose(config)
         if self.execute:
@@ -901,7 +871,7 @@ class HardwarePlanTask(BuildCallableModel):
         return BuildStepResult(step="hardware-plan", message=format_plan_steps(plan_result))
 
     def _plan(self) -> HardwarePlan:
-        if isinstance(self.plan, HardwarePlan):
+        if self.plan is not None:
             return self.plan
         raise BuildStepError("task=hardware-plan requires plan=plans/<name> (see dau_build/config/plan)")
 
@@ -1025,18 +995,6 @@ def _run_verilator_bench(spec, *, extra_sources, top_module, expect_stdout, veri
     if expect_stdout and expect_stdout not in result.stdout:
         raise BuildStepError(f"verilator stdout did not contain expected text {expect_stdout!r}")
     return result
-
-
-def _split_path_tuple(value) -> tuple[Path, ...]:
-    if value in (None, ""):
-        return ()
-    if isinstance(value, Path):
-        return (value,)
-    if isinstance(value, str):
-        return tuple(Path(item) for item in value.split(",") if item)
-    if isinstance(value, Iterable):
-        return tuple(Path(item) for item in value)
-    return value
 
 
 def _vivado_artifact_validation_message(validation: VivadoBackendArtifactValidation | VivadoProjectArtifactValidation) -> str:

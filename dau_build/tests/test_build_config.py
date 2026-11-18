@@ -36,9 +36,10 @@ def test_resolve_build_config_is_a_view_over_the_spec() -> None:
     resolved = ResolvedBuildConfig.from_spec(spec)
     assert isinstance(resolved, ResolvedBuildConfig)
     assert isinstance(resolved.board, BoardConfig) and isinstance(resolved.memory, MemoryConfig)
-    # board/operators/backend derive from the spec (no bespoke override dict)
+    # board/operators derive from the spec; the backend is only ever the
+    # composed group or a task's engine, never a spec field
     assert resolved.board.platform == spec.platform and resolved.board.shell == spec.shell
-    assert resolved.backend.name == spec.backend
+    assert resolved.backend.name == "none"
     assert resolved.operators.names == spec.operators
     assert resolved.to_text().splitlines()[0] == "dau-build-resolved-config"
     # a task may select the synthesis engine

@@ -12,7 +12,8 @@ platform: ${oc.select:platform,null}
 cores: ???
 output_root: ???
 part: null
-clock_period_ns: 8.0
+# null: the composed platform's job clock
+clock_period_ns: null
 parameters: {}
 clock_ports: {}
 execute: false

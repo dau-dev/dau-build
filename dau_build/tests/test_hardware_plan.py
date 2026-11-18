@@ -21,6 +21,7 @@ from dau_build.hardware_plan import (
     thunderbolt_release_plan,
     validate_bitstream_plan,
 )
+from dau_build.programmers import OpenFpgaLoaderProgrammer, VivadoHwServerProgrammer
 from dau_build.vivado_backend import (
     VivadoBackendRequest,
     VivadoProjectGenerationRequest,
@@ -94,6 +95,9 @@ DPV1_HOST_ACCESS: dict[str, Any] = {
     "jtag_cable": "digilent_hs2",
     "runtime_pm_patterns": ("Xilinx", "10ee:9034"),
     "rescan_bdfs": EXPECTED_PCI_RESCAN_BDFS,
+    "runtime_pm_executable": "dau-utils-pci-runtime-pm",
+    "deadman_executable": "dau-utils-deadman",
+    "default_programmer": OpenFpgaLoaderProgrammer(),
 }
 
 
@@ -339,6 +343,8 @@ def test_structured_vivado_backend_request_records_ci_artifact_contract() -> Non
 
 def test_structured_vivado_backend_request_supports_source_only_vivado_wrapper() -> None:
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
         build_root=Path("/repo/dau-build/outputs/vivado"),
@@ -374,6 +380,8 @@ def test_structured_vivado_backend_request_supports_source_only_mount_root(tmp_p
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=repo_root / "dau-core" / "dau_core" / "hdl",
         build_root=build_root,
@@ -424,6 +432,8 @@ def test_structured_vivado_backend_request_consumes_dau_artifact_bundle(tmp_path
         encoding="utf-8",
     )
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
         build_root=tmp_path / "vivado-xdma",
@@ -492,7 +502,7 @@ def test_structured_vivado_project_generation_request_records_workdir_inputs() -
     stage = shlex.split(manifest["stage_command"])
     assert stage[:2] == ["dau-build", "task=tasks/stage/stage-vivado-overlay"]
     assert "model.source_shell_root='/repo/projects/vivado-shell'" in stage
-    assert "model.operator='identity,sum_i64'" in stage
+    assert "model.operator_set=['identity','sum_i64']" in stage
     build = shlex.split(manifest["build_command"])
     assert build[:2] == ["dau-build", "task=tasks/build/build-vivado-artifacts"]
     assert {"model.manifest_path='dau-ci.manifest'", "model.command_plan_path='dau-ci.plan'", "model.project_manifest_path='dau-ci.project'"} <= set(
@@ -530,6 +540,8 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
         dau_driver_root=Path("/repo/dau-driver"),
         artifact_stem="dau-ci",
         register_map_version="0.3",
+        platform="vivado-xdma",
+        shell="xdma-shell",
         **variant,
     )
     project = vivado_backend.vivado_project_generation_manifest(request)
@@ -557,6 +569,8 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
 
 def test_project_command_validation_refuses_a_command_that_does_not_compose() -> None:
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         source_shell_root=Path("/repo/projects/vivado-shell"),
         work_root=Path("/repo/out/vivado"),
         dau_core_root=Path("/repo/dau-core"),
@@ -578,6 +592,8 @@ def test_project_command_validation_refuses_a_command_that_does_not_compose() ->
 
 def test_structured_vivado_project_generation_records_source_only_vivado_wrapper() -> None:
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/vivado-shell"),
         work_root=Path("/repo/dau-build/outputs/vivado"),
@@ -633,6 +649,8 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
 def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -665,6 +683,8 @@ def test_validate_structured_backend_artifact_bundle_accepts_built_outputs(tmp_p
 def test_validate_structured_backend_artifact_bundle_rejects_built_status_without_reports(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -729,6 +749,8 @@ def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tm
 def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mismatch(tmp_path: Path) -> None:
     artifacts = _write_project_artifacts(
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=Path("/repo/projects/vivado-shell"),
             work_root=tmp_path,
@@ -755,6 +777,8 @@ def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mi
 def test_validate_structured_backend_artifact_bundle_reports_missing_overlay(tmp_path: Path) -> None:
     artifacts = _write_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -1026,6 +1050,8 @@ def test_stage_vivado_overlay_plan_writes_backend_artifacts_without_running_viva
 
     steps = stage_vivado_overlay_plan(
         config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         dau_core_root=Path("/repo/dau-core"),
     )
@@ -1044,6 +1070,8 @@ def test_stage_vivado_overlay_plan_can_stage_shell_seed_into_workdir() -> None:
 
     steps = stage_vivado_overlay_plan(
         config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/reference/vivado-shell"),
         dau_core_root=Path("/repo/dau-core"),
@@ -1174,10 +1202,12 @@ def test_dau_overlay_manifest_records_backend_contract() -> None:
     assert dau_overlay_manifest_text(Path("/repo/dau-core/dau_core/hdl")).splitlines()[0] == "backend=dau_build.vivado_backend.vivado_overlay"
 
 
-def test_flash_plan_routes_through_the_program_method_selector() -> None:
+def test_flash_plan_routes_through_the_platform_programmer() -> None:
     # a flash board flashes through the Vivado hw_server path (byte-identical
     # to the pre-adapter flash step)
-    flash_config = _bench_config(work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado", program_method="flash")
+    flash_config = _bench_config(
+        work_root=Path("/repo/projects/vivado-shell"), vivado_executable="vivado", default_programmer=VivadoHwServerProgrammer()
+    )
     steps = flash_plan(flash_config)
     assert [step.name for step in steps] == ["thunderbolt-hold", "flash", "thunderbolt-release"]
     assert steps[1].argv[0:2] == ("bash", "-lc")
@@ -1419,9 +1449,18 @@ def test_vivado_invocation_is_validated_at_model_construction(tmp_path: Path) ->
     with pytest.raises(pydantic.ValidationError):
         HardwareToolchainConfig(work_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
     with pytest.raises(pydantic.ValidationError):
-        VivadoBackendRequest(register_map_version="0.3", dau_core_hdl_root=tmp_path, build_root=tmp_path, vivado_invocation="bogus")  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
+        VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
+            register_map_version="0.3",
+            dau_core_hdl_root=tmp_path,
+            build_root=tmp_path,
+            vivado_invocation="bogus",  # ty: ignore[invalid-argument-type]  # deliberately invalid: the test is that it is refused
+        )
     with pytest.raises(pydantic.ValidationError):
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=tmp_path,
             work_root=tmp_path,
@@ -1507,7 +1546,12 @@ def test_empty_lane_placements_omit_the_placement_block() -> None:
 def test_backend_request_overlay_definition_threads_into_generated_artifacts(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoBackendRequest(
-        register_map_version="0.3", dau_core_hdl_root=Path("/repo/acme/hdl"), build_root=tmp_path, overlay_definition=definition
+        platform="vivado-xdma",
+        shell="xdma-shell",
+        register_map_version="0.3",
+        dau_core_hdl_root=Path("/repo/acme/hdl"),
+        build_root=tmp_path,
+        overlay_definition=definition,
     )
 
     artifacts = generate_vivado_backend_artifacts(request)
@@ -1521,6 +1565,8 @@ def test_backend_request_overlay_definition_threads_into_generated_artifacts(tmp
 def test_project_request_forwards_the_overlay_definition_to_the_backend(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1542,7 +1588,14 @@ def test_stage_vivado_overlay_plan_stages_the_injected_definition(tmp_path: Path
     definition = _acme_overlay_definition()
     config = HardwareToolchainConfig(work_root=tmp_path)
 
-    steps = stage_vivado_overlay_plan(config, register_map_version="0.3", dau_core_root=Path("/repo/acme"), overlay_definition=definition)
+    steps = stage_vivado_overlay_plan(
+        config,
+        platform="vivado-xdma",
+        shell="xdma-shell",
+        register_map_version="0.3",
+        dau_core_root=Path("/repo/acme"),
+        overlay_definition=definition,
+    )
 
     overlay_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-dau-overlay"))
     build_source = _decoded_write_step_payload(next(step for step in steps if step.name == "write-vivado-build-script"))
@@ -1572,6 +1625,8 @@ def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Pa
     definition = _acme_overlay_definition()
     request_kwargs: dict[str, Any] = {
         "register_map_version": "0.3",
+        "platform": "vivado-xdma",
+        "shell": "xdma-shell",
         "source_shell_root": Path("/repo/projects/nite"),
         "work_root": tmp_path,
         "dau_core_root": Path("/repo/acme"),
@@ -1594,6 +1649,8 @@ def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Pa
 def test_project_command_validation_requires_the_injected_definition_marker(tmp_path: Path) -> None:
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1662,8 +1719,9 @@ def test_toolchain_config_composes_from_platform_host_access() -> None:
     assert "lspci -Dnn -d 10ee:9038" in by_name["lspci-endpoint"].argv[2]
     assert "0000:64:00.0" in by_name["lspci-endpoint"].argv[2]
 
-    # explicit overrides beat platform data
-    assert HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2").jtag_cable == "digilent_hs2"
+    # host access is not a toolchain argument: it changes only through the platform
+    with pytest.raises(TypeError, match="jtag_cable"):
+        HardwareToolchainConfig.for_platform(other, work_root=Path("/w"), jtag_cable="digilent_hs2")
 
 
 def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
@@ -1685,11 +1743,10 @@ def test_openfpgaloader_programmer_reproduces_prior_steps() -> None:
     )
 
 
-def test_program_method_flash_selects_the_vivado_programmer() -> None:
-    from dau_build.programmers import VivadoHwServerProgrammer
+def test_a_flash_board_declares_the_vivado_programmer() -> None:
     from dau_build.tests.platform_fixtures import probe_platform
 
-    flash_board = probe_platform().model_copy(update={"program_method": "flash"})
+    flash_board = probe_platform().model_copy(update={"programmer": VivadoHwServerProgrammer()})
     config = HardwareToolchainConfig.for_platform(flash_board, work_root=Path("/w"), vivado_executable="vivado")
     programmer = config.resolve_programmer()
     assert isinstance(programmer, VivadoHwServerProgrammer)
@@ -1702,7 +1759,7 @@ def test_program_method_flash_selects_the_vivado_programmer() -> None:
         programmer.program_step(config)
 
 
-def test_explicit_programmer_override_beats_program_method() -> None:
+def test_explicit_programmer_override_beats_the_platform_programmer() -> None:
     from dau_build.programmers import VivadoHwServerProgrammer
 
     # an explicit programmer wins over a jtag board's default (symmetric to
@@ -1715,7 +1772,7 @@ def test_detect_less_programmer_yields_a_plan_without_a_detect_step() -> None:
     # detection is optional (Vivado has no JTAG detect step) — but a flash
     # board refuses the volatile build-and-program plan outright: persistent
     # SPI writes only happen through an explicit flash request
-    config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", program_method="flash")
+    config = _bench_config(work_root=Path("/w"), vivado_executable="vivado", default_programmer=VivadoHwServerProgrammer())
     assert config.resolve_programmer().detect_step(config) is None
     with pytest.raises(ValueError, match="no volatile programming path"):
         build_and_program_plan(config)
@@ -1733,6 +1790,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
     monkeypatch.setattr(vivado_backend, "_compose_recorded_command", lambda overrides: compose_config(overrides, config_dir=str(config_dir)).cfg)
     definition = _acme_overlay_definition()
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -1769,6 +1828,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
     default = dict(
         vivado_backend.vivado_project_generation_manifest(
             VivadoProjectGenerationRequest(
+                platform="vivado-xdma",
+                shell="xdma-shell",
                 register_map_version="0.3",
                 source_shell_root=Path("/repo/projects/nite"),
                 work_root=tmp_path,
@@ -1808,6 +1869,8 @@ def test_stage_task_name_must_be_non_empty(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="stage_task_name"):
         VivadoProjectGenerationRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             source_shell_root=Path("/repo/projects/nite"),
             work_root=tmp_path,
@@ -1935,18 +1998,11 @@ def test_sram_program_plan_composes_from_the_config_group(tmp_path: Path) -> Non
         "tasks/hardware/hardware-plan",
         overrides=[
             "plan=plans/sram-program",
-            *model_overrides(
-                {
-                    "work_root": str(tmp_path),
-                    "manifest": str(_built_manifest(tmp_path)[0]),
-                    "endpoint_bdf": "0000:01:00.0",
-                    "reset_bridge_bdf": "0000:00:1c.4",
-                    "expected_endpoint_id": "10ee:9034",
-                    "jtag_cable": "digilent_hs2",
-                    "runtime_pm_patterns": (),
-                    "rescan_bdfs": ("0000:00:1c.4",),
-                }
-            ),
+            "platform=platforms/example/probe",
+            "platform.placeholders=[]",
+            "platform.host_access.runtime_pm_patterns=[]",
+            "platform.host_access.rescan_bdfs=['0000:00:1c.4']",
+            *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
     assert "deadman-arm" in result.message and "secondary-bus-reset" not in result.message.split("deadman-arm")[0]
@@ -1959,7 +2015,7 @@ def test_hardware_plan_task_deadman_executable_is_cli_overridable(tmp_path: Path
         overrides=[
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
-            "model.deadman_executable=/opt/dau/bin/deadman",
+            "platform.host_access.deadman_executable=/opt/dau/bin/deadman",
             *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
@@ -1988,7 +2044,7 @@ def test_execute_refuses_missing_deadman_before_any_step(monkeypatch, tmp_path: 
     message = str(exc_info.value)
     assert missing in message
     assert "deadman-arm" in message
-    assert "model.deadman_executable" in message
+    assert "platform.host_access.deadman_executable" in message
 
 
 def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_path: Path) -> None:
@@ -2012,19 +2068,19 @@ def test_execute_refuses_bare_runtime_pm_executable_under_sudo(monkeypatch, tmp_
     message = str(exc_info.value)
     assert executable in message
     assert "pm-hold-path" in message
-    assert "model.runtime_pm_executable" in message
+    assert "platform.host_access.runtime_pm_executable" in message
 
 
 def test_hardware_plan_task_privilege_prefix_is_cli_overridable(tmp_path: Path) -> None:
-    """`model.privilege_prefix` must be declared in the packaged task config so
-    Hydra's struct mode accepts the override (e.g. clear it to run as root)."""
+    """The privilege prefix is a host_access fact, overridden on the composed
+    platform (e.g. clear it to run as root)."""
     result = run_request_config(
         "task",
         "tasks/hardware/hardware-plan",
         overrides=[
             "plan=plans/sram-program",
             "platform=platforms/example/probe",
-            "model.privilege_prefix=[]",
+            "platform.host_access.privilege_prefix=[]",
             *model_overrides({"work_root": str(tmp_path), "manifest": str(_built_manifest(tmp_path)[0])}),
         ],
     )
@@ -2268,6 +2324,8 @@ def test_backend_manifest_reads_through_its_model(tmp_path: Path) -> None:
     from dau_build.vivado_backend import VivadoBackendManifest
 
     request = VivadoBackendRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         dau_core_hdl_root=Path("/repo/acme/hdl"),
         build_root=tmp_path,
         register_map_version="0.3",
@@ -2292,6 +2350,8 @@ def test_project_manifest_refuses_an_unknown_key(tmp_path: Path) -> None:
     from dau_build.vivado_backend import VivadoProjectManifest
 
     request = VivadoProjectGenerationRequest(
+        platform="vivado-xdma",
+        shell="xdma-shell",
         register_map_version="0.3",
         source_shell_root=Path("/repo/projects/nite"),
         work_root=tmp_path,
@@ -2302,3 +2362,16 @@ def test_project_manifest_refuses_an_unknown_key(tmp_path: Path) -> None:
     assert VivadoProjectManifest.from_text(text).work_root == tmp_path.as_posix()
     with pytest.raises(KeyValueManifestError, match="xdma_modul"):
         VivadoProjectManifest.from_text(text.replace("xdma_module=", "xdma_modul="))
+
+
+def test_platform_and_shell_labels_come_from_config() -> None:
+    """The manifest's platform and shell labels are set by the task config or
+    the caller; no model supplies one board's names as a default."""
+    from dau_build.build_steps import VivadoOverlayStageTask
+
+    for model, fields in (
+        (VivadoBackendRequest, ("platform", "shell")),
+        (VivadoProjectGenerationRequest, ("platform", "shell")),
+        (VivadoOverlayStageTask, ("backend_platform", "backend_shell")),
+    ):
+        assert all(model.model_fields[field].is_required() for field in fields), model.__name__

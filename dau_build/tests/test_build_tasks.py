@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shlex
 import tomllib
 from pathlib import Path
@@ -10,6 +11,7 @@ from ccflow import CallableModel
 
 from dau_build.build_steps import BuildStepError, BuildStepResult, SimulateTask
 from dau_build.cli import main
+from dau_build.config import run_request_config
 from dau_build.tests.spec_option import write_spec_option
 from dau_build.vivado_backend import VivadoBackendArtifactValidation, VivadoBackendRequest, generate_vivado_backend_artifacts
 
@@ -284,6 +286,8 @@ def test_task_validates_vivado_artifacts_in_process(tmp_path: Path) -> None:
     _write_backend_artifacts(
         generate_vivado_backend_artifacts(
             VivadoBackendRequest(
+                platform="vivado-xdma",
+                shell="xdma-shell",
                 register_map_version="0.3",
                 dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
                 build_root=tmp_path,
@@ -333,6 +337,8 @@ def test_overlay_build_tcl_records_the_slack_and_names_a_timing_miss() -> None:
 def _built_overlay_artifacts(tmp_path: Path, *, status_line: str):
     artifacts = generate_vivado_backend_artifacts(
         VivadoBackendRequest(
+            platform="vivado-xdma",
+            shell="xdma-shell",
             register_map_version="0.3",
             dau_core_hdl_root=Path("/repo/dau-core/dau_core/hdl"),
             build_root=tmp_path,
@@ -442,7 +448,6 @@ def _spec_text() -> str:
             f"  - {(_SV_DIR / 'ff.sv').as_posix()}",
             "modules:",
             "  - ff",
-            "backend: none",
             "",
         )
     )
@@ -466,7 +471,6 @@ def _arrow_lite_aggregator_spec_text() -> str:
             f"  - {(Path(__file__).parent / 'sv' / 'stream_doubler.sv').as_posix()}",
             "modules:",
             "  - stream_doubler",
-            "backend: vivado",
             "",
         )
     )
@@ -498,38 +502,31 @@ def test_hardware_plan_task_composes_platform_host_access() -> None:
     from dau_build.platforms import PlaceholderPlatformError
     from dau_build.tests.platform_fixtures import probe_platform
 
-    explicit = HardwarePlanTask(
-        plan=RecoveryPlan(),
-        work_root=Path("/repo/projects/vivado-shell"),
-        jtag_cable="digilent_hs2",
-        endpoint_bdf="0000:01:00.0",
-        # the endpoint's upstream bridge: the diagnostic dmesg filter names
-        # both slots, so an explicit task that omitted it would no longer
-        # reproduce the composed board's plan text
-        reset_bridge_bdf="0000:00:1c.4",
-        expected_endpoint_id="10ee:9034",
-        runtime_pm_patterns=("Xilinx", "10ee:9034"),
-        rescan_bdfs=(
-            "0000:00:1c.4",
-            "0000:00:1c.0",
-        ),
-        privilege_prefix=("sudo",),
-    )(None)
     composed = HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"), platform=probe_platform())(None)
-    # the board's host_access reproduces the explicit bench-fact plan text
-    # byte-identically; without either, hardware steps refuse to render
-    assert composed == explicit
-    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+    assert "openFPGALoader -c digilent_hs2 " in composed.message
+    assert "lspci -Dnn -d 10ee:9034" in composed.message
+    # without a platform, hardware steps refuse to render
+    with pytest.raises(ValueError, match="runtime_pm_executable is unset.*platform.host_access.runtime_pm_executable"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/repo/projects/vivado-shell"))(None)
 
-    # explicit task fields override the platform's host_access
-    overridden = HardwarePlanTask(
-        plan=RecoveryPlan(),
-        work_root=Path("/repo/projects/vivado-shell"),
-        platform=probe_platform(),
-        jtag_cable="ft4232",
-    )(None)
+    # host access is changed on the platform, the one place it is declared
+    overridden = run_request_config(
+        "task",
+        "tasks/hardware/hardware-plan",
+        overrides=[
+            "plan=plans/recovery",
+            "platform=platforms/example/probe",
+            "platform.host_access.jtag_cable=ft4232",
+            "model.work_root=/repo/projects/vivado-shell",
+        ],
+    )
     assert "-c ft4232" in overridden.message
+    with pytest.raises(Exception, match="jtag_cable"):
+        run_request_config(
+            "task",
+            "tasks/hardware/hardware-plan",
+            overrides=["plan=plans/recovery", "platform=platforms/example/probe", "model.jtag_cable=ft4232", "model.work_root=/w"],
+        )
 
     # a placeholder board is refused for hardware-affecting execution
     placeholder = probe_platform().model_copy(update={"name": "probe", "placeholders": ("host_access",)})
@@ -598,7 +595,7 @@ def test_hardware_plan_task_refuses_execution_without_host_access() -> None:
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless, execute=True)(None)
     # plan-only composition also needs the facts to render hardware steps
     # (dau-build carries no board defaults to fall back on)
-    with pytest.raises(ValueError, match="runtime_pm_patterns is unset"):
+    with pytest.raises(ValueError, match="runtime_pm_executable is unset"):
         HardwarePlanTask(plan=RecoveryPlan(), work_root=Path("/w"), platform=accessless)(None)
 
 
@@ -616,3 +613,31 @@ def test_overlay_build_and_validate_tasks_refuse_inert_fields() -> None:
         unknown: dict[str, Any] = {field: value}
         with pytest.raises(ValidationError):
             ValidateVivadoArtifactsTask(work_root=Path("/tmp/x"), **unknown)
+
+
+def test_list_fields_take_lists_not_comma_strings(tmp_path: Path) -> None:
+    """Operator sets and profile manifests are tuple fields set with Hydra
+    list overrides; a comma-joined string is a validation error instead of
+    being split."""
+    from pydantic import ValidationError
+
+    from dau_build.build_steps import VerilatorSimulator, VivadoOverlayStageTask
+
+    composed = run_request_config(
+        "task",
+        "tasks/stage/stage-vivado-overlay",
+        overrides=[f"model.work_root={tmp_path}", f"model.dau_core_root={tmp_path}", "model.operator_set=[identity,sum_i64]"],
+    )
+    assert (
+        "operator_set=identity,sum_i64"
+        in base64.b64decode(
+            next(line for line in composed.message.splitlines() if line.startswith("write-dau-manifest"))
+            .split("printf %s ")[1]
+            .split(" ")[0]
+            .strip("'")
+        ).decode()
+    )
+    with pytest.raises(ValidationError, match="operator_set"):
+        VivadoOverlayStageTask.model_validate({"work_root": tmp_path, "register_map_version": "0.3", "operator_set": "identity,sum_i64"})
+    with pytest.raises(ValidationError, match="profile_manifest"):
+        VerilatorSimulator.model_validate({"profile_manifest": "a.yaml,b.yaml"})

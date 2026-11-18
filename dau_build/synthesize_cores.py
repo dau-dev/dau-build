@@ -239,7 +239,9 @@ class SynthesizeCoresTask(BuildCallableModel):
     # part source: explicit `part` wins, else the composed `platform=` group
     platform: PlatformDefinition | None = None
     part: str | None = None
-    clock_period_ns: float = 8.0
+    # clock source: explicit `clock_period_ns` wins, else the composed
+    # platform's job clock
+    clock_period_ns: float | None = None
     # per-core `-generic` overrides, keyed by core name then parameter name;
     # an override of a parameter the core does not declare is rejected.
     # A value may be an int or a type spelling ("int32", "q16.16") for the
@@ -269,6 +271,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         if not definitions:
             raise BuildStepError("no cores selected; pass model.cores=[/dau-core/<name>,...]")
         part = self._part()
+        clock_ns = self._clock_period_ns()
         # resolve once: relative output_root (./ooc) plus a subprocess cwd
         # would otherwise double the prefix inside vivado
         root = self.output_root.resolve()
@@ -280,17 +283,19 @@ class SynthesizeCoresTask(BuildCallableModel):
         from .render_cores import render_generated_cores
 
         render_generated_cores(definitions, root=root)
-        scripts = [self._stage_core(definition, part=part, root=root) for definition in definitions]
+        scripts = [self._stage_core(definition, part=part, clock_ns=clock_ns, root=root) for definition in definitions]
         plan_path = self._write_plan(scripts, root=root)
         if not self.execute:
             return BuildStepResult(
                 step="synthesize-cores",
                 message=(
                     f"dau-build-synthesize-cores\tcores={','.join(d.name for d in definitions)} part={part} "
-                    f"clock_ns={self.clock_period_ns} output_root={root} plan={plan_path} status=handoff-written"
+                    f"clock_ns={clock_ns} output_root={root} plan={plan_path} status=handoff-written"
                 ),
             )
-        reports = [self._run_and_parse(definition, script, root=root) for definition, script in zip(definitions, scripts)]
+        reports = [
+            self._run_and_parse(definition, script, part=part, clock_ns=clock_ns, root=root) for definition, script in zip(definitions, scripts)
+        ]
         drift = [report.name for report in reports if report.registered_matches is False]
         # a SEPARATE field from envelope_drift, because it answers a separate
         # question: the numbers can reproduce exactly while the registry still
@@ -306,7 +311,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             step="synthesize-cores",
             message=(
                 f"dau-build-synthesize-cores\tcores={','.join(d.name for d in definitions)} part={part} "
-                f"clock_ns={self.clock_period_ns} output_root={root} {summary} "
+                f"clock_ns={clock_ns} output_root={root} {summary} "
                 f"envelope_drift={','.join(drift) if drift else 'none'} "
                 f"measured_from_drift={','.join(stamp_drift) if stamp_drift else 'none'} status=synthesized"
             ),
@@ -329,6 +334,13 @@ class SynthesizeCoresTask(BuildCallableModel):
         if part:
             return part
         raise BuildStepError("no part selected; pass model.part=... or compose a platform= group")
+
+    def _clock_period_ns(self) -> float:
+        if self.clock_period_ns is not None:
+            return self.clock_period_ns
+        if self.platform is not None:
+            return 1000.0 / self.platform.effective_job_clock_mhz()
+        raise BuildStepError("no clock selected; pass model.clock_period_ns=... or compose a platform= group")
 
     def _generics(self, definition) -> dict[str, int]:
         values = {name: spec.default for name, spec in definition.parameters.items()}
@@ -367,7 +379,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
         return tuple(model.source_path() for model in ordered)
 
-    def _stage_core(self, definition, *, part: str, root: Path) -> Path:
+    def _stage_core(self, definition, *, part: str, clock_ns: float, root: Path) -> Path:
         sources = self._sources_for(definition)
         generics = self._generics(definition)
         generic_args = "".join(f" -generic {name}={value}" for name, value in generics.items())
@@ -381,7 +393,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         lines = [reads]
         if clock_port:
             xdc = root / f"{definition.module}.ooc.xdc"
-            xdc.write_text(f"create_clock -period {self.clock_period_ns:.3f} -name clk [get_ports {clock_port}]\n")
+            xdc.write_text(f"create_clock -period {clock_ns:.3f} -name clk [get_ports {clock_port}]\n")
             lines.append(f"read_xdc -mode out_of_context {_tcl_path(xdc)}")
         # every source directory is an include path. Vivado is expected to
         # resolve a header sitting beside its includer, but "expected to" is a
@@ -422,7 +434,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             f"{root / stem}.jou",
         ]
 
-    def _run_and_parse(self, definition, script: Path, *, root: Path) -> CoreEnvelopeReport:
+    def _run_and_parse(self, definition, script: Path, *, part: str, clock_ns: float, root: Path) -> CoreEnvelopeReport:
         completed = subprocess.run(
             self._vivado_argv(script, root=root),
             cwd=root,
@@ -439,8 +451,8 @@ class SynthesizeCoresTask(BuildCallableModel):
             output_root=root,
             clocked=bool(self.clock_ports.get(definition.name, "clk")),
             compare=True,
-            part=self._part(),
-            clock_period_ns=self.clock_period_ns,
+            part=part,
+            clock_period_ns=clock_ns,
             params=self._generics(definition),
             resolve=lookup_core,
         )

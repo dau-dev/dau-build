@@ -18,7 +18,7 @@ overlay_tcl: scripts/dau_overlay.tcl
 artifact_stem: dau-vivado
 backend_platform: vivado-xdma
 backend_shell: xdma-shell
-operator: null
+operator_set: [identity]
 # the register map version the overlay's grafted identity registers
 # implement, recorded in the manifest; required, no code default
 register_map_version: "0.3"

@@ -18,7 +18,15 @@ from dau_build.platforms import (
     min_lanes_for_full_rate,
     require_measured,
 )
+from dau_build.programmers import VivadoHwServerProgrammer
 from dau_build.tests.platform_fixtures import probe_platform
+
+# the host's executables and cable: required host facts, stated by every host option
+_EXECUTABLES: dict[str, Any] = {
+    "runtime_pm_executable": "dau-utils-pci-runtime-pm",
+    "deadman_executable": "dau-utils-deadman",
+    "jtag_cable": "digilent_hs2",
+}
 
 
 @dataclass(frozen=True)
@@ -81,7 +89,8 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
         constraints=("pins.xdc", "timing.xdc"),
         constraints_xdc="set_property CFGBVS GND [current_design]\n",
         lane_placements=((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9")),
-        program_method="flash",
+        programmer=VivadoHwServerProgrammer(),
+        width_tiers=(64,),
         placeholders=("host_link.xdma_personality",),
         platform_id="TEST",
     )
@@ -91,6 +100,7 @@ def test_round_trip_preserves_personality_and_constraints() -> None:
     assert reloaded.constraints == ("pins.xdc", "timing.xdc")
     assert reloaded.lane_placements == ((0, "GTXE2_CHANNEL_X0Y8"), (1, "GTXE2_CHANNEL_X0Y9"))
     assert reloaded.placeholders == ("host_link.xdma_personality",)
+    assert type(reloaded.programmer) is VivadoHwServerProgrammer
 
 
 def test_personality_emits_tcl_config_and_derives_link_width() -> None:
@@ -110,8 +120,8 @@ def test_validation_rejects_bad_values() -> None:
         HostLink(interface="pcie-xdma", pcie_lanes=8, expected_link_speed_gts=0)
     with pytest.raises(ValidationError, match="capacity_bytes"):
         StorageTier(name="ddr", technology="ddr", capacity_bytes=0, access="shared")
-    with pytest.raises(ValidationError, match="program_method"):
-        _probe_with(program_method="usb")
+    with pytest.raises(ValidationError, match="programmer"):
+        PlatformDefinition.model_validate({k: v for k, v in probe_platform().model_dump().items() if k != "programmer"})
     with pytest.raises(ValidationError, match="part must be non-empty"):
         _probe_with(part="")
 
@@ -147,17 +157,17 @@ def test_fits_exactly_at_budget_is_ok() -> None:
     assert all(value == pytest.approx(1.0) for value in report.utilization.values())
 
 
-def test_width_tiers_default_and_composed_config() -> None:
-    # the model default is the universal 64-bit tier; a board's config names
-    # the tiers its memory system actually supports
-    assert PlatformDefinition.model_fields["width_tiers"].default == (64,)
+def test_width_tiers_are_required_board_config() -> None:
+    # a board's config names the tiers its memory system actually supports;
+    # the model assumes none
+    assert PlatformDefinition.model_fields["width_tiers"].is_required()
     assert probe_platform().width_tiers == (64, 128, 256)
 
 
 def test_width_tiers_validation() -> None:
     with pytest.raises(ValidationError, match="at least one tier"):
         _probe_with(width_tiers=())
-    with pytest.raises(ValidationError, match="64/128/256/512"):
+    with pytest.raises(ValidationError, match="width_tiers"):
         _probe_with(width_tiers=(64, 96))
     with pytest.raises(ValidationError, match="duplicates"):
         _probe_with(width_tiers=(64, 64))
@@ -169,8 +179,8 @@ def test_min_lanes_for_full_rate_follows_the_sizing_law() -> None:
     assert min_lanes_for_full_rate(128) == 2
     assert min_lanes_for_full_rate(256) == 4
     assert min_lanes_for_full_rate(512) == 8
-    with pytest.raises(ValueError, match="64/128/256/512"):
-        min_lanes_for_full_rate(96)
+    with pytest.raises(ValueError, match=r"\(64, 128, 256, 512\)"):
+        min_lanes_for_full_rate(96)  # ty: ignore[invalid-argument-type]  # deliberately outside the tiers
 
 
 def test_max_lanes_is_the_budget_ceiling() -> None:
@@ -227,7 +237,7 @@ def test_user_config_dir_overlay_adds_a_board(tmp_path) -> None:
     overlay = tmp_path / "user-configs"
     (overlay / "platform").mkdir(parents=True)
     (overlay / "platform" / "myboard.yaml").write_text(
-        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\nplatform_id: MYBD\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
+        "# @package platform\n_target_: dau_build.platforms.PlatformDefinition\nname: myboard\nplatform_id: MYBD\nwidth_tiers: [64]\nprogrammer:\n  _target_: dau_build.programmers.OpenFpgaLoaderProgrammer\npart: xc7k70tfbg484-2\nbudget:\n  _target_: dau_build.platforms.ResourceBudget\n  lut: 41000\n  ff: 82000\n  bram36: 135\n  dsp: 240\nhost_link:\n  _target_: dau_build.platforms.HostLink\n  interface: pcie-xdma\n  pcie_lanes: 1\nstorage_tiers:\n  - _target_: dau_build.platforms.StorageTier\n    name: ddr\n    technology: ddr\n    capacity_bytes: 1073741824\n    access: shared"
     )
     board = resolve_platform("myboard", config_dir=str(overlay))
     assert board.name == "myboard"
@@ -316,17 +326,29 @@ def test_host_access_checks_pci_syntax_and_privilege_tokens() -> None:
     from dau_build.platforms import HostAccess
 
     ok = HostAccess(
-        pci_id="10EE:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0",), runtime_pm_patterns=(), privilege_prefix=("sudo", "-n")
+        pci_id="10EE:7011",
+        endpoint_bdf="0000:04:00.0",
+        rescan_bdfs=("0000:03:01.0",),
+        runtime_pm_patterns=(),
+        privilege_prefix=("sudo", "-n"),
+        **_EXECUTABLES,
     )
     assert ok.pci_id == "10ee:7011"
     with pytest.raises(ValidationError, match="vendor:device hex"):
-        HostAccess(pci_id="xilinx", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=())
+        HostAccess(pci_id="xilinx", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=(), **_EXECUTABLES)
     with pytest.raises(ValidationError, match="dddd:bb:dd.f"):
-        HostAccess(pci_id="10ee:7011", endpoint_bdf="04:00.0", rescan_bdfs=(), runtime_pm_patterns=())
+        HostAccess(pci_id="10ee:7011", endpoint_bdf="04:00.0", rescan_bdfs=(), runtime_pm_patterns=(), **_EXECUTABLES)
     with pytest.raises(ValidationError, match="rescan_bdfs"):
-        HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0; rm -rf /",), runtime_pm_patterns=())
+        HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=("0000:03:01.0; rm -rf /",), runtime_pm_patterns=(), **_EXECUTABLES)
     with pytest.raises(ValidationError, match="plain argv tokens"):
-        HostAccess(pci_id="10ee:7011", endpoint_bdf="0000:04:00.0", rescan_bdfs=(), runtime_pm_patterns=(), privilege_prefix=("sudo;", "true"))
+        HostAccess(
+            pci_id="10ee:7011",
+            endpoint_bdf="0000:04:00.0",
+            rescan_bdfs=(),
+            runtime_pm_patterns=(),
+            privilege_prefix=("sudo;", "true"),
+            **_EXECUTABLES,
+        )
 
 
 def test_a_calibration_is_dated_and_validated() -> None:
