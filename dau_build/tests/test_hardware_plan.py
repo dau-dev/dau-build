@@ -532,7 +532,8 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
         register_map_version="0.3",
         **variant,
     )
-    manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
+    project = vivado_backend.vivado_project_generation_manifest(request)
+    manifest = dict(project.items())
     for key in ("stage_command", "build_command", "validate_command"):
         argv = shlex.split(manifest[key])
         assert argv[0] == "dau-build"
@@ -546,7 +547,7 @@ def test_every_recorded_project_command_composes_under_the_cli(variant: dict[str
         assert model.work_root == request.work_root
     assert (
         vivado_backend._validate_project_manifest_commands(
-            project_manifest=manifest,
+            project_manifest=project,
             manifest_path=request.backend_request.resolved_manifest_path,
             command_plan_path=request.backend_request.resolved_command_plan_path,
         )
@@ -562,11 +563,14 @@ def test_project_command_validation_refuses_a_command_that_does_not_compose() ->
         dau_driver_root=Path("/repo/dau-driver"),
         register_map_version="0.3",
     )
-    manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
     paths = {"manifest_path": request.backend_request.resolved_manifest_path, "command_plan_path": request.backend_request.resolved_command_plan_path}
     # the shape these commands used to be recorded in: a bare task name and flat field overrides
-    manifest["build_command"] = "dau-build task=tasks/build/build-vivado-artifacts work_root=/repo/out/vivado"
-    manifest["validate_command"] = "dau-build task=validate-vivado-artifacts model.work_root=/repo/out/vivado"
+    manifest = vivado_backend.vivado_project_generation_manifest(request).model_copy(
+        update={
+            "build_command": "dau-build task=tasks/build/build-vivado-artifacts work_root=/repo/out/vivado",
+            "validate_command": "dau-build task=validate-vivado-artifacts model.work_root=/repo/out/vivado",
+        }
+    )
     errors = vivado_backend._validate_project_manifest_commands(project_manifest=manifest, **paths)
     assert any(error.startswith("project build_command does not compose") for error in errors)
     assert any(error.startswith("project validate_command task mismatch") for error in errors)
@@ -614,7 +618,8 @@ def test_validate_structured_backend_artifact_bundle_accepts_generated_bundle(tm
         command_plan_path=Path("dau-ci.plan"),
     )
 
-    manifest = dict(validation.manifest_items)
+    assert validation.manifest is not None
+    manifest = dict(validation.manifest.items())
     assert validation.ok
     assert validation.errors == ()
     assert validation.overlay_tcl_path == artifacts.overlay_tcl_path
@@ -669,7 +674,7 @@ def test_validate_structured_backend_artifact_bundle_rejects_built_status_withou
         )
     )
     artifacts.manifest_path.write_text(
-        artifacts.manifest_text.replace("build_status=planned", "build_status=built"),
+        artifacts.manifest_text.replace("build_status=planned", "wns_ns=0.25\nbuild_status=built"),
         encoding="utf-8",
     )
 
@@ -717,7 +722,8 @@ def test_validate_structured_project_artifact_bundle_accepts_generated_bundle(tm
     assert validation.errors == ()
     assert validation.project_manifest_path == artifacts.project_manifest_path
     assert validation.backend_validation.ok
-    assert dict(validation.project_manifest_items)["backend_manifest"] == "dau-ci.manifest"
+    assert validation.project_manifest is not None
+    assert validation.project_manifest.backend_manifest == "dau-ci.manifest"
 
 
 def test_validate_structured_project_artifact_bundle_reports_backend_manifest_mismatch(tmp_path: Path) -> None:
@@ -1573,9 +1579,9 @@ def test_project_manifest_records_and_guards_an_injected_definition(tmp_path: Pa
     }
 
     injected = dict(
-        vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs, overlay_definition=definition))
+        vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs, overlay_definition=definition)).items()
     )
-    default = dict(vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs)))
+    default = dict(vivado_backend.vivado_project_generation_manifest(VivadoProjectGenerationRequest(**request_kwargs)).items())
 
     assert injected["overlay_definition"] == "injected"
     # replaying the recorded command must demand the definition instead of
@@ -1595,7 +1601,7 @@ def test_project_command_validation_requires_the_injected_definition_marker(tmp_
         dau_driver_root=Path("/repo/dau-driver"),
         overlay_definition=definition,
     )
-    project_manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
+    project_manifest = vivado_backend.vivado_project_generation_manifest(request)
     manifest_path = request.backend_request.resolved_manifest_path
     command_plan_path = request.backend_request.resolved_command_plan_path
 
@@ -1607,9 +1613,9 @@ def test_project_command_validation_requires_the_injected_definition_marker(tmp_
     assert marked == ()
 
     # a stage_command silently rebuilt without the marker fails validation
-    tokens = shlex.split(project_manifest["stage_command"])
+    tokens = shlex.split(project_manifest.stage_command)
     tokens.remove("model.overlay_definition='???'")
-    project_manifest["stage_command"] = shlex.join(tokens)
+    project_manifest = project_manifest.model_copy(update={"stage_command": shlex.join(tokens)})
     stripped = vivado_backend._validate_project_manifest_commands(
         project_manifest=project_manifest,
         manifest_path=manifest_path,
@@ -1735,7 +1741,8 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
         overlay_definition=definition,
         stage_task_name="tasks/stage/acme-stage-vivado-overlay",
     )
-    manifest = dict(vivado_backend.vivado_project_generation_manifest(request))
+    project = vivado_backend.vivado_project_generation_manifest(request)
+    manifest = dict(project.items())
     manifest_path = request.backend_request.resolved_manifest_path
     command_plan_path = request.backend_request.resolved_command_plan_path
 
@@ -1745,16 +1752,13 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
     assert "task=tasks/stage/acme-stage-vivado-overlay" in manifest["stage_command"]
     assert "overlay_definition" not in manifest["stage_command"]
     assert (
-        vivado_backend._validate_project_manifest_commands(
-            project_manifest=manifest, manifest_path=manifest_path, command_plan_path=command_plan_path
-        )
+        vivado_backend._validate_project_manifest_commands(project_manifest=project, manifest_path=manifest_path, command_plan_path=command_plan_path)
         == ()
     )
 
     # a stage_command rewritten to the packaged default task fails validation
-    tampered = dict(manifest)
-    tampered["stage_command"] = tampered["stage_command"].replace(
-        "task=tasks/stage/acme-stage-vivado-overlay", "task=tasks/stage/stage-vivado-overlay"
+    tampered = project.model_copy(
+        update={"stage_command": project.stage_command.replace("task=tasks/stage/acme-stage-vivado-overlay", "task=tasks/stage/stage-vivado-overlay")}
     )
     errors = vivado_backend._validate_project_manifest_commands(
         project_manifest=tampered, manifest_path=manifest_path, command_plan_path=command_plan_path
@@ -1771,7 +1775,7 @@ def test_stage_command_records_the_callers_staging_task(tmp_path: Path, monkeypa
                 dau_core_root=Path("/repo/dau-core"),
                 dau_driver_root=Path("/repo/dau-driver"),
             )
-        )
+        ).items()
     )
     assert "stage_task" not in default
 
@@ -2253,3 +2257,48 @@ def test_staged_manifests_record_the_register_map_the_identity_registers_impleme
         assert model.model_fields["register_map_version"].is_required()
     with pytest.raises(ValidationError, match="register_map_version"):
         VivadoBackendRequest.model_validate({"dau_core_hdl_root": "/repo/hdl", "build_root": tmp_path})
+
+
+def test_backend_manifest_reads_through_its_model(tmp_path: Path) -> None:
+    """The backend manifest is one model on both sides: the staged text
+    reads back to the same model, the Tcl-appended lines (overlay runtime
+    entries, the build outcome) override the planned ones, and a key that is
+    neither a field nor a declared overlay key is refused."""
+    from dau_build.key_value_manifest import KeyValueManifestError
+    from dau_build.vivado_backend import VivadoBackendManifest
+
+    request = VivadoBackendRequest(
+        dau_core_hdl_root=Path("/repo/acme/hdl"),
+        build_root=tmp_path,
+        register_map_version="0.3",
+        overlay_definition=_acme_overlay_definition(),
+    )
+    staged = vivado_backend.vivado_backend_manifest(request)
+    assert VivadoBackendManifest.from_text(staged.to_text()) == staged
+    assert set(staged.overlay_keys) >= set(staged.overlay_items)
+
+    runtime = "".join(f"{key}={value}\n" for key, value in _acme_overlay_definition().runtime_manifest_entries)
+    built = VivadoBackendManifest.from_text(staged.to_text() + runtime + "wns_ns=0.125\nbuild_status=built\n")
+    assert (built.build_status, built.wns_ns) == ("built", 0.125)
+
+    with pytest.raises(KeyValueManifestError, match="unknown manifest key"):
+        VivadoBackendManifest.from_text(staged.to_text() + "bitstreem=project.runs/impl_1/Top_wrapper.bit\n")
+    with pytest.raises(KeyValueManifestError, match="wns_ns"):
+        VivadoBackendManifest.from_text(staged.to_text() + "wns_ns=-0.2\nbuild_status=built\n")
+
+
+def test_project_manifest_refuses_an_unknown_key(tmp_path: Path) -> None:
+    from dau_build.key_value_manifest import KeyValueManifestError
+    from dau_build.vivado_backend import VivadoProjectManifest
+
+    request = VivadoProjectGenerationRequest(
+        register_map_version="0.3",
+        source_shell_root=Path("/repo/projects/nite"),
+        work_root=tmp_path,
+        dau_core_root=Path("/repo/dau-core"),
+        dau_driver_root=Path("/repo/dau-driver"),
+    )
+    text = vivado_backend.vivado_project_generation_manifest_text(request)
+    assert VivadoProjectManifest.from_text(text).work_root == tmp_path.as_posix()
+    with pytest.raises(KeyValueManifestError, match="xdma_modul"):
+        VivadoProjectManifest.from_text(text.replace("xdma_module=", "xdma_modul="))

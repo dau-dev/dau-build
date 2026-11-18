@@ -257,8 +257,7 @@ def test_task_runs_build_vivado_artifacts_with_graph_models(monkeypatch) -> None
             resource_summary_path=Path("/repo/projects/vivado-shell/reports/dau_utilization.rpt"),
             timing_summary_path=Path("/repo/projects/vivado-shell/reports/dau_timing_summary.rpt"),
             vivado_log_path=Path("/repo/projects/vivado-shell/vivado.log"),
-            build_status="built",
-            manifest_items=(),
+            manifest=None,
             errors=(),
         )
 

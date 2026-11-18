@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from ccflow import BaseModel
-from pydantic import ConfigDict, Field, StringConstraints
+from pydantic import ConfigDict, Field, StringConstraints, model_validator
 
 from dau_build.artifact_bundle import ArtifactBundle, ArtifactBundleError, is_hdl_source_artifact, load_artifact_bundle, source_language_from_path
+from dau_build.key_value_manifest import CommaList, KeyValueManifest, KeyValueManifestError, NonEmptyText
 from dau_build.packaging import Artifact, ArtifactManifest, ArtifactManifestError, artifact_modules, artifact_with_modules, load_artifact_manifest
 
 if TYPE_CHECKING:
@@ -53,6 +56,72 @@ class DauBuildSpec(BaseModel):
     artifacts: tuple[Artifact, ...] = ()
     artifact_bundle: ArtifactBundle = Field(default_factory=lambda: ArtifactBundle(name="", entries=()))
     backend: str = "none"
+
+
+_INDEXED_KEYS = {"source_files": "source", "metadata_files": "metadata", "binary_asset_files": "binary_asset"}
+_INDEXED_KEY = re.compile(r"(source|metadata|binary_asset)_(\d+)")
+
+
+class DauBuildManifest(KeyValueManifest):
+    """The spec build's ``key=value`` manifest. The source, metadata and
+    binary-asset paths are written one per line as ``source_<n>`` (and
+    ``metadata_<n>``, ``binary_asset_<n>``) and read back as ordered
+    tuples; ``sources`` is the source count and must match them."""
+
+    builder: Literal["dau_build.build_spec"]
+    name: NonEmptyText
+    platform: NonEmptyText
+    shell: NonEmptyText
+    artifact_stem: NonEmptyText
+    manifest: NonEmptyText
+    artifact_manifest: NonEmptyText
+    top_name: NonEmptyText
+    top_sv: NonEmptyText
+    register_map_version: NonEmptyText
+    stream_protocol_version: NonEmptyText
+    clock: NonEmptyText
+    reset: NonEmptyText
+    operators: CommaList
+    design_name: NonEmptyText
+    units: str
+    modules: Annotated[CommaList, Field(min_length=1)]
+    sources: int
+    backend: NonEmptyText
+    source_files: tuple[str, ...] = ()
+    metadata_files: tuple[str, ...] = ()
+    binary_asset_files: tuple[str, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _collect_indexed_paths(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping) or "source_files" in data:
+            return data
+        collected: dict[str, Any] = {}
+        indexed: dict[str, dict[int, str]] = {field: {} for field in _INDEXED_KEYS}
+        prefixes = {prefix: field for field, prefix in _INDEXED_KEYS.items()}
+        for key, value in data.items():
+            match = _INDEXED_KEY.fullmatch(key)
+            if match is None:
+                collected[key] = value
+            else:
+                indexed[prefixes[match.group(1)]][int(match.group(2))] = value
+        for field, by_index in indexed.items():
+            if sorted(by_index) != list(range(len(by_index))):
+                raise ValueError(f"{_INDEXED_KEYS[field]}_<n> keys must run 0..{len(by_index) - 1}, got {sorted(by_index)}")
+            collected[field] = tuple(by_index[index] for index in range(len(by_index)))
+        return collected
+
+    @model_validator(mode="after")
+    def _source_count(self) -> DauBuildManifest:
+        if self.sources != len(self.source_files):
+            raise ValueError(f"sources={self.sources} but {len(self.source_files)} source_<n> lines")
+        return self
+
+    def items(self) -> tuple[tuple[str, str], ...]:
+        flat = [(key, value) for key, value in super().items() if key not in _INDEXED_KEYS]
+        for field, prefix in _INDEXED_KEYS.items():
+            flat.extend((f"{prefix}_{index}", value) for index, value in enumerate(getattr(self, field)))
+        return tuple(flat)
 
 
 class DauBuildArtifacts(BaseModel):
@@ -200,31 +269,36 @@ def write_dau_build_artifacts(spec: DauBuildSpec, *, output_root: Path) -> DauBu
     return artifacts
 
 
+def dau_build_manifest(spec: DauBuildSpec, *, top_sv_path: Path, manifest_path: Path, artifact_manifest_path: Path) -> DauBuildManifest:
+    design_items = dict(design_manifest_items(spec))
+    return DauBuildManifest(
+        builder="dau_build.build_spec",
+        name=spec.name,
+        platform=spec.platform,
+        shell=spec.shell,
+        artifact_stem=spec.artifact_stem,
+        manifest=manifest_path.as_posix(),
+        artifact_manifest=artifact_manifest_path.as_posix(),
+        top_name=spec.top_name,
+        top_sv=top_sv_path.as_posix(),
+        register_map_version=spec.register_map_version,
+        stream_protocol_version=spec.stream_protocol_version,
+        clock=spec.clock,
+        reset=spec.reset,
+        operators=spec.operators,
+        design_name=design_items["design_name"],
+        units=design_items["units"],
+        modules=spec.modules,
+        sources=len(spec.sources),
+        backend=spec.backend,
+        source_files=tuple(source.as_posix() for source in spec.sources),
+        metadata_files=tuple(metadata.as_posix() for metadata in spec.metadata),
+        binary_asset_files=tuple(binary.as_posix() for binary in spec.binary_assets),
+    )
+
+
 def dau_build_manifest_text(spec: DauBuildSpec, *, top_sv_path: Path, manifest_path: Path, artifact_manifest_path: Path) -> str:
-    items: list[tuple[str, str]] = [
-        ("builder", "dau_build.build_spec"),
-        ("name", spec.name),
-        ("platform", spec.platform),
-        ("shell", spec.shell),
-        ("artifact_stem", spec.artifact_stem),
-        ("manifest", manifest_path.as_posix()),
-        ("artifact_manifest", artifact_manifest_path.as_posix()),
-        ("top_name", spec.top_name),
-        ("top_sv", top_sv_path.as_posix()),
-        ("register_map_version", spec.register_map_version),
-        ("stream_protocol_version", spec.stream_protocol_version),
-        ("clock", spec.clock),
-        ("reset", spec.reset),
-        ("operators", ",".join(spec.operators)),
-        *design_manifest_items(spec),
-        ("modules", ",".join(spec.modules)),
-        ("sources", str(len(spec.sources))),
-        ("backend", spec.backend),
-    ]
-    items.extend((f"source_{index}", source.as_posix()) for index, source in enumerate(spec.sources))
-    items.extend((f"metadata_{index}", metadata.as_posix()) for index, metadata in enumerate(spec.metadata))
-    items.extend((f"binary_asset_{index}", binary.as_posix()) for index, binary in enumerate(spec.binary_assets))
-    return "\n".join(f"{key}={value}" for key, value in items) + "\n"
+    return dau_build_manifest(spec, top_sv_path=top_sv_path, manifest_path=manifest_path, artifact_manifest_path=artifact_manifest_path).to_text()
 
 
 def dau_artifact_manifest(spec: DauBuildSpec, *, design: Design, top_sv_path: Path) -> ArtifactManifest:
@@ -301,25 +375,22 @@ def validate_dau_build_artifact_bundle(manifest_path: Path, *, root: Path | None
     bundle_root = root if root is not None else manifest_path.parent
     if not manifest_path.is_file():
         raise DauBuildSpecError(f"missing manifest: {manifest_path}")
-    manifest = _parse_manifest_text(manifest_path.read_text(encoding="utf-8"))
-    required_keys = ("builder", "manifest", "artifact_manifest", "top_name", "top_sv", "clock", "reset", "modules", "sources", "backend")
-    missing_keys = tuple(key for key in required_keys if not manifest.get(key))
-    if missing_keys:
-        raise DauBuildSpecError(f"manifest missing required key(s): {', '.join(missing_keys)}")
-    if manifest["builder"] != "dau_build.build_spec":
-        raise DauBuildSpecError(f"unsupported manifest builder: {manifest['builder']}")
-    top_sv_path = _bundle_path(bundle_root, Path(manifest["top_sv"]))
+    try:
+        manifest = DauBuildManifest.read(manifest_path)
+    except KeyValueManifestError as exc:
+        raise DauBuildSpecError(str(exc)) from exc
+    top_sv_path = _bundle_path(bundle_root, Path(manifest.top_sv))
     if not top_sv_path.is_file():
         raise DauBuildSpecError(f"missing generated top SystemVerilog: {top_sv_path}")
-    artifact_manifest_path = _bundle_path(bundle_root, Path(manifest["artifact_manifest"]))
+    artifact_manifest_path = _bundle_path(bundle_root, Path(manifest.artifact_manifest))
     if not artifact_manifest_path.is_file():
         raise DauBuildSpecError(f"missing artifact manifest: {artifact_manifest_path}")
     try:
         artifact_manifest = load_artifact_manifest(artifact_manifest_path, validate_paths=True, root=bundle_root)
     except ArtifactManifestError as exc:
         raise DauBuildSpecError(str(exc)) from exc
-    if not _artifact_manifest_includes_generated_top(artifact_manifest, Path(manifest["top_sv"])):
-        raise DauBuildSpecError(f"artifact manifest does not include generated top: {manifest['top_sv']}")
+    if not _artifact_manifest_includes_generated_top(artifact_manifest, Path(manifest.top_sv)):
+        raise DauBuildSpecError(f"artifact manifest does not include generated top: {manifest.top_sv}")
     return top_sv_path
 
 
@@ -390,21 +461,6 @@ def _resolve_spec_path(spec_root: Path, value: str) -> Path:
     if path.is_absolute():
         return path
     return (spec_root / path).resolve()
-
-
-def _parse_manifest_text(text: str) -> dict[str, str]:
-    manifest: dict[str, str] = {}
-    for line_number, raw_line in enumerate(text.splitlines(), start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            raise DauBuildSpecError(f"manifest line {line_number} is missing '='")
-        key, value = line.split("=", 1)
-        if not key:
-            raise DauBuildSpecError(f"manifest line {line_number} has an empty key")
-        manifest[key] = value
-    return manifest
 
 
 def _modules_by_source_path(design: Design) -> dict[Path, tuple[str, ...]]:

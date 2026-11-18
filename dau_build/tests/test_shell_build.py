@@ -255,6 +255,7 @@ def test_flash_snapshot_programs_what_was_verified(tmp_path: Path) -> None:
 
 def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None:
     from dau_build.shell_build import write_overlay_build_manifest
+    from dau_build.vivado_backend import VivadoBackendRequest, vivado_backend_manifest_text
 
     work = tmp_path / "work"
     work.mkdir()
@@ -262,16 +263,26 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     (work / "util.rpt").write_text("luts\n")
     (work / "vivado.log").write_text("done\n")
     kv = work / "dau-vivado.manifest"
+    planned = vivado_backend_manifest_text(
+        VivadoBackendRequest(
+            dau_core_hdl_root=tmp_path / "hdl",
+            build_root=work,
+            register_map_version="0.3",
+            bitstream_path=Path("overlay.bit"),
+            resource_summary_path=Path("util.rpt"),
+        )
+    )
 
-    kv.write_text("build_status=planned\nbitstream=overlay.bit\n")
+    # the build Tcl appends its outcome; the last line for a key wins
+    kv.write_text(planned)
     assert write_overlay_build_manifest(work, kv, name="dau-vivado") is None
 
     # built without a recorded slack proves nothing about timing: refused
-    kv.write_text("build_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    kv.write_text(planned + "build_status=built\n")
     with pytest.raises(ShellBuildError, match="wns_ns"):
         write_overlay_build_manifest(work, kv, name="dau-vivado")
 
-    kv.write_text("wns_ns=0.042\nbuild_status=built\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    kv.write_text(planned + "wns_ns=0.042\nbuild_status=built\n")
     packaged = write_overlay_build_manifest(work, kv, name="dau-vivado")
     assert packaged is not None
     manifest = load_artifact_manifest(packaged)
@@ -282,7 +293,7 @@ def test_overlay_build_manifest_packages_built_runs_only(tmp_path: Path) -> None
     assert bitstream.digest is not None
 
     # a timing miss is packaged too, as what it is, with the slack as a number
-    kv.write_text("build_status=timing-failed\nwns_ns=-0.117\nbitstream=overlay.bit\nresource_summary=util.rpt\nvivado_log=vivado.log\n")
+    kv.write_text(planned + "wns_ns=-0.117\nbuild_status=timing-failed\n")
     missed_path = write_overlay_build_manifest(work, kv, name="dau-vivado")
     assert missed_path is not None
     missed = load_artifact_manifest(missed_path)
