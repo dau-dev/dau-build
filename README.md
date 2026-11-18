@@ -20,13 +20,17 @@ dau-build task=tasks/build/synthesize-cores   'model.cores=[/dau-core/int32-pred
 
 ## Installation
 
-Python 3.11 or later. There is no package index release yet; install from a clone or straight from GitHub:
-
 ```bash
-pip install git+https://github.com/dau-dev/dau-build.git
+pip install dau-build
 ```
 
-For development, clone and run `make develop`. Vivado and yosys are needed only for the steps that run them; everything else composes, generates and tests without them.
+For development:
+
+```bash
+git clone https://github.com/dau-dev/dau-build.git
+cd dau-build
+pip install -e ".[develop]"
+```
 
 ## Quickstart
 
