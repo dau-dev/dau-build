@@ -175,11 +175,15 @@
 </section>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
-<p>Python 3.11 or later. There is no package index release yet; install from a clone or straight from GitHub:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/dau-dev/dau-build.git
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>dau-build
 </pre></div>
 </div>
-<p>For development, clone and run <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">develop</span></code>. Vivado and yosys are needed only for the steps that run them; everything else composes, generates and tests without them.</p>
+<p>For development:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/dau-dev/dau-build.git
+<span class="nb">cd</span><span class="w"> </span>dau-build
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[develop]"</span>
+</pre></div>
+</div>
 </section>
 <section id="quickstart">
 <h2>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h2>
