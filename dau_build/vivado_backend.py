@@ -51,7 +51,7 @@ class VivadoBackendRequest(BaseModel):
     shell: str = "xdma-shell"
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
-    register_map_version: str = "0.1"
+    register_map_version: str
     stream_protocol_version: str = "0.1"
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     build_tcl: Path = Path("scripts/dau_build.tcl")
@@ -106,7 +106,7 @@ class VivadoProjectGenerationRequest(BaseModel):
     shell: str = "xdma-shell"
     operator_set: tuple[str, ...] = ("identity",)
     selected_module: str | None = None
-    register_map_version: str = "0.1"
+    register_map_version: str
     stream_protocol_version: str = "0.1"
     overlay_tcl: Path = Path("scripts/dau_overlay.tcl")
     build_tcl: Path = Path("scripts/dau_build.tcl")
