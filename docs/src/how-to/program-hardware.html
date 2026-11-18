@@ -188,8 +188,9 @@ example board (<code class="docutils literal notranslate"><span class="pre">plat
 value is a placeholder, so it previews plans and refuses <code class="docutils literal notranslate"><span class="pre">execute=true</span></code>; the
 commands below name your own board. Compose
 <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code> so the plan takes that host’s
-<code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts, or set the <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=</span></code> overrides explicitly. A
-step that needs an unset fact refuses to render.</p>
+<code class="docutils literal notranslate"><span class="pre">host_access</span></code> facts; override one for a single run with
+<code class="docutils literal notranslate"><span class="pre">platform.host_access.&lt;field&gt;=</span></code>. A step that needs an unset fact refuses to
+render.</p>
 <blockquote>
 <div><p><strong>Programming can hang the PCIe link.</strong> Removing and reprogramming an
 endpoint while the host holds it can hang a rescan hard enough to need a

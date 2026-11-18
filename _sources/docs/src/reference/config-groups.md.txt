@@ -179,14 +179,18 @@ known-good core byte for byte.
 - `placeholders`: names of hardware-derived values not yet measured on the
   board. `require_measured` rejects placeholder boards for real builds while
   config-only generation stays open.
+- `programmer`: the `Programmer` model a hardware plan uses when no
+  `programmer=` group is composed, for example
+  `{_target_: dau_build.programmers.OpenFpgaLoaderProgrammer}` for a JTAG board.
 - `host_access` (`HostAccess`: `pci_id`, `endpoint_bdf`, `rescan_bdfs`,
-  `runtime_pm_patterns`, `runtime_pm_executable`, `jtag_cable`,
-  `reset_bridge_bdf`, `privilege_prefix`, `spi_bridge_bitstream`): the bench
-  host's measured access facts. A board option leaves this unset; a host
-  option extending the board (`platforms/<vendor>/<board>-<host>`, composed
-  from a `--config-dir`) sets it. `HardwarePlanTask` composes its toolchain
-  config from these when `platform=` is selected; explicit task fields take
-  precedence.
+  `runtime_pm_patterns`, `runtime_pm_executable`, `deadman_executable`,
+  `jtag_cable`, `reset_bridge_bdf`, `privilege_prefix`,
+  `spi_bridge_bitstream`): the bench host's measured access facts. A board
+  option leaves this unset; a host option extending the board
+  (`platforms/<vendor>/<board>-<host>`, composed from a `--config-dir`) sets
+  it. `HardwarePlanTask` composes its toolchain config from these when
+  `platform=` is selected; change one for a single run with
+  `platform.host_access.<field>=`.
 
 The shell project requests (`MmJobShellRequest`, `MmDdrJobShellRequest`) take
 a `platform` and default to dpv1; `part` defaults from the platform.

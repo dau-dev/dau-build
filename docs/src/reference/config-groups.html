@@ -433,14 +433,18 @@ implementation hook. Empty means the board needs none.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">placeholders</span></code>: names of hardware-derived values not yet measured on the
 board. <code class="docutils literal notranslate"><span class="pre">require_measured</span></code> rejects placeholder boards for real builds while
 config-only generation stays open.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">programmer</span></code>: the <code class="docutils literal notranslate"><span class="pre">Programmer</span></code> model a hardware plan uses when no
+<code class="docutils literal notranslate"><span class="pre">programmer=</span></code> group is composed, for example
+<code class="docutils literal notranslate"><span class="pre">{_target_:</span> <span class="pre">dau_build.programmers.OpenFpgaLoaderProgrammer}</span></code> for a JTAG board.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">host_access</span></code> (<code class="docutils literal notranslate"><span class="pre">HostAccess</span></code>: <code class="docutils literal notranslate"><span class="pre">pci_id</span></code>, <code class="docutils literal notranslate"><span class="pre">endpoint_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">rescan_bdfs</span></code>,
-<code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>,
-<code class="docutils literal notranslate"><span class="pre">reset_bridge_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">privilege_prefix</span></code>, <code class="docutils literal notranslate"><span class="pre">spi_bridge_bitstream</span></code>): the bench
-host’s measured access facts. A board option leaves this unset; a host
-option extending the board (<code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code>, composed
-from a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>) sets it. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain
-config from these when <code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected; explicit task fields take
-precedence.</p></li>
+<code class="docutils literal notranslate"><span class="pre">runtime_pm_patterns</span></code>, <code class="docutils literal notranslate"><span class="pre">runtime_pm_executable</span></code>, <code class="docutils literal notranslate"><span class="pre">deadman_executable</span></code>,
+<code class="docutils literal notranslate"><span class="pre">jtag_cable</span></code>, <code class="docutils literal notranslate"><span class="pre">reset_bridge_bdf</span></code>, <code class="docutils literal notranslate"><span class="pre">privilege_prefix</span></code>,
+<code class="docutils literal notranslate"><span class="pre">spi_bridge_bitstream</span></code>): the bench host’s measured access facts. A board
+option leaves this unset; a host option extending the board
+(<code class="docutils literal notranslate"><span class="pre">platforms/&lt;vendor&gt;/&lt;board&gt;-&lt;host&gt;</span></code>, composed from a <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code>) sets
+it. <code class="docutils literal notranslate"><span class="pre">HardwarePlanTask</span></code> composes its toolchain config from these when
+<code class="docutils literal notranslate"><span class="pre">platform=</span></code> is selected; change one for a single run with
+<code class="docutils literal notranslate"><span class="pre">platform.host_access.&lt;field&gt;=</span></code>.</p></li>
 </ul>
 <p>The shell project requests (<code class="docutils literal notranslate"><span class="pre">MmJobShellRequest</span></code>, <code class="docutils literal notranslate"><span class="pre">MmDdrJobShellRequest</span></code>) take
 a <code class="docutils literal notranslate"><span class="pre">platform</span></code> and default to dpv1; <code class="docutils literal notranslate"><span class="pre">part</span></code> defaults from the platform.</p>

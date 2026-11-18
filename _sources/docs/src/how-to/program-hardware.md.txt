@@ -29,8 +29,9 @@ example board (`platforms/example/probe`) is a fiction whose every hardware
 value is a placeholder, so it previews plans and refuses `execute=true`; the
 commands below name your own board. Compose
 `platform=platforms/<vendor>/<board>-<host>` so the plan takes that host's
-`host_access` facts, or set the `model.<field>=` overrides explicitly. A
-step that needs an unset fact refuses to render.
+`host_access` facts; override one for a single run with
+`platform.host_access.<field>=`. A step that needs an unset fact refuses to
+render.
 
 > **Programming can hang the PCIe link.** Removing and reprogramming an
 > endpoint while the host holds it can hang a rescan hard enough to need a
