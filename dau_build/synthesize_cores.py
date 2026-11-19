@@ -356,12 +356,13 @@ class SynthesizeCoresTask(BuildCallableModel):
             values[name] = spec.normalize(value)
         return values
 
-    def _sources_for(self, definition) -> tuple[Path, ...]:
+    def _sources_for(self, definition, *, root: Path) -> tuple[Path, ...]:
         """Dependency-closed source paths for one core, in registry order.
 
         Walks the model's own ``depends`` and ``source_path()`` surface
         rather than calling into the provider package, for the same reason
-        :meth:`_core_registry` does.
+        :meth:`_core_registry` does. Generated cores are read from the
+        directory this build rendered them into under ``root``.
         """
         registries = self._registries()
         selected: dict[str, object] = {}
@@ -377,10 +378,12 @@ class SynthesizeCoresTask(BuildCallableModel):
         visit(definition.name)
         # dau-core's own first: a contributed tile depends on them, never the reverse
         ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
-        return tuple(model.source_path() for model in ordered)
+        from .render_cores import RENDER_DIRNAME
+
+        return tuple(model.source_path(rendered_into=root / RENDER_DIRNAME) for model in ordered)
 
     def _stage_core(self, definition, *, part: str, clock_ns: float, root: Path) -> Path:
-        sources = self._sources_for(definition)
+        sources = self._sources_for(definition, root=root)
         generics = self._generics(definition)
         generic_args = "".join(f" -generic {name}={value}" for name, value in generics.items())
         reads = "\n".join(f"read_verilog -sv {_tcl_path(path)}" for path in sources)

@@ -4,7 +4,6 @@ defaults:
   - _self_
   - optional task: null
   - optional platform: null
-  - optional board: null
   - optional host: null
   - optional backend: null
   - optional driver: null

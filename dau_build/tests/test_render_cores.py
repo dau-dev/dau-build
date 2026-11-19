@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from dau_build.build_steps import BuildStepError
-from dau_build.render_cores import RENDER_DIRNAME, RENDER_ROOT_ENV, render_generated_cores
+from dau_build.render_cores import RENDER_DIRNAME, render_generated_cores
 
 
 class _Rendered:
@@ -76,25 +76,46 @@ def test_checked_in_cores_are_left_alone(tmp_path: Path) -> None:
     assert not (tmp_path / RENDER_DIRNAME).exists()
 
 
-def test_the_render_root_is_published_for_the_core_provider(tmp_path: Path, monkeypatch) -> None:
-    """The provider resolves source paths through an environment variable --
-    the only channel that does not require the public package to import the
-    private one."""
-    monkeypatch.delenv(RENDER_ROOT_ENV, raising=False)
+def test_rendering_leaves_the_environment_untouched(tmp_path: Path, monkeypatch) -> None:
+    """The render directory is passed to the provider, not published in
+    process state that a later build would inherit."""
+    import os
+
+    monkeypatch.delenv("DAU_CORE_RENDER_ROOT", raising=False)
+    before = dict(os.environ)
     render_generated_cores([_GeneratedCore("c", "c.sv")], root=tmp_path)
-    import os
-
-    assert os.environ[RENDER_ROOT_ENV] == str(tmp_path / RENDER_DIRNAME)
+    assert dict(os.environ) == before
 
 
-def test_nothing_generated_leaves_the_environment_untouched(tmp_path: Path, monkeypatch) -> None:
-    """A build of only checked-in cores must not repoint the provider's
-    search at an empty directory."""
-    monkeypatch.delenv(RENDER_ROOT_ENV, raising=False)
-    render_generated_cores([_CheckedInCore("plain")], root=tmp_path)
-    import os
+class _RegistryCore:
+    """A registry entry as synthesize-cores walks it: dependencies and a
+    source path that depends on where generated cores were rendered."""
 
-    assert RENDER_ROOT_ENV not in os.environ
+    def __init__(self, name: str, depends: tuple[str, ...] = ()) -> None:
+        self.name = name
+        self.depends = depends
+        self.rendered_into: Path | None = None
+
+    def source_path(self, *, rendered_into: Path | None = None) -> Path:
+        self.rendered_into = rendered_into
+        return Path(f"{self.name}.sv")
+
+
+def test_synthesis_reads_sources_from_this_build_tree(tmp_path: Path, monkeypatch) -> None:
+    """Each dependency is asked for its source in the directory this build
+    rendered into, so two builds never read each other's generated files."""
+    from types import SimpleNamespace
+
+    from dau_build.synthesize_cores import SynthesizeCoresTask
+
+    package = _RegistryCore("pkg")
+    tile = _RegistryCore("tile", depends=("pkg",))
+    registry = SimpleNamespace(models={"pkg": package, "tile": tile})
+    monkeypatch.setattr(SynthesizeCoresTask, "_registries", lambda self: (registry,))
+
+    task = SynthesizeCoresTask(cores=("/dau-core/tile",), output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    assert task._sources_for(tile, root=tmp_path) == (Path("pkg.sv"), Path("tile.sv"))
+    assert package.rendered_into == tile.rendered_into == tmp_path / RENDER_DIRNAME
 
 
 def test_multiple_generated_cores_all_render(tmp_path: Path) -> None:

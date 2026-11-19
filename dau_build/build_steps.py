@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, TypeVar
 from ccflow import BaseModel, CallableModel, Flow, NullContext, ResultBase
 from pydantic import ConfigDict, Field, ValidationError, field_serializer, field_validator
 
-from dau_build.build_config import BackendConfig, BoardConfig, DriverConfig, MemoryConfig, ResolvedBuildConfig
+from dau_build.build_config import BackendConfig, DriverConfig, MemoryConfig, ResolvedBuildConfig
 from dau_build.build_spec import BuildSpec
 from dau_build.hardware_plan import (
     HardwarePlan,
@@ -70,19 +70,16 @@ class BuildCallableModel(CallableModel):
 
 class SpecTaskModel(BuildCallableModel):
     # `spec` is composed by the Hydra `spec=` group: a packaged option, or one
-    # in a --config-dir overlay. `board`/`backend`/`driver`/`memory` are
-    # composed by their groups and win over the spec-derived defaults; the
-    # `backend` group composes either a label or a synthesis engine.
+    # in a --config-dir overlay. `backend`/`driver`/`memory` are composed by
+    # their groups and win over the spec-derived defaults; the `backend` group
+    # composes either a label or a synthesis engine.
     spec: BuildSpec | None = None
-    board: BoardConfig | None = None
     backend: "BackendConfig | SynthesisEngine | None" = None
     driver: DriverConfig | None = None
     memory: MemoryConfig | None = None
 
     def _resolved(self, spec, *, backend_name=None):
-        return ResolvedBuildConfig.from_spec(
-            spec, board=self.board, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory
-        )
+        return ResolvedBuildConfig.from_spec(spec, backend=self.backend, backend_name=backend_name, driver=self.driver, memory=self.memory)
 
     def _required_spec(self) -> BuildSpec:
         if self.spec is None:
@@ -318,8 +315,8 @@ class VivadoEngine(SynthesisEngine):
             selected_module=task.module,
             output_root=task.output_root,
             dau_artifact_bundle_path=artifacts.artifact_manifest_path,
-            platform=resolved.board.platform,
-            shell=resolved.board.shell,
+            platform=resolved.spec.platform,
+            shell=resolved.spec.shell,
             operator_set=resolved.operators.names,
             overlay_definition=self.overlay_definition,
         )

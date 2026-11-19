@@ -33,8 +33,8 @@ Your own spec is a `spec` option too: put a yaml file with
 `_target_: dau_build.build_spec.BuildSpec` and the spec's fields under
 `<dir>/spec/specs/<name>.yaml` and run with `--config-dir <dir> spec=specs/<name>`
 (set `base_dir` to the directory the spec's relative paths start from). To
-attach a specific board and backend to the resolved config, add
-`board=boards/example/probe backend=backends/vivado`.
+attach a specific backend to the resolved config, add
+`backend=backends/vivado`.
 
 ## Stage the Vivado work directory
 

@@ -14,7 +14,6 @@ defaults:
   - optional task: null
   - optional step: null
   - optional platform: null
-  - optional board: null
   - optional backend: null
   - optional driver: null
   - optional memory: null
@@ -25,18 +24,17 @@ defaults:
 ```
 
 Every group is `optional … null`: nothing is selected unless
-you override it. A run selects `task=` to populate `model`, and may add `spec=`, `board=`, `backend=`, `driver=`, `memory=`,
+you override it. A run selects `task=` to populate `model`, and may add `spec=`, `backend=`, `driver=`, `memory=`,
 `simulator=`, `platform=`, `host=` and `plan=`.
 
 Each option file begins with a `# @package <key>` directive that places its
 content under that top-level key. Tasks and steps use `# @package model`; the
-other groups use their singular key (`# @package board`, and so on).
+other groups use their singular key (`# @package backend`, and so on).
 
 | Group       | `@package` key | Instantiated model                        | Selects                                                  |
 | ----------- | -------------- | ----------------------------------------- | -------------------------------------------------------- |
 | `task`      | `model`        | a `…Task` `ccflow.CallableModel`          | The unit of work to run.                                 |
 | `spec`      | `spec`         | `dau_build.build_spec.BuildSpec`          | The build spec a task works on.                          |
-| `board`     | `board`        | `dau_build.build_config.BoardConfig`      | A board's build-config view.                             |
 | `backend`   | `backend`      | a `SynthesisEngine` (e.g. `VivadoEngine`) | The synthesis engine.                                    |
 | `driver`    | `driver`       | `dau_build.build_config.DriverConfig`     | The host driver (OS + transport) in the resolved config. |
 | `memory`    | `memory`       | `dau_build.build_config.MemoryConfig`     | The build-time staging buffers in the resolved config.   |
@@ -78,22 +76,6 @@ way a task receives a spec. Your own spec is an option in a `--config-dir`
 overlay (`<dir>/spec/specs/<name>.yaml` with the `_target_` and the fields).
 The packaged `specs/identity` option has `base_dir: examples/identity`, so it
 resolves only when run from the dau-build repository root.
-
-## `board`
-
-`board=boards/example/probe` composes `BoardConfig` into the `board` key.
-Options live under `boards/<vendor>/<board>`. dau-build packages no real
-board; add yours from a search-path package. The only packaged option is the
-fictional example, `boards/example/probe`:
-
-```yaml
-_target_: dau_build.build_config.BoardConfig
-name: probe
-platform: vivado-xdma
-shell: xdma-ddr
-```
-
-`BoardConfig` fields: `name` (str), `platform` (str), `shell` (str).
 
 ## `backend`
 

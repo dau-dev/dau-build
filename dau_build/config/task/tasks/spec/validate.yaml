@@ -2,7 +2,6 @@
 
 _target_: dau_build.build_steps.ValidateTask
 spec: ${oc.select:spec,null}
-board: ${oc.select:board,null}
 backend: ${oc.select:backend,null}
 driver: ${oc.select:driver,null}
 memory: ${oc.select:memory,null}

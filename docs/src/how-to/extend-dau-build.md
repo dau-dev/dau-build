@@ -69,27 +69,14 @@ The `dau` package adds `task=shell` this way: with `dau` installed,
 `dau-build task=shell design=designs/bar-noc model.output_root=...` resolves
 a task defined entirely in `dau`, with no `--config-dir` overlay.
 
-## Add a board or platform
+## Add a platform
 
-Boards and platforms reuse dau-build's existing models, so they are config
-only, with no new Python.
-
-For a board's build-config view, add
-`mypkg/config/board/boards/<vendor>/<board>.yaml`:
-
-```yaml
-# @package board
-
-_target_: dau_build.build_config.BoardConfig
-name: myboard
-platform: my-xdma
-shell: my-shell
-```
-
-For the hardware platform definition (part, resource budget, memory, host
-link), add `mypkg/config/platform/platforms/<vendor>/<board>.yaml` targeting
-`dau_build.platforms.PlatformDefinition`. Select them with
-`board=boards/<vendor>/<board>` and `platform=platforms/<vendor>/<board>`.
+A platform reuses dau-build's existing model, so it is config only, with no
+new Python. For the hardware platform definition (part, resource budget,
+memory, host link), add
+`mypkg/config/platform/platforms/<vendor>/<board>.yaml` targeting
+`dau_build.platforms.PlatformDefinition`. Select it with
+`platform=platforms/<vendor>/<board>`.
 
 ## Add a synthesis engine
 

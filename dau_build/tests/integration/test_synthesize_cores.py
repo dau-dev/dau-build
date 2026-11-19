@@ -50,6 +50,14 @@ def test_sources_are_dependency_closed_in_order(tmp_path: Path) -> None:
     )
 
 
+def test_a_generated_core_is_staged_from_this_build_tree(tmp_path: Path) -> None:
+    """Two builds rendering the same generated core must each synthesize
+    their own render, so the staged source is under this task's output root."""
+    _task(tmp_path, cores=("/dau-core/fixed-point-exp",))(NullContext())
+    tcl = (tmp_path / "dau_fixed_point_exp.ooc.tcl").read_text()
+    assert f"{tmp_path / 'generated' / 'dau_fixed_point_exp.sv'}" in tcl
+
+
 def test_parameter_override_changes_generic(tmp_path: Path) -> None:
     _task(tmp_path, parameters={"streaming-top-k": {"K": 32}})(NullContext())
     tcl = (tmp_path / "dau_streaming_top_k.ooc.tcl").read_text()
@@ -442,7 +450,7 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
     try:
         task = _task(tmp_path, cores=("/dau-core-contrib/vendor-alu",))
         definition = task._resolve_core("/dau-core-contrib/vendor-alu")
-        assert [path.name for path in task._sources_for(definition)] == ["dau_map_alu_pkg.sv", "dau_row_map_alu.sv"]
+        assert [path.name for path in task._sources_for(definition, root=tmp_path)] == ["dau_map_alu_pkg.sv", "dau_row_map_alu.sv"]
         assert "status=handoff-written" in task(NullContext()).message
         with pytest.raises(BuildStepError, match="unknown core"):
             task._resolve_core("/dau-core-contrib/no-such-tile")
