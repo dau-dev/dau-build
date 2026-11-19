@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from dau_build.build_config import (
     BackendConfig,
-    BoardConfig,
     MemoryConfig,
     OperatorConfig,
     ResolvedBuildConfig,
@@ -14,13 +13,13 @@ from dau_build.build_config import (
 
 
 def test_config_models_are_pydantic() -> None:
-    for model in (BoardConfig, BackendConfig, MemoryConfig, OperatorConfig):
+    for model in (BackendConfig, MemoryConfig, OperatorConfig):
         assert issubclass(model, BaseModel)
 
 
 def test_config_model_round_trips() -> None:
-    board = BoardConfig(name="b", platform="vivado-xdma", shell="xdma-ddr")
-    assert BoardConfig.model_validate(board.model_dump()) == board
+    backend = BackendConfig(name="vivado", invocation="standard")
+    assert BackendConfig.model_validate(backend.model_dump()) == backend
 
 
 def test_memory_config_rejects_negative() -> None:
@@ -35,10 +34,10 @@ def test_resolve_build_config_is_a_view_over_the_spec() -> None:
     spec = _identity_spec().resolve()
     resolved = ResolvedBuildConfig.from_spec(spec)
     assert isinstance(resolved, ResolvedBuildConfig)
-    assert isinstance(resolved.board, BoardConfig) and isinstance(resolved.memory, MemoryConfig)
-    # board/operators derive from the spec; the backend is only ever the
+    assert isinstance(resolved.memory, MemoryConfig)
+    # labels and operators come from the spec; the backend is only ever the
     # composed group or a task's engine, never a spec field
-    assert resolved.board.platform == spec.platform and resolved.board.shell == spec.shell
+    assert f"spec\tname={spec.name} platform={spec.platform} shell={spec.shell}" in resolved.to_text().splitlines()
     assert resolved.backend.name == "none"
     assert resolved.operators.names == spec.operators
     assert resolved.to_text().splitlines()[0] == "dau-build-resolved-config"
@@ -55,12 +54,6 @@ def _identity_spec():
     return instantiate(compose_config(["spec=specs/identity"]).cfg.spec)
 
 
-def test_a_composed_board_must_build_what_the_spec_names() -> None:
-    spec = _identity_spec().resolve()
-    with pytest.raises(ValueError, match="builds for platform"):
-        ResolvedBuildConfig.from_spec(spec, board=BoardConfig(name="other", platform="other-xdma", shell=spec.shell))
-
-
 def test_the_driver_is_reported_only_when_composed() -> None:
     spec = _identity_spec().resolve()
     resolved = ResolvedBuildConfig.from_spec(spec)
@@ -69,9 +62,9 @@ def test_the_driver_is_reported_only_when_composed() -> None:
 
 
 def test_composed_build_config_models_are_frozen() -> None:
-    board = BoardConfig(name="probe", platform="p", shell="s")
+    backend = BackendConfig(name="vivado", invocation="standard")
     with pytest.raises(ValidationError):
-        board.name = "other"  # ty: ignore[invalid-assignment]
+        backend.name = "other"  # ty: ignore[invalid-assignment]
     memory = MemoryConfig()
     with pytest.raises(ValidationError):
         memory.host_staging_bytes = 1  # ty: ignore[invalid-assignment]

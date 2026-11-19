@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from ccflow import CallableModel
 from ccflow.utils.hydra import cfg_run, load_config as base_load_config
 from omegaconf import DictConfig, OmegaConf
@@ -115,21 +116,27 @@ def _spec_text() -> str:
     )
 
 
-def test_nested_board_and_backend_config_groups_compose() -> None:
-    # path-style group selection: board=boards/example/probe backend=backends/vivado.
-    # the backend group composes a synthesis engine model.
+def test_nested_backend_config_group_composes() -> None:
+    # path-style group selection: backend=backends/vivado composes a
+    # synthesis engine model.
     from hydra import compose, initialize_config_module
     from hydra.utils import instantiate
 
-    from dau_build.build_config import BoardConfig
     from dau_build.build_steps import VivadoEngine
 
     with initialize_config_module(config_module="dau_build.config", version_base=None):
-        cfg = compose(config_name="base", overrides=["board=boards/example/probe", "backend=backends/vivado"])
-    board = instantiate(cfg.board)
+        cfg = compose(config_name="base", overrides=["backend=backends/vivado"])
     backend = instantiate(cfg.backend)
-    assert isinstance(board, BoardConfig) and board.name == "probe" and board.platform == "vivado-xdma"
     assert isinstance(backend, VivadoEngine) and backend.name == "vivado"
+
+
+def test_there_is_no_board_group() -> None:
+    # board facts live in platform=; a second group describing the same board
+    # is how the two drift apart
+    from hydra.errors import ConfigCompositionException
+
+    with pytest.raises(ConfigCompositionException):
+        load_config(["task=tasks/spec/inspect", "spec=specs/identity", "board=boards/example/probe"], overwrite=True)
 
 
 def test_programmer_config_group_composes_the_adapter() -> None:
@@ -163,13 +170,12 @@ def _resolved(overrides: list[str]):
     return model._resolved(model.load_spec())
 
 
-def test_board_and_backend_groups_override_spec_derived_resolved_config() -> None:
-    # board=/backend= compose into the task and win over the spec-derived view
+def test_backend_group_overrides_spec_derived_resolved_config() -> None:
+    # backend= composes into the task and wins over the spec-derived view
     base = ["task=tasks/spec/inspect", "spec=specs/identity"]
     derived = _resolved(base)
-    composed = _resolved([*base, "board=boards/example/probe", "backend=backends/vivado"])
-    assert derived.board.name == "vivado-xdma"  # spec-derived: board name = platform
-    assert composed.board.name == "probe"  # composed board wins
+    composed = _resolved([*base, "backend=backends/vivado"])
+    assert derived.backend.name == "none"
     assert (composed.backend.name, composed.backend.invocation) == ("vivado", "standard")  # composed backend wins
 
 

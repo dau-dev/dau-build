@@ -9,14 +9,6 @@ from pydantic import ConfigDict, field_validator
 from dau_build.build_spec import DauBuildSpec
 
 
-class BoardConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    platform: str
-    shell: str
-
-
 class HostConfig(BaseModel):
     """Where the build host keeps its source checkouts — the ``host`` hydra
     config group. Tasks and plans that need a checkout root interpolate from
@@ -83,7 +75,6 @@ class ResolvedBuildConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     spec: DauBuildSpec
-    board: BoardConfig
     backend: BackendConfig
     # the host driver, when a `driver=` group was composed; the spec names none
     driver: DriverConfig | None
@@ -95,31 +86,21 @@ class ResolvedBuildConfig(BaseModel):
         cls,
         spec: DauBuildSpec,
         *,
-        board: BoardConfig | None = None,
         backend: BackendLabel | None = None,
         backend_name: str | None = None,
         driver: DriverConfig | None = None,
         memory: MemoryConfig | None = None,
     ) -> ResolvedBuildConfig:
-        """The build config as a view over the spec. Board and operators
-        derive from the spec. A composed ``board=`` group must name the
-        spec's platform and shell: the generated top and its manifest follow
-        the spec, so a board that disagrees is refused rather than used for
-        the backend handoff. ``driver=`` is reported only when composed (the
-        spec names no driver). ``backend_name`` (e.g. a task's synthesis
+        """The build config as a view over the spec. The platform and shell
+        labels and the operators come from the spec. ``driver=`` is reported
+        only when composed (the spec names no driver). ``backend_name`` (e.g. a task's synthesis
         engine) selects the backend when no ``backend=`` group is given.
 
         A composed backend may be a synthesis *engine* model (carrying extra
         fields like a yosys frontend); it is normalized here to the ``name`` +
         ``invocation`` label the resolved config reports."""
-        if board is not None and (board.platform, board.shell) != (spec.platform, spec.shell):
-            raise ValueError(
-                f"board {board.name!r} is platform={board.platform} shell={board.shell}, "
-                f"but spec {spec.name!r} builds for platform={spec.platform} shell={spec.shell}"
-            )
         return cls(
             spec=spec,
-            board=board or BoardConfig(name=spec.platform, platform=spec.platform, shell=spec.shell),
             backend=_backend_label(backend, backend_name),
             driver=driver,
             operators=OperatorConfig(set_name="spec", names=spec.operators),
@@ -130,7 +111,7 @@ class ResolvedBuildConfig(BaseModel):
         return "\n".join(
             (
                 "dau-build-resolved-config",
-                f"board\tname={self.board.name} platform={self.board.platform} shell={self.board.shell}",
+                f"spec\tname={self.spec.name} platform={self.spec.platform} shell={self.spec.shell}",
                 f"backend\tname={self.backend.name} invocation={self.backend.invocation}",
                 "driver\tnone" if self.driver is None else f"driver\tos={self.driver.os} transport={self.driver.transport}",
                 f"operators\tset={self.operators.set_name} names={','.join(self.operators.names)}",

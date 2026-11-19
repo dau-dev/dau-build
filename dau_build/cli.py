@@ -11,7 +11,7 @@ machinery on the command line as the single ``dau-build`` entry point:
     dau-build --explain task=tasks/build/synthesize ...   # resolved config, no run
 
 Overrides are hydra overrides: ``group=option`` selects a config group
-(``backend=``, ``simulator=``, ``design=``, ``plan=``, ``board=``, ``spec=``)
+(``backend=``, ``simulator=``, ``design=``, ``plan=``, ``platform=``, ``spec=``)
 and ``model.field=value`` sets a task field.
 
 Open registration: a ``--config-dir`` overlay (or a package's own

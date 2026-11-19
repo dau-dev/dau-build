@@ -25,11 +25,6 @@ from ccflow import Flow, NullContext
 from dau_build.build_steps import BuildCallableModel, BuildStepError, BuildStepResult
 from dau_build.synthesize_cores import resolve_core_definitions
 
-# The environment variable a core provider reads to find rendered sources.
-# An environment variable rather than a call is the only channel that does
-# not require the public package to import the private one.
-RENDER_ROOT_ENV = "DAU_CORE_RENDER_ROOT"
-
 # Subdirectory of a build tree that holds rendered HDL.
 RENDER_DIRNAME = "generated"
 
@@ -54,22 +49,13 @@ def render_generated_cores(definitions: Sequence[RenderableCore], *, root: Path)
     rendering over reviewed HDL is refused by the core provider, and asking
     it to would be a bug here.
 
-    Points ``DAU_CORE_RENDER_ROOT`` at the directory so the provider's own
-    ``source_path()`` resolves to what was just written. A build tree
+    Callers read the rendered sources back with
+    ``source_path(rendered_into=root / RENDER_DIRNAME)``. A build tree
     rendering its own inputs is what keeps two concurrent builds off one
     file.
     """
-    import os
-
     target = root / RENDER_DIRNAME
-    written: list[Path] = []
-    for definition in definitions:
-        if definition.generator is None:
-            continue
-        written.append(definition.render(into=target))
-    if written:
-        os.environ[RENDER_ROOT_ENV] = str(target)
-    return tuple(written)
+    return tuple(definition.render(into=target) for definition in definitions if definition.generator is not None)
 
 
 class RenderCoresTask(BuildCallableModel):

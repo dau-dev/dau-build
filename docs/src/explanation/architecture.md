@@ -54,7 +54,7 @@ place to register it.
 A single `dau-build` command takes three kinds of override. `task=<path>`
 selects the runnable and composes it into the `model` key.
 `<group>=<option>` selects a config group: `spec=specs/identity`,
-`board=boards/example/probe`, `backend=backends/vivado`. And
+`platform=platforms/example/probe`, `backend=backends/vivado`. And
 `model.<field>=value` sets a field on the selected model. The `model.` prefix
 is there because the task is composed into the `model` key, so its fields are
 addressed under `model.`.
@@ -119,16 +119,14 @@ These three groups are easy to confuse. They answer different questions.
   hand-picked subset of those parameters leaves the device memory-dead on
   hardware, which is why the definition insists on all of them. `fits()`
   checks a design's resource use against the budget.
-- **`board`** (`BoardConfig`) is a small build-config view: `name`,
-  `platform`, `shell`. Here `platform` and `shell` are backend labels
-  (`vivado-xdma`, `xdma-ddr`) threaded into Vivado manifests, not the
-  hardware `PlatformDefinition`.
 - **`backend`** (`BackendConfig`) is the synthesis toolchain, as a label.
 
 They are independent groups, composed into a task's `ResolvedBuildConfig`
-only where a task needs them. Keeping the hardware facts (`platform`) apart
-from the backend labels (`board`, `backend`) means the same physical dpv1
-definition serves whichever backend produced a bitstream.
+only where a task needs them. The spec's own `platform` and `shell` fields
+are the backend labels (`vivado-xdma`, `xdma-ddr`) threaded into Vivado
+manifests. Keeping the hardware facts (`platform`) apart from those labels
+and the `backend` means the same physical dpv1 definition serves whichever
+backend produced a bitstream.
 
 ## Backends: Vivado and yosys
 
