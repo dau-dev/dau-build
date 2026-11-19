@@ -219,7 +219,7 @@ place to register it.</p>
 <p>A single <code class="docutils literal notranslate"><span class="pre">dau-build</span></code> command takes three kinds of override. <code class="docutils literal notranslate"><span class="pre">task=&lt;path&gt;</span></code>
 selects the runnable and composes it into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key.
 <code class="docutils literal notranslate"><span class="pre">&lt;group&gt;=&lt;option&gt;</span></code> selects a config group: <code class="docutils literal notranslate"><span class="pre">spec=specs/identity</span></code>,
-<code class="docutils literal notranslate"><span class="pre">board=boards/example/probe</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And
+<code class="docutils literal notranslate"><span class="pre">platform=platforms/example/probe</span></code>, <code class="docutils literal notranslate"><span class="pre">backend=backends/vivado</span></code>. And
 <code class="docutils literal notranslate"><span class="pre">model.&lt;field&gt;=value</span></code> sets a field on the selected model. The <code class="docutils literal notranslate"><span class="pre">model.</span></code> prefix
 is there because the task is composed into the <code class="docutils literal notranslate"><span class="pre">model</span></code> key, so its fields are
 addressed under <code class="docutils literal notranslate"><span class="pre">model.</span></code>.</p>
@@ -281,16 +281,14 @@ Vivado <code class="docutils literal notranslate"><span class="pre">CONFIG.*</sp
 hand-picked subset of those parameters leaves the device memory-dead on
 hardware, which is why the definition insists on all of them. <code class="docutils literal notranslate"><span class="pre">fits()</span></code>
 checks a design’s resource use against the budget.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">board</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">BoardConfig</span></code>) is a small build-config view: <code class="docutils literal notranslate"><span class="pre">name</span></code>,
-<code class="docutils literal notranslate"><span class="pre">platform</span></code>, <code class="docutils literal notranslate"><span class="pre">shell</span></code>. Here <code class="docutils literal notranslate"><span class="pre">platform</span></code> and <code class="docutils literal notranslate"><span class="pre">shell</span></code> are backend labels
-(<code class="docutils literal notranslate"><span class="pre">vivado-xdma</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma-ddr</span></code>) threaded into Vivado manifests, not the
-hardware <code class="docutils literal notranslate"><span class="pre">PlatformDefinition</span></code>.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">backend</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">BackendConfig</span></code>) is the synthesis toolchain, as a label.</p></li>
 </ul>
 <p>They are independent groups, composed into a task’s <code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code>
-only where a task needs them. Keeping the hardware facts (<code class="docutils literal notranslate"><span class="pre">platform</span></code>) apart
-from the backend labels (<code class="docutils literal notranslate"><span class="pre">board</span></code>, <code class="docutils literal notranslate"><span class="pre">backend</span></code>) means the same physical dpv1
-definition serves whichever backend produced a bitstream.</p>
+only where a task needs them. The spec’s own <code class="docutils literal notranslate"><span class="pre">platform</span></code> and <code class="docutils literal notranslate"><span class="pre">shell</span></code> fields
+are the backend labels (<code class="docutils literal notranslate"><span class="pre">vivado-xdma</span></code>, <code class="docutils literal notranslate"><span class="pre">xdma-ddr</span></code>) threaded into Vivado
+manifests. Keeping the hardware facts (<code class="docutils literal notranslate"><span class="pre">platform</span></code>) apart from those labels
+and the <code class="docutils literal notranslate"><span class="pre">backend</span></code> means the same physical dpv1 definition serves whichever
+backend produced a bitstream.</p>
 </section>
 <section id="backends-vivado-and-yosys">
 <h2>Backends: Vivado and yosys<a class="headerlink" href="#backends-vivado-and-yosys" title="Link to this heading">¶</a></h2>

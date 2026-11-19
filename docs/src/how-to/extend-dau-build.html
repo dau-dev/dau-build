@@ -145,7 +145,7 @@
     <a href="#add-a-task">Add a task</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
-    <a href="#add-a-board-or-platform">Add a board or platform</a>
+    <a href="#add-a-platform">Add a platform</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#add-a-synthesis-engine">Add a synthesis engine</a>
@@ -224,24 +224,14 @@ importable module.</p>
 <code class="docutils literal notranslate"><span class="pre">dau-build</span> <span class="pre">task=shell</span> <span class="pre">design=designs/bar-noc</span> <span class="pre">model.output_root=...</span></code> resolves
 a task defined entirely in <code class="docutils literal notranslate"><span class="pre">dau</span></code>, with no <code class="docutils literal notranslate"><span class="pre">--config-dir</span></code> overlay.</p>
 </section>
-<section id="add-a-board-or-platform">
-<h2>Add a board or platform<a class="headerlink" href="#add-a-board-or-platform" title="Link to this heading">¶</a></h2>
-<p>Boards and platforms reuse dau-build’s existing models, so they are config
-only, with no new Python.</p>
-<p>For a board’s build-config view, add
-<code class="docutils literal notranslate"><span class="pre">mypkg/config/board/boards/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code>:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># @package board</span>
-
-<span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dau_build.build_config.BoardConfig</span>
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myboard</span>
-<span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-xdma</span>
-<span class="nt">shell</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-shell</span>
-</pre></div>
-</div>
-<p>For the hardware platform definition (part, resource budget, memory, host
-link), add <code class="docutils literal notranslate"><span class="pre">mypkg/config/platform/platforms/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code> targeting
-<code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>. Select them with
-<code class="docutils literal notranslate"><span class="pre">board=boards/&lt;vendor&gt;/&lt;board&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
+<section id="add-a-platform">
+<h2>Add a platform<a class="headerlink" href="#add-a-platform" title="Link to this heading">¶</a></h2>
+<p>A platform reuses dau-build’s existing model, so it is config only, with no
+new Python. For the hardware platform definition (part, resource budget,
+memory, host link), add
+<code class="docutils literal notranslate"><span class="pre">mypkg/config/platform/platforms/&lt;vendor&gt;/&lt;board&gt;.yaml</span></code> targeting
+<code class="docutils literal notranslate"><span class="pre">dau_build.platforms.PlatformDefinition</span></code>. Select it with
+<code class="docutils literal notranslate"><span class="pre">platform=platforms/&lt;vendor&gt;/&lt;board&gt;</span></code>.</p>
 </section>
 <section id="add-a-synthesis-engine">
 <h2>Add a synthesis engine<a class="headerlink" href="#add-a-synthesis-engine" title="Link to this heading">¶</a></h2>
@@ -331,7 +321,7 @@ iterate on a new task config before wiring up the entry point.</p>
     <a href="#add-a-task">Add a task</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
-    <a href="#add-a-board-or-platform">Add a board or platform</a>
+    <a href="#add-a-platform">Add a platform</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#add-a-synthesis-engine">Add a synthesis engine</a>

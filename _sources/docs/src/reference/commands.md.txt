@@ -18,11 +18,11 @@ dau-build [--config-dir DIR] [--explain] <overrides ...>
 
 Every argument after the options is a Hydra override:
 
-| Form                  | Selects                                                                                             | Example                   |
-| --------------------- | --------------------------------------------------------------------------------------------------- | ------------------------- |
-| `task=<path>`         | the task to run (populates `model`)                                                                 | `task=tasks/sim/simulate` |
-| `<group>=<option>`    | a config group option: `spec=`, `board=`, `backend=`, `simulator=`, `design=`, `plan=`, `platform=` | `backend=backends/yosys`  |
-| `model.<field>=value` | a field on the selected task model                                                                  | `model.output_root=out`   |
+| Form                  | Selects                                                                                   | Example                   |
+| --------------------- | ----------------------------------------------------------------------------------------- | ------------------------- |
+| `task=<path>`         | the task to run (populates `model`)                                                       | `task=tasks/sim/simulate` |
+| `<group>=<option>`    | a config group option: `spec=`, `backend=`, `simulator=`, `design=`, `plan=`, `platform=` | `backend=backends/yosys`  |
+| `model.<field>=value` | a field on the selected task model                                                        | `model.output_root=out`   |
 
 Task and group option names are paths into the config tree
 (`task=tasks/sim/simulate`, `backend=backends/yosys`).
@@ -33,7 +33,7 @@ populates `model`.
 
 The task names and their fields are in the
 [task and step catalog](tasks-and-steps.md). The groups selectable with
-`spec=`, `board=`, `backend=` and `platform=` are in the
+`spec=`, `backend=` and `platform=` are in the
 [config group reference](config-groups.md).
 
 ## Examples
