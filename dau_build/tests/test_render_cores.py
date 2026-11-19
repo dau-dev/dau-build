@@ -87,6 +87,37 @@ def test_rendering_leaves_the_environment_untouched(tmp_path: Path, monkeypatch)
     assert dict(os.environ) == before
 
 
+class _RegistryCore:
+    """A registry entry as synthesize-cores walks it: dependencies and a
+    source path that depends on where generated cores were rendered."""
+
+    def __init__(self, name: str, depends: tuple[str, ...] = ()) -> None:
+        self.name = name
+        self.depends = depends
+        self.rendered_into: Path | None = None
+
+    def source_path(self, *, rendered_into: Path | None = None) -> Path:
+        self.rendered_into = rendered_into
+        return Path(f"{self.name}.sv")
+
+
+def test_synthesis_reads_sources_from_this_build_tree(tmp_path: Path, monkeypatch) -> None:
+    """Each dependency is asked for its source in the directory this build
+    rendered into, so two builds never read each other's generated files."""
+    from types import SimpleNamespace
+
+    from dau_build.synthesize_cores import SynthesizeCoresTask
+
+    package = _RegistryCore("pkg")
+    tile = _RegistryCore("tile", depends=("pkg",))
+    registry = SimpleNamespace(models={"pkg": package, "tile": tile})
+    monkeypatch.setattr(SynthesizeCoresTask, "_registries", lambda self: (registry,))
+
+    task = SynthesizeCoresTask(cores=("/dau-core/tile",), output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    assert task._sources_for(tile, root=tmp_path) == (Path("pkg.sv"), Path("tile.sv"))
+    assert package.rendered_into == tile.rendered_into == tmp_path / RENDER_DIRNAME
+
+
 def test_multiple_generated_cores_all_render(tmp_path: Path) -> None:
     cores = [_GeneratedCore(f"c{i}", f"c{i}.sv", f"// {i}\n") for i in range(3)]
     written = render_generated_cores(cores, root=tmp_path)
