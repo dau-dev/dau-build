@@ -166,6 +166,18 @@ def test_load_artifact_manifest_rejects_removed_artifact_fields(tmp_path: Path, 
     assert "Extra inputs are not permitted" in str(exc_info.value)
 
 
+def test_load_artifact_manifest_refuses_a_file_that_is_not_yaml(tmp_path: Path) -> None:
+    """A caller scanning a directory of manifests skips what it cannot read
+    by catching one error type, so a parse failure has to be that type."""
+    manifest_path = tmp_path / "junk.manifest"
+    manifest_path.write_text("not yaml at all: [", encoding="utf-8")
+
+    with pytest.raises(ArtifactManifestError, match="not valid YAML"):
+        load_artifact_manifest(manifest_path)
+    with pytest.raises(ArtifactManifestError, match="cannot read manifest"):
+        load_artifact_manifest(tmp_path / "absent.manifest")
+
+
 def test_load_artifact_manifest_refuses_a_manifest_without_a_schema(tmp_path: Path) -> None:
     """artlink assumes the current schema when the key is absent; a manifest
     that does not say what it was written for is refused instead."""
