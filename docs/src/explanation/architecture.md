@@ -156,7 +156,7 @@ Because the engine is a composed model, its fields are Hydra overrides. The
 dau-build's own synthesizable sources. `frontend=slang` uses the yosys-slang
 plugin's `read_slang`, the same slang engine as the project's `pyslang`
 parser, for the full SystemVerilog surface (packages, interfaces) the dau-core
-tiles use.
+cores use.
 
 Only `name` and `invocation` reach the resolved-config view
 (`ResolvedBuildConfig` normalizes the engine to that label), so an engine's

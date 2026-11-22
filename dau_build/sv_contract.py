@@ -1,10 +1,10 @@
 """Slang-backed stream+status contract validation.
 
-Every DAU operator tile speaks the same streaming contract (valid/ready row
+Every DAU operator core speaks the same streaming contract (valid/ready row
 stream in and out, ``last`` batch delimiter, a trailing status stream, an
 optional trailing counter). Until now that contract was a naming convention
 enforced by nothing — a drifted port surfaced at Vivado elaboration, deep
-into a build. ``validate_stream_tile`` parses the module's real interface
+into a build. ``validate_stream_core`` parses the module's real interface
 with pyslang and reports every violation at test/codegen time instead.
 
 Port names and directions are extracted straight from the syntax tree (no
@@ -29,7 +29,7 @@ from pyslang.syntax import (
 )
 
 # the stream+status contract: port name -> required direction
-STREAM_TILE_INPUTS = (
+STREAM_CORE_INPUTS = (
     "clk",
     "rst",
     "input_valid",
@@ -38,7 +38,7 @@ STREAM_TILE_INPUTS = (
     "output_ready",
     "status_ready",
 )
-STREAM_TILE_OUTPUTS = (
+STREAM_CORE_OUTPUTS = (
     "input_ready",
     "output_valid",
     "output_data",
@@ -50,7 +50,7 @@ STREAM_TILE_OUTPUTS = (
 
 
 class StreamContractError(ValueError):
-    """The module does not conform to the stream+status tile contract."""
+    """The module does not conform to the stream+status core contract."""
 
 
 def module_ports(sources: Sequence[Path | str], module: str) -> dict[str, str]:
@@ -100,23 +100,23 @@ def module_ports(sources: Sequence[Path | str], module: str) -> dict[str, str]:
     raise StreamContractError(f"module {module!r} not found in {[str(s) for s in sources]}")
 
 
-def validate_stream_tile(
+def validate_stream_core(
     sources: Sequence[Path | str],
     module: str,
     *,
     count_port: str | None = None,
 ) -> list[str]:
-    """Check ``module`` against the stream+status tile contract; return the
-    list of violations (empty means conforming). Fan-out tiles with vectored
+    """Check ``module`` against the stream+status core contract; return the
+    list of violations (empty means conforming). Fan-out cores with vectored
     per-lane ports conform as long as the names and directions match."""
     ports = module_ports(sources, module)
     violations: list[str] = []
-    for name in STREAM_TILE_INPUTS:
+    for name in STREAM_CORE_INPUTS:
         if name not in ports:
             violations.append(f"missing input port {name!r}")
         elif ports[name] != "input":
             violations.append(f"port {name!r} must be an input, is {ports[name]!r}")
-    for name in STREAM_TILE_OUTPUTS:
+    for name in STREAM_CORE_OUTPUTS:
         if name not in ports:
             violations.append(f"missing output port {name!r}")
         elif ports[name] != "output":

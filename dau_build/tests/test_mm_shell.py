@@ -28,12 +28,12 @@ def _test_platform():
 def _request(tmp_path: Path) -> MmJobShellRequest:
     # dau-build is generic: the caller supplies HDL sources and generated
     # binding tops; this test uses its own stand-ins
-    tile = tmp_path / "stream_tile.sv"
-    tile.write_text("module stream_tile; endmodule\n")
+    core = tmp_path / "stream_core.sv"
+    core.write_text("module stream_core; endmodule\n")
     return MmJobShellRequest(
         platform=_test_platform(),
         output_root=tmp_path / "shell",
-        hdl_sources=(tile,),
+        hdl_sources=(core,),
         generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         top_module="my_mm_top",
     )
@@ -142,14 +142,14 @@ def test_constraints_have_no_gt_locs() -> None:
 
 
 def _ddr_request(tmp_path: Path) -> MmDdrJobShellRequest:
-    tile = tmp_path / "stream_tile.sv"
-    tile.write_text("module stream_tile; endmodule\n")
+    core = tmp_path / "stream_core.sv"
+    core.write_text("module stream_core; endmodule\n")
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
     return MmDdrJobShellRequest(
         platform=_test_platform(),
         output_root=tmp_path / "shell",
-        hdl_sources=(tile,),
+        hdl_sources=(core,),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",
         mig_prj=prj,
@@ -221,7 +221,7 @@ def test_write_ddr_artifacts_vendor_the_mig_prj(tmp_path: Path) -> None:
     assert (request.output_root / "probe_mig.prj").read_text() == request.mig_prj.read_text()
     tcl = (request.output_root / "build_mm_job.tcl").read_text()
     assert "my_ddr_top.v" in tcl
-    assert "stream_tile.sv" in tcl
+    assert "stream_core.sv" in tcl
 
 
 def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> None:
@@ -232,7 +232,7 @@ def test_write_artifacts_emits_generated_sources_and_scripts(tmp_path: Path) -> 
     assert (request.output_root / "my_mm_top.v").read_text() == "module my_mm_top; endmodule\n"
     tcl = (request.output_root / "build_mm_job.tcl").read_text()
     assert "my_mm_top.v" in tcl
-    assert "stream_tile.sv" in tcl
+    assert "stream_core.sv" in tcl
 
 
 def _probe_platform(**overrides):
@@ -302,11 +302,11 @@ def test_platform_threads_through_the_ddr_project(tmp_path: Path) -> None:
 
 
 def test_request_part_resolves_from_the_platform(tmp_path: Path) -> None:
-    tile = tmp_path / "stream_tile.sv"
-    tile.write_text("module stream_tile; endmodule\n")
+    core = tmp_path / "stream_core.sv"
+    core.write_text("module stream_core; endmodule\n")
     common: dict[str, Any] = {
         "output_root": tmp_path / "shell",
-        "hdl_sources": (tile,),
+        "hdl_sources": (core,),
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         "top_module": "my_mm_top",
     }
@@ -333,11 +333,11 @@ def test_a_shared_platform_cannot_be_tampered_through_one_request(tmp_path: Path
     several requests. Frozen means one request cannot corrupt another's."""
     import pytest as _pytest
 
-    tile = tmp_path / "stream_tile.sv"
-    tile.write_text("module stream_tile; endmodule\n")
+    core = tmp_path / "stream_core.sv"
+    core.write_text("module stream_core; endmodule\n")
     common: dict[str, Any] = {
         "output_root": tmp_path / "shell",
-        "hdl_sources": (tile,),
+        "hdl_sources": (core,),
         "generated_sources": (("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         "top_module": "my_mm_top",
     }
@@ -430,14 +430,14 @@ def test_project_tcl_matches_pre_fragment_goldens() -> None:
     mm = MmJobShellRequest(
         platform=_test_platform(),
         output_root=Path("/work/shell"),
-        hdl_sources=(Path("/src/tile.sv"), Path("/src/identity.v")),
+        hdl_sources=(Path("/src/core.sv"), Path("/src/identity.v")),
         generated_sources=(("my_top.v", "module my_top; endmodule\n"),),
         top_module="my_top",
     )
     ddr = MmDdrJobShellRequest(
         platform=_test_platform(),
         output_root=Path("/work/shell"),
-        hdl_sources=(Path("/src/tile.sv"),),
+        hdl_sources=(Path("/src/core.sv"),),
         generated_sources=(("my_ddr_top.v", "module my_ddr_top; endmodule\n"),),
         top_module="my_ddr_top",
         mig_prj=Path("/src/mig.prj"),
@@ -454,11 +454,11 @@ def test_wide_data_width_ddr_tcl_wires_split_masters(tmp_path) -> None:
 
     prj = tmp_path / "mig.prj"
     prj.write_text('<Project NoOfControllers="1"></Project>\n')
-    tile = tmp_path / "tile.sv"
-    tile.write_text("module tile; endmodule\n")
+    core = tmp_path / "core.sv"
+    core.write_text("module core; endmodule\n")
     request = MmDdrJobShellRequest(
         output_root=tmp_path,
-        hdl_sources=(tile,),
+        hdl_sources=(core,),
         generated_sources=(("top.v", "module top; endmodule\n"),),
         top_module="top",
         mig_prj=prj,
@@ -502,7 +502,7 @@ def test_a_flash_booting_platform_emits_its_spi_mcs() -> None:
 
 
 def test_a_header_beside_a_source_is_added_to_the_project(tmp_path: Path) -> None:
-    """A tile that includes a header needs that header IN the project.
+    """A core that includes a header needs that header IN the project.
 
     Vivado does not accept an include path alone here: it refuses with
     "Given include File ... needs to be addded to the project in order to
@@ -514,15 +514,15 @@ def test_a_header_beside_a_source_is_added_to_the_project(tmp_path: Path) -> Non
     collected from the directories the sources come from -- the same rule
     the OOC synthesis and the verilator benches follow.
     """
-    tile = tmp_path / "stream_tile.sv"
-    tile.write_text('`include "types.svh"\nmodule stream_tile; endmodule\n')
+    core = tmp_path / "stream_core.sv"
+    core.write_text('`include "types.svh"\nmodule stream_core; endmodule\n')
     header = tmp_path / "types.svh"
     header.write_text("`define DAU_TYPE_INT32 32\n")
 
     request = MmJobShellRequest(
         platform=_test_platform(),
         output_root=tmp_path / "shell",
-        hdl_sources=(tile,),
+        hdl_sources=(core,),
         generated_sources=(("my_mm_top.v", "module my_mm_top; endmodule\n"),),
         top_module="my_mm_top",
     )

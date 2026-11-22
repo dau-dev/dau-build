@@ -6,11 +6,11 @@ set origin_dir [file dirname [file normalize [info script]]]
 create_project -force project_mm "$origin_dir/project_mm" -part xc7k325tffg676-2
 
 add_files [list \
-    "/src/tile.sv" \
+    "/src/core.sv" \
     "/src/identity.v" \
     "/work/shell/my_top.v" \
 ]
-set_property file_type SystemVerilog [get_files "/src/tile.sv"]
+set_property file_type SystemVerilog [get_files "/src/core.sv"]
 
 add_files -fileset constrs_1 "$origin_dir/constraints.xdc"
 set_property PROCESSING_ORDER EARLY [get_files "$origin_dir/constraints.xdc"]

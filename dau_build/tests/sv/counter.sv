@@ -1,4 +1,4 @@
-// Smoke fixture for the cocotb/verilator runner, not a DAU tile.
+// Smoke fixture for the cocotb/verilator runner, not a DAU core.
 //
 // `out` starts at zero from its declaration rather than from a separate
 // initial block: driving it from both an initial and an always_ff makes it

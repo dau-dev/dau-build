@@ -3,13 +3,13 @@
 A scan composition is the one-scan-N-lanes shape: an AXI burst reader scans
 the input window once and fans the row stream to N lanes — each an optional
 partition filter feeding an ordered chain of operator stages into a
-terminal operator tile and a record writer with its own output-address
+terminal operator core and a record writer with its own output-address
 register — behind an AXI-Lite register aperture. The walker
 consumes plain data (module names, config-port bindings, register offsets)
 and emits the plain-Verilog top (Vivado block-design module references
 reject SystemVerilog tops), so it carries no registry and no private
 imports: callers describe their composition as a ``ScanComposition`` and
-optionally hand over the tiles' HDL sources for slang-backed interface
+optionally hand over the cores' HDL sources for slang-backed interface
 validation (``dau_build.sv_contract``) before emission.
 
 A composition may also declare a ``handle_table_capacity``, which replaces
@@ -40,11 +40,11 @@ __all__ = (
     "HANDLE_FAULT_OUT_OF_BOUNDS",
     "HANDLE_FAULT_STALE",
     "MAX_HANDLE_TABLE_CAPACITY",
-    "LaneTile",
+    "CoreInstance",
+    "LaneSink",
     "RegisterLayout",
     "ScanComposition",
     "ScanCompositionError",
-    "TileInstance",
     "generate_scan_composition_sim_sv",
     "generate_scan_composition_top_sv",
     "generate_shell_handle_table_v",
@@ -53,7 +53,7 @@ __all__ = (
 
 # Shell-level job error codes for a refused handle. They sit at the top of the
 # 8-bit space beside the shell's own 0xFE (input length off the row grid) so a
-# tile's codes -- allocated from the bottom -- can never collide with them.
+# core's codes -- allocated from the bottom -- can never collide with them.
 HANDLE_FAULT_BAD_ID = 0xFD  # the id names no slot of this table
 HANDLE_FAULT_STALE = 0xFC  # the slot is freed, or holds a different generation
 HANDLE_FAULT_OUT_OF_BOUNDS = 0xFB  # the job asks for more bytes than the grant
@@ -75,12 +75,12 @@ class ScanCompositionError(ValueError):
     """The composition is not emittable (shape or interface violation)."""
 
 
-class TileInstance(BaseModel):
+class CoreInstance(BaseModel):
     """One HDL module plus its config-port bindings (SystemVerilog literals
     or expressions in terms of the top's signals) and any module-parameter
     overrides (``params``: SystemVerilog PARAMETERs — elaboration-time sizes
     like the membership core's ``KEY_SPACE`` — emitted as a ``#(...)`` override
-    on the instance). A tile with no ``params`` is emitted exactly as before
+    on the instance). A core with no ``params`` is emitted exactly as before
     the channel existed (no ``#(...)``), so every param-less golden stays
     byte-identical."""
 
@@ -92,7 +92,7 @@ class TileInstance(BaseModel):
     config: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
     params: Mapping[str, int] = Field(default_factory=lambda: MappingProxyType({}))
     # a CHAIN STAGE that emits a success close-out per batch (a terminal-shaped
-    # tile fused mid-lane: the as-of join, the grouped aggregator). The lane
+    # core fused mid-lane: the as-of join, the grouped aggregator). The lane
     # status mux allows exactly one close-out, so such a stage's status is
     # DRAINED (accepted immediately) and only its ERRORS are latched into the
     # lane status — the fused-chain protocol. False for the silent-on-success
@@ -111,20 +111,20 @@ class TileInstance(BaseModel):
         return dict(value)
 
 
-class LaneTile(TileInstance):
-    """One lane of the scan: an operator tile (with the name of its trailing
+class LaneSink(CoreInstance):
+    """One lane of the scan: an operator core (with the name of its trailing
     status-counter port) behind an optional row-atomic partition filter and
     an optional ordered ``chain`` of mid-lane operator stages
-    (filter -> map -> ... -> terminal tile). Chain stages speak the same
+    (filter -> map -> ... -> terminal core). Chain stages speak the same
     stream+status contract but need no count port; their statuses feed the
     lane's status mux upstream-first, so a mid-chain close-out (zero rows,
-    torn row, bad config) wins over the terminal tile's.
+    torn row, bad config) wins over the terminal core's.
 
     Status contract (composer's obligation — the walker is generic and
     cannot check module semantics): exactly one success close-out per lane
     per batch. Chain stages and partition filters must be SILENT on
     success (status only when the downstream cannot see the batch end);
-    only the terminal tile closes out every batch — the record writer
+    only the terminal core closes out every batch — the record writer
     consumes exactly one producer status. A close-out-on-success stage
     mid-chain would leave a second status pending after the writer is
     done; registry-aware composers (dau-core ScanCompositionSpec) reject
@@ -132,8 +132,8 @@ class LaneTile(TileInstance):
     pipeline_error_reset resets the lane, clearing any mid-stream stage."""
 
     count_port: str
-    partition: TileInstance | None = None
-    chain: tuple[TileInstance, ...] = ()
+    partition: CoreInstance | None = None
+    chain: tuple[CoreInstance, ...] = ()
 
 
 class RegisterLayout(BaseModel):
@@ -191,7 +191,7 @@ class ScanComposition(BaseModel):
     ``partitioner`` routes each row to exactly one lane — lanes then carry
     no per-lane partition.
 
-    One optional front-stage tile may be placed between the burst reader and
+    One optional front-stage core may be placed between the burst reader and
     the fan-out. ``front_unpack`` widens packed fields; ``front_gearbox``
     turns wide reader beats into whole ``input_row_bytes`` records for a
     shared dispatcher. Absent (``None``), the top emits exactly as before —
@@ -207,10 +207,10 @@ class ScanComposition(BaseModel):
 
     name: str
     module_name: str
-    lanes: tuple[LaneTile, ...]
-    partitioner: TileInstance | None = None
-    front_unpack: TileInstance | None = None
-    front_gearbox: TileInstance | None = None
+    lanes: tuple[LaneSink, ...]
+    partitioner: CoreInstance | None = None
+    front_unpack: CoreInstance | None = None
+    front_gearbox: CoreInstance | None = None
     burst_beats: int = 32
     addr_width: int = 32
     # the memory read datapath width (the width-tier catalog knob): the burst
@@ -227,7 +227,7 @@ class ScanComposition(BaseModel):
     # length gate rejects an odd number of perfectly good records. The
     # register can only enforce power-of-two alignment, so the gate uses
     # the largest power of two dividing this — a length that is on the
-    # word grid but tears a record is the head tile's ERR_STREAM job (the
+    # word grid but tears a record is the head core's ERR_STREAM job (the
     # same division of labour the packed front already uses).
     input_row_bytes: int = 16
     # capability words the identity block advertises (register map 0.2).
@@ -266,7 +266,7 @@ def _largest_power_of_two_divisor_bits(row_bytes: int) -> int:
     ``row_bytes``: the exponent of the largest power of two dividing it
     (16 -> 4, 24 -> 3, 8 -> 3). A 24-byte record is not power-of-two
     sized, so the gate admits every 8-byte-aligned length and leaves a
-    torn record to the head tile's ERR_STREAM path."""
+    torn record to the head core's ERR_STREAM path."""
     if row_bytes <= 0 or row_bytes % 8:
         raise ScanCompositionError(f"input_row_bytes must be a positive multiple of 8, got {row_bytes}")
     return (row_bytes & -row_bytes).bit_length() - 1
@@ -282,7 +282,7 @@ def _length_align_bits(composition: ScanComposition) -> int:
     8-byte words, so a front-unpack composition sits on an 8-byte row grid;
     otherwise the row grid is the largest power of two dividing the declared
     record size, and a length on that grid that still tears a record is the
-    head tile's ERR_STREAM job.
+    head core's ERR_STREAM job.
 
     ONE derivation, read by the shell top and by the sim harness. They used
     to compute it separately, and the sim's copy -- ``3 if front_unpack else
@@ -325,7 +325,7 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     if composition.partitioner is not None:
         for lane in composition.lanes:
             if lane.partition is not None:
-                raise ScanCompositionError(f"lane tile {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
+                raise ScanCompositionError(f"lane sink {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
     # Two width surfaces: DATA_WIDTH (the burst reader's DDR read/stream
     # width, the memory-bandwidth knob) and the FEED width entering the
     # fan-out (the rows/cycle framing the dispatcher accepts). A front unpacker
@@ -430,17 +430,17 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     # rules — structural only, the walker carries no registry): the reserved
     # load_phase binding is legal ONLY on cfg_load at a lane's first chain
     # stage, uniformly across lanes, with nothing between the reader and the
-    # load tiles that would transform the LOAD image
-    def _binds_load(tile: TileInstance | None) -> bool:
-        return tile is not None and tile.config.get("cfg_load") == "load_phase"
+    # load cores that would transform the LOAD image
+    def _binds_load(core: CoreInstance | None) -> bool:
+        return core is not None and core.config.get("cfg_load") == "load_phase"
 
-    def _stray(tile: TileInstance | None, allowed: bool) -> None:
-        if tile is None:
+    def _stray(core: CoreInstance | None, allowed: bool) -> None:
+        if core is None:
             return
-        for key, value in tile.config.items():
+        for key, value in core.config.items():
             if value == "load_phase" and (key != "cfg_load" or not allowed):
                 raise ScanCompositionError(
-                    f"tile {tile.module!r} binds {key!r} to the reserved 'load_phase' symbol; only a lane's first chain stage may bind cfg_load"
+                    f"core {core.module!r} binds {key!r} to the reserved 'load_phase' symbol; only a lane's first chain stage may bind cfg_load"
                 )
 
     _stray(composition.partitioner, allowed=False)
@@ -711,20 +711,20 @@ def _axi_lite_register_process_sv(
     end"""
 
 
-def _tile_config_binds_sv(config) -> str:
-    """Config-port bindings for a tile instance."""
+def _core_config_binds_sv(config) -> str:
+    """Config-port bindings for a core instance."""
     return "".join(f"        .{port}({value}),\n" for port, value in config.items())
 
 
-def _tile_param_override_sv(tile: TileInstance) -> str:
-    """A SystemVerilog module-parameter override for a tile instance
+def _core_param_override_sv(core: CoreInstance) -> str:
+    """A SystemVerilog module-parameter override for a core instance
     (``dau_int32_X #(.KEY_SPACE(6000000)) inst (...)``), inserted between the
-    module name and the instance name. Empty string when the tile carries no
-    params — a param-less tile emits byte-identically to before the
+    module name and the instance name. Empty string when the core carries no
+    params — a param-less core emits byte-identically to before the
     module-parameter channel, so every existing golden stays green."""
-    if not tile.params:
+    if not core.params:
         return ""
-    binds = ",\n".join(f"        .{name}({value})" for name, value in tile.params.items())
+    binds = ",\n".join(f"        .{name}({value})" for name, value in core.params.items())
     return f" #(\n{binds}\n    )"
 
 
@@ -783,10 +783,10 @@ def _lane_front_sv(composition: ScanComposition, i: int, *, clk: str = "s_axi_ac
     assign filt_status_error_{i} = 1'b0;
     assign filt_status_error_code_{i} = 8'd0;
 """
-    return f"""    {lane.partition.module}{_tile_param_override_sv(lane.partition)} partition_{i} (
+    return f"""    {lane.partition.module}{_core_param_override_sv(lane.partition)} partition_{i} (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(lane.partition.config)}        .input_valid(bcast_valid[{i}]),
+{_core_config_binds_sv(lane.partition.config)}        .input_valid(bcast_valid[{i}]),
         .input_ready(bcast_ready[{i}]),
         .input_data(bcast_data),
         .input_last(bcast_last),
@@ -892,9 +892,9 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
     # beneath the latch, the silent stages and the terminal keep the
     # upstream-first mux (the pending-order rule the chain contract defines)
     valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
-    base_valid = f"tile_status_valid_{i}" + (f" || {valids}" if stems else "")
-    error_mux = f"tile_status_error_{i}"
-    code_mux = f"tile_status_error_code_{i}"
+    base_valid = f"sink_status_valid_{i}" + (f" || {valids}" if stems else "")
+    error_mux = f"sink_status_error_{i}"
+    code_mux = f"sink_status_error_code_{i}"
     for stem in reversed(stems):
         error_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_{i} : {error_mux}"
         code_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_code_{i} : {code_mux}"
@@ -908,7 +908,7 @@ def _fused_chain_status_glue_sv(composition: ScanComposition, i: int, draining: 
         lines.append(f"    assign {stem}_status_ready_{i} = unit_status_ready_{i}{gate} && {stem}_status_valid_{i};")
         upstream.append(stem)
     gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
-    lines.append(f"    assign tile_status_ready_{i} = unit_status_ready_{i}{gate};")
+    lines.append(f"    assign sink_status_ready_{i} = unit_status_ready_{i}{gate};")
     return "\n".join(lines) + "\n"
 
 
@@ -916,8 +916,8 @@ def _lane_status_glue_sv(
     composition: ScanComposition, i: int, *, clk: str = "s_axi_aclk", rst: str = "!s_axi_aresetn", start: str = "job_start"
 ) -> str:
     """The per-unit status mux for lane ``i``: a filterless lane forwards
-    the tile status; a filtered lane muxes the partition status (which
-    wins) over the tile status; a chained lane muxes every stage's status
+    the core status; a filtered lane muxes the partition status (which
+    wins) over the core status; a chained lane muxes every stage's status
     upstream-first (the most upstream pending status wins, and each stage's
     ready fires only when nothing upstream of it is pending)."""
     lane = composition.lanes[i]
@@ -927,20 +927,20 @@ def _lane_status_glue_sv(
         # terminal-shaped fused mid-lane (as-of join, grouped aggregator). Its
         # status is drained every batch (accepted the cycle it is raised, so it
         # rearms for the next job) and only its ERRORS latch into the lane
-        # status; the terminal tile remains the lane's one close-out. Silent
+        # status; the terminal core remains the lane's one close-out. Silent
         # stages keep the byte-identical upstream-first mux.
         draining = [j for j, stage in enumerate(lane.chain) if stage.closes_out]
         if draining:
             return _fused_chain_status_glue_sv(composition, i, draining, clk=clk, rst=rst, start=start)
         stems = (["filt"] if front_filtered else []) + [f"chain{j}" for j in range(len(lane.chain))]
         valids = " || ".join(f"{stem}_status_valid_{i}" for stem in stems)
-        error_mux = f"tile_status_error_{i}"
-        code_mux = f"tile_status_error_code_{i}"
+        error_mux = f"sink_status_error_{i}"
+        code_mux = f"sink_status_error_code_{i}"
         for stem in reversed(stems):
             error_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_{i} : {error_mux}"
             code_mux = f"{stem}_status_valid_{i} ? {stem}_status_error_code_{i} : {code_mux}"
         lines = [
-            f"    assign unit_status_valid_{i} = tile_status_valid_{i} || {valids};",
+            f"    assign unit_status_valid_{i} = sink_status_valid_{i} || {valids};",
             f"    assign unit_status_error_{i} = {error_mux};",
             f"    assign unit_status_error_code_{i} = {code_mux};",
         ]
@@ -950,19 +950,19 @@ def _lane_status_glue_sv(
             lines.append(f"    assign {stem}_status_ready_{i} = unit_status_ready_{i}{gate} && {stem}_status_valid_{i};")
             upstream.append(stem)
         gate = "".join(f" && !{name}_status_valid_{i}" for name in upstream)
-        lines.append(f"    assign tile_status_ready_{i} = unit_status_ready_{i}{gate};")
+        lines.append(f"    assign sink_status_ready_{i} = unit_status_ready_{i}{gate};")
         return "\n".join(lines) + "\n"
     if lane.partition is None and composition.partitioner is None:
-        return f"""    assign unit_status_valid_{i} = tile_status_valid_{i};
-    assign unit_status_error_{i} = tile_status_error_{i};
-    assign unit_status_error_code_{i} = tile_status_error_code_{i};
-    assign tile_status_ready_{i} = unit_status_ready_{i};
+        return f"""    assign unit_status_valid_{i} = sink_status_valid_{i};
+    assign unit_status_error_{i} = sink_status_error_{i};
+    assign unit_status_error_code_{i} = sink_status_error_code_{i};
+    assign sink_status_ready_{i} = unit_status_ready_{i};
 """
-    return f"""    assign unit_status_valid_{i} = tile_status_valid_{i} || filt_status_valid_{i};
-    assign unit_status_error_{i} = filt_status_valid_{i} ? filt_status_error_{i} : tile_status_error_{i};
-    assign unit_status_error_code_{i} = filt_status_valid_{i} ? filt_status_error_code_{i} : tile_status_error_code_{i};
+    return f"""    assign unit_status_valid_{i} = sink_status_valid_{i} || filt_status_valid_{i};
+    assign unit_status_error_{i} = filt_status_valid_{i} ? filt_status_error_{i} : sink_status_error_{i};
+    assign unit_status_error_code_{i} = filt_status_valid_{i} ? filt_status_error_code_{i} : sink_status_error_code_{i};
     assign filt_status_ready_{i} = unit_status_ready_{i} && filt_status_valid_{i};
-    assign tile_status_ready_{i} = unit_status_ready_{i} && !filt_status_valid_{i};
+    assign sink_status_ready_{i} = unit_status_ready_{i} && !filt_status_valid_{i};
 """
 
 
@@ -985,7 +985,7 @@ def _lane_chain_wire_decls_sv(composition: ScanComposition, i: int) -> str:
 
 
 def _lane_wire_decls_sv(composition: ScanComposition) -> str:
-    """Per-lane internal wire declarations (lane front, chain stages, tile,
+    """Per-lane internal wire declarations (lane front, chain stages, core,
     status glue, writer, and the latched count register)."""
     addr_width = composition.addr_width
     stream_width = _wide_lane_source(composition)[0] if composition.wide_lane else 64
@@ -998,15 +998,15 @@ def _lane_wire_decls_sv(composition: ScanComposition) -> str:
     wire filt_status_ready_{i};
     wire filt_status_error_{i};
     wire [7:0] filt_status_error_code_{i};
-{_lane_chain_wire_decls_sv(composition, i)}    wire tile_out_valid_{i};
-    wire tile_out_ready_{i};
-    wire [63:0] tile_out_data_{i};
-    wire tile_out_last_{i};
-    wire tile_status_valid_{i};
-    wire tile_status_ready_{i};
-    wire tile_status_error_{i};
-    wire [7:0] tile_status_error_code_{i};
-    wire [63:0] tile_bar_count_{i};
+{_lane_chain_wire_decls_sv(composition, i)}    wire sink_out_valid_{i};
+    wire sink_out_ready_{i};
+    wire [63:0] sink_out_data_{i};
+    wire sink_out_last_{i};
+    wire sink_status_valid_{i};
+    wire sink_status_ready_{i};
+    wire sink_status_error_{i};
+    wire [7:0] sink_status_error_code_{i};
+    wire [63:0] sink_bar_count_{i};
     wire unit_status_valid_{i};
     wire unit_status_ready_{i};
     wire unit_status_error_{i};
@@ -1074,10 +1074,10 @@ def _lane_chain_sv(composition: ScanComposition, i: int, *, clk: str) -> str:
     for j, stage in enumerate(composition.lanes[i].chain):
         upstream = "filt_out" if j == 0 else f"chain{j - 1}_out"
         parts.append(
-            f"""    {stage.module}{_tile_param_override_sv(stage)} chain_{i}_{j} (
+            f"""    {stage.module}{_core_param_override_sv(stage)} chain_{i}_{j} (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(stage.config)}        .input_valid({upstream}_valid_{i}),
+{_core_config_binds_sv(stage.config)}        .input_valid({upstream}_valid_{i}),
         .input_ready({upstream}_ready_{i}),
         .input_data({upstream}_data_{i}),
         .input_last({upstream}_last_{i}),
@@ -1096,8 +1096,8 @@ def _lane_chain_sv(composition: ScanComposition, i: int, *, clk: str) -> str:
     return "".join(parts)
 
 
-def _lane_tile_upstream(composition: ScanComposition, i: int) -> str:
-    """The stream-wire prefix feeding lane ``i``'s terminal tile: the lane
+def _lane_sink_upstream(composition: ScanComposition, i: int) -> str:
+    """The stream-wire prefix feeding lane ``i``'s terminal core: the lane
     front directly, or the last chain stage."""
     chain = composition.lanes[i].chain
     return "filt_out" if not chain else f"chain{len(chain) - 1}_out"
@@ -1105,27 +1105,27 @@ def _lane_tile_upstream(composition: ScanComposition, i: int) -> str:
 
 def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str, start: str = "job_start") -> str:
     """Every lane unit: front (partitioner tap / broadcast tap / partition
-    filter), chain stages, operator tile, status glue, and record writer."""
+    filter), chain stages, operator core, status glue, and record writer."""
     addr_width = composition.addr_width
     burst_beats = composition.burst_beats
     return "\n\n".join(
         f"""{_lane_front_sv(composition, i, clk=clk)}
-{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module}{_tile_param_override_sv(composition.lanes[i])} tile_{i} (
+{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module}{_core_param_override_sv(composition.lanes[i])} sink_{i} (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(composition.lanes[i].config)}        .input_valid({_lane_tile_upstream(composition, i)}_valid_{i}),
-        .input_ready({_lane_tile_upstream(composition, i)}_ready_{i}),
-        .input_data({_lane_tile_upstream(composition, i)}_data_{i}),
-        .input_last({_lane_tile_upstream(composition, i)}_last_{i}),
-        .output_valid(tile_out_valid_{i}),
-        .output_ready(tile_out_ready_{i}),
-        .output_data(tile_out_data_{i}),
-        .output_last(tile_out_last_{i}),
-        .status_valid(tile_status_valid_{i}),
-        .status_ready(tile_status_ready_{i}),
-        .status_error(tile_status_error_{i}),
-        .status_error_code(tile_status_error_code_{i}),
-        .{composition.lanes[i].count_port}(tile_bar_count_{i})
+{_core_config_binds_sv(composition.lanes[i].config)}        .input_valid({_lane_sink_upstream(composition, i)}_valid_{i}),
+        .input_ready({_lane_sink_upstream(composition, i)}_ready_{i}),
+        .input_data({_lane_sink_upstream(composition, i)}_data_{i}),
+        .input_last({_lane_sink_upstream(composition, i)}_last_{i}),
+        .output_valid(sink_out_valid_{i}),
+        .output_ready(sink_out_ready_{i}),
+        .output_data(sink_out_data_{i}),
+        .output_last(sink_out_last_{i}),
+        .status_valid(sink_status_valid_{i}),
+        .status_ready(sink_status_ready_{i}),
+        .status_error(sink_status_error_{i}),
+        .status_error_code(sink_status_error_code_{i}),
+        .{composition.lanes[i].count_port}(sink_bar_count_{i})
     );
 
 {_lane_status_glue_sv(composition, i, clk=clk, rst=writer_rst, start=start)}
@@ -1156,10 +1156,10 @@ def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str, s
         .m_axi_bresp(wr_bresp),
         .m_axi_bvalid(wr_bvalid_{i}),
         .m_axi_bready(wr_bready_{i}),
-        .record_valid(tile_out_valid_{i}),
-        .record_ready(tile_out_ready_{i}),
-        .record_data(tile_out_data_{i}),
-        .record_last(tile_out_last_{i}),
+        .record_valid(sink_out_valid_{i}),
+        .record_ready(sink_out_ready_{i}),
+        .record_data(sink_out_data_{i}),
+        .record_last(sink_out_last_{i}),
         .status_valid(unit_status_valid_{i}),
         .status_ready(unit_status_ready_{i}),
         .status_error(unit_status_error_{i}),
@@ -1198,7 +1198,7 @@ def _fanout_sv(composition: ScanComposition, *, clk: str, stream_prefix: str = "
     ) partitioner (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(composition.partitioner.config)}        .input_valid({stream_prefix}_valid),
+{_core_config_binds_sv(composition.partitioner.config)}        .input_valid({stream_prefix}_valid),
         .input_ready({stream_prefix}_ready),
         .input_data({stream_prefix}_data),
         .input_last({stream_prefix}_last),
@@ -1247,22 +1247,22 @@ def _front_stream_width(composition: ScanComposition) -> int:
 
 
 def _uses_load_phase(composition: ScanComposition) -> bool:
-    """Whether any tile binds a config port to the reserved ``load_phase``
+    """Whether any core binds a config port to the reserved ``load_phase``
     symbol — the two-phase load: the top then declares the LOAD_PHASE
     register that drives those bindings."""
-    tiles: list[TileInstance] = []
+    cores: list[CoreInstance] = []
     if composition.partitioner is not None:
-        tiles.append(composition.partitioner)
+        cores.append(composition.partitioner)
     if composition.front_unpack is not None:
-        tiles.append(composition.front_unpack)
+        cores.append(composition.front_unpack)
     if composition.front_gearbox is not None:
-        tiles.append(composition.front_gearbox)
+        cores.append(composition.front_gearbox)
     for lane in composition.lanes:
-        tiles.append(lane)
+        cores.append(lane)
         if lane.partition is not None:
-            tiles.append(lane.partition)
-        tiles.extend(lane.chain)
-    return any(value == "load_phase" for tile in tiles for value in tile.config.values())
+            cores.append(lane.partition)
+        cores.extend(lane.chain)
+    return any(value == "load_phase" for core in cores for value in core.config.values())
 
 
 def handle_table_index_width(capacity: int) -> int:
@@ -1306,7 +1306,7 @@ def generate_shell_handle_table_v(*, capacity: int, addr_width: int = 32, genera
 // to answer to it faults instead.
 //
 // The host allocator writes this table over the register aperture, and it is
-// the SAME table a future allocator tile would write -- that seam is why the
+// the SAME table a future allocator core would write -- that seam is why the
 // programming port is a port and not a register decode.
 module dau_shell_handle_table #(
     parameter integer CAPACITY = {capacity},
@@ -1575,13 +1575,13 @@ def _front_unpack_instance_sv(composition: ScanComposition, *, clk: str) -> str:
     (valid config, whole rows) never raises it. Empty string when the
     composition carries no front unpacker, so the emission stays
     byte-identical."""
-    tile = composition.front_unpack
-    if tile is None:
+    core = composition.front_unpack
+    if core is None:
         return ""
-    return f"""    {tile.module}{_tile_param_override_sv(tile)} front_unpack (
+    return f"""    {core.module}{_core_param_override_sv(core)} front_unpack (
         .clk({clk}),
         .rst(lane_rst),
-{_tile_config_binds_sv(tile.config)}        .input_valid(scan_valid),
+{_core_config_binds_sv(core.config)}        .input_valid(scan_valid),
         .input_ready(scan_ready),
         .input_data(scan_data),
         .input_last(scan_last),
@@ -1659,18 +1659,18 @@ def _front_gearbox_wire_decls_sv(composition: ScanComposition) -> str:
 
 def _front_gearbox_instance_sv(composition: ScanComposition, *, clk: str) -> str:
     """Wide reader stream in, one whole record per beat out to dispatcher."""
-    tile = composition.front_gearbox
-    if tile is None:
+    core = composition.front_gearbox
+    if core is None:
         return ""
-    extra_params = "".join(f",\n        .{name}({value})" for name, value in tile.params.items())
-    return f"""    {tile.module} #(
+    extra_params = "".join(f",\n        .{name}({value})" for name, value in core.params.items())
+    return f"""    {core.module} #(
         .IN_WIDTH({composition.data_width}),
         .RECORD_WORDS({composition.input_row_bytes // 8}){extra_params}
     ) front_gearbox (
         .clk({clk}),
         .rst(lane_rst),
         .cfg_input_records(input_length_bytes / 32'd{composition.input_row_bytes}),
-{_tile_config_binds_sv(tile.config)}        .input_valid(scan_valid),
+{_core_config_binds_sv(core.config)}        .input_valid(scan_valid),
         .input_ready(scan_ready),
         .input_data(scan_data),
         .input_last(scan_last),
@@ -1730,40 +1730,40 @@ def _writer_error_priority_sv(num_lanes: int, *, error: str, error_code: str) ->
 
 
 def _validate_against_sources(composition: ScanComposition, sources: Sequence[Path | str]) -> None:
-    """Slang-parse every tile of the composition out of ``sources`` and
-    check it against the stream+status contract (``validate_stream_tile``,
-    with the lane tile's ``count_port``; partition filters and the shared
+    """Slang-parse every core of the composition out of ``sources`` and
+    check it against the stream+status contract (``validate_stream_core``,
+    with the lane core's ``count_port``; partition filters and the shared
     partitioner carry none) and its config-binding names (every config key
     must be an input port of the parsed module). Raises
     ``ScanCompositionError`` listing every violation."""
-    from dau_build.sv_contract import StreamContractError, module_ports, validate_stream_tile
+    from dau_build.sv_contract import StreamContractError, module_ports, validate_stream_core
 
-    tiles: list[tuple[TileInstance, str | None]] = []
+    cores: list[tuple[CoreInstance, str | None]] = []
     if composition.front_unpack is not None:
-        tiles.append((composition.front_unpack, None))
+        cores.append((composition.front_unpack, None))
     if composition.front_gearbox is not None:
-        tiles.append((composition.front_gearbox, None))
+        cores.append((composition.front_gearbox, None))
     if composition.partitioner is not None:
-        tiles.append((composition.partitioner, None))
+        cores.append((composition.partitioner, None))
     for lane in composition.lanes:
         if lane.partition is not None:
-            tiles.append((lane.partition, None))
+            cores.append((lane.partition, None))
         for stage in lane.chain:
-            tiles.append((stage, None))
-        tiles.append((lane, lane.count_port))
+            cores.append((stage, None))
+        cores.append((lane, lane.count_port))
 
     violations: list[str] = []
-    for tile, count_port in tiles:
+    for core, count_port in cores:
         try:
-            ports = module_ports(sources, tile.module)
+            ports = module_ports(sources, core.module)
         except StreamContractError as exc:
-            violations.append(f"{tile.module}: {exc}")
+            violations.append(f"{core.module}: {exc}")
             continue
-        violations.extend(f"{tile.module}: {violation}" for violation in validate_stream_tile(sources, tile.module, count_port=count_port))
-        for key in tile.config:
+        violations.extend(f"{core.module}: {violation}" for violation in validate_stream_core(sources, core.module, count_port=count_port))
+        for key in core.config:
             if ports.get(key) != "input":
                 available = ", ".join(sorted(name for name, direction in ports.items() if direction == "input" and name.startswith("cfg_"))) or "none"
-                violations.append(f"{tile.module}: config binding {key!r} is not an input port (cfg ports: {available})")
+                violations.append(f"{core.module}: config binding {key!r} is not an input port (cfg ports: {available})")
     if violations:
         raise ScanCompositionError(
             f"composition {composition.name!r} fails interface validation:\n" + "\n".join(f"  - {violation}" for violation in violations)
@@ -1779,13 +1779,13 @@ def generate_scan_composition_top_sv(
 ) -> str:
     """Walk a ``ScanComposition``: one AXI burst reader scans the input
     window once and fans the row stream to the composition's lanes — each
-    an optional partition filter feeding an operator tile in the binding
+    an optional partition filter feeding an operator core in the binding
     the composition carries, and a record writer with its own
     OUTPUT_ADDRESS register (the lane register block). The lane writers
     share the M_AXI write channels through the write mux; the reader owns
     the read channels.
 
-    When ``sources`` is given, every tile's slang-parsed interface is
+    When ``sources`` is given, every core's slang-parsed interface is
     validated before anything is emitted (contract conformance plus every
     config-binding key checked against the module's real input ports);
     without sources the walker emits from data alone. ``generated_by``
@@ -1915,8 +1915,8 @@ def generate_scan_composition_top_sv(
     lane_reset_items = "\n".join(f"            lane_output_address_{i} <= {addr_width}'d0;" for i in lanes)
     lane_count_clear_items = "\n".join(f"                lane_bar_count_{i} <= 64'd0;" for i in lanes)
     lane_count_latch_items = "\n".join(
-        f"""            if (tile_status_valid_{i} && tile_status_ready_{i}) begin
-                lane_bar_count_{i} <= tile_bar_count_{i};
+        f"""            if (sink_status_valid_{i} && sink_status_ready_{i}) begin
+                lane_bar_count_{i} <= sink_bar_count_{i};
             end"""
         for i in lanes
     )
@@ -2235,7 +2235,7 @@ def generate_scan_composition_sim_sv(
 ) -> str:
     """Walk the same ``ScanComposition`` into its JOB-level simulation
     harness: the pipeline the shell top wires (burst reader -> fan-out ->
-    per-lane optional partition filter -> tile -> record writer -> write
+    per-lane optional partition filter -> core -> record writer -> write
     mux) closed by a backdoor-loaded ``dau_axi_ram_sim`` instead of an
     external M_AXI, and driven by the job-level control surface (start /
     input window / per-lane output addresses / busy / done / first-error
@@ -2243,7 +2243,7 @@ def generate_scan_composition_sim_sv(
     hand-written ``*_noc_sim.sv`` tops.
 
     ``config_inputs`` maps extra top-level input ports (name -> bit width)
-    onto the harness so tile config bindings can reference testbench-driven
+    onto the harness so core config bindings can reference testbench-driven
     signals (the shared partitioner's splitters, typically) instead of
     literals. ``module_name`` defaults to the composition's shell module
     name with a ``_sim`` suffix; ``mem_words``/``read_latency`` parameterize
@@ -2328,8 +2328,8 @@ def generate_scan_composition_sim_sv(
     lane_count_clears = "\n".join(f"            lane_bar_count_{i} <= 64'd0;" for i in lanes)
     lane_count_start_clears = "\n".join(f"                lane_bar_count_{i} <= 64'd0;" for i in lanes)
     lane_count_latches = "\n".join(
-        f"""            if (tile_status_valid_{i} && tile_status_ready_{i}) begin
-                lane_bar_count_{i} <= tile_bar_count_{i};
+        f"""            if (sink_status_valid_{i} && sink_status_ready_{i}) begin
+                lane_bar_count_{i} <= sink_bar_count_{i};
             end"""
         for i in lanes
     )

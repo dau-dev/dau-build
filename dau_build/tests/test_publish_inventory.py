@@ -13,9 +13,9 @@ _CONTRACT = {
     "contract": "dau-capability-contract",
     "name": "example",
     "lanes": [
-        {"tile": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
-        {"tile": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
-        {"tile": {"core": "int32-example-sum", "unit_kind": "aggregation", "opcodes": ["sum", "count"]}},
+        {"sink": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
+        {"sink": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
+        {"sink": {"core": "int32-example-sum", "unit_kind": "aggregation", "opcodes": ["sum", "count"]}},
     ],
 }
 
@@ -27,7 +27,7 @@ def _build_root(tmp_path: Path) -> Path:
     (tmp_path / "utilization_mm.rpt").write_text("util")
     sources = tmp_path / "hdl"
     sources.mkdir()
-    (sources / "dau_int32_private_tile.sv").write_text("module dau_int32_private_tile; endmodule")
+    (sources / "dau_int32_private_core.sv").write_text("module dau_int32_private_core; endmodule")
     return tmp_path
 
 
@@ -36,13 +36,13 @@ def _private_manifest(tmp_path: Path):
     return shell_build_manifest(
         root,
         name="example-shell",
-        source_paths=(root / "hdl" / "dau_int32_private_tile.sv",),
+        source_paths=(root / "hdl" / "dau_int32_private_core.sv",),
         metadata={
             "platform": "example-board",
             "part": "xc7a200tfbg484-2",
             "top_module": "dau_mm_job",
             "spec_hash": "5:deadbeefcafe",
-            "composition_spec": '{"lanes":[{"tile":{"core":"int32-example-sort"}}]}',
+            "composition_spec": '{"lanes":[{"sink":{"core":"int32-example-sort"}}]}',
             "resource_estimate_lut": "3116",
             "wns_ns": 0.161,
             "build_status": "built",
@@ -87,7 +87,7 @@ def test_publish_inventory_withholds_everything_not_whitelisted(tmp_path: Path) 
 
     assert set(published.metadata) <= set(PUBLISHED_METADATA_KEYS)
     for withheld in (
-        "dau_int32_private_tile",  # the core library's table of contents
+        "dau_int32_private_core",  # the core library's table of contents
         "source_repositories",  # local paths + git state of private repos
         "composition_spec",  # the exact datapath recipe
         "spec_hash",
@@ -170,8 +170,8 @@ def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) 
     "contract",
     [
         {"contract": "dau-capability-contract", "lane": _CONTRACT["lanes"]},
-        {"contract": "dau-capability-contract", "lanes": [{"tile": {"core": "int32-example-sum", "unit_kind": "aggregation"}}]},
-        {"contract": "dau-capability-contract", "lanes": [{"tiles": {"core": "int32-example-sum"}}]},
+        {"contract": "dau-capability-contract", "lanes": [{"sink": {"core": "int32-example-sum", "unit_kind": "aggregation"}}]},
+        {"contract": "dau-capability-contract", "lanes": [{"sinks": {"core": "int32-example-sum"}}]},
         {"lanes": _CONTRACT["lanes"]},
     ],
 )

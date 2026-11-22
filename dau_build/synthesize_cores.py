@@ -39,7 +39,7 @@ __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
 _REGISTRY_PREFIX = "/dau-core/"
 _REGISTRY_GROUP = "dau-core"
-# where a package contributing tiles composes them (dau-core's CONTRIB_GROUP)
+# where a package contributing cores composes them (dau-core's CONTRIB_GROUP)
 _CONTRIB_PREFIX = "/dau-core-contrib/"
 _CONTRIB_GROUP = "dau-core-contrib"
 
@@ -75,10 +75,10 @@ def _registered_point(definition, *, part: str | None, clock_period_ns: float | 
     as given where the registry fills declared defaults first.
 
     The clock half is not hypothetical. The registry spells the 150 MHz tier
-    ``6.66667`` on most of the tiles that carry it and ``6.667`` on at least
+    ``6.66667`` on most of the cores that carry it and ``6.667`` on at least
     one, and the XDC this task writes rounds both to ``-period 6.667`` -- one
     physical constraint, two spellings. A run at either spelling therefore
-    found NO point for the tiles carrying the other, and no point is reported
+    found NO point for the cores carrying the other, and no point is reported
     as no comparison, which rolls up as ``envelope_drift=none``. A drift
     report that cannot see drift is worse than no drift report.
 
@@ -87,7 +87,7 @@ def _registered_point(definition, *, part: str | None, clock_period_ns: float | 
     if not definition.resources:
         return None
     # every axis must match. A missing clock is NOT a wildcard: once a
-    # tile carries both an 8 ns and a 10 ns point for the same part and
+    # core carries both an 8 ns and a 10 ns point for the same part and
     # params, a wildcard silently picks whichever was written first and
     # reports drift against the wrong one. (An UNCLOCKED point answers for
     # any clock by the registry's own rule; that is the registry's call.)
@@ -170,7 +170,7 @@ def core_registry():
 
 
 def contributed_registry():
-    """The composed ``/dau-core-contrib`` subregistry: tiles other packages
+    """The composed ``/dau-core-contrib`` subregistry: cores other packages
     contribute through the same hydra searchpath, or None when none are
     installed. Every installed option is composed, discovered rather than
     named, into a detached registry for the reason :func:`core_registry`
@@ -222,8 +222,8 @@ def resolve_core_definition(entry: str):
         raise BuildStepError(f"unknown core {entry!r}")
     if definition.kind.value == "package":
         # a SystemVerilog package is not a synthesizable top; it rides
-        # along as a dependency of the tiles that import it
-        raise BuildStepError(f"core {entry!r} is a package, not a synthesizable top; select the tiles that depend on it")
+        # along as a dependency of the cores that import it
+        raise BuildStepError(f"core {entry!r} is a package, not a synthesizable top; select the cores that depend on it")
     return definition
 
 
@@ -248,7 +248,7 @@ class SynthesizeCoresTask(BuildCallableModel):
     # parameters a core declares as element types -- the registry decides
     # which, so this annotation must not pre-empt it by demanding an int.
     parameters: Mapping[str, Mapping[str, int | str]] = Field(default_factory=lambda: MappingProxyType({}))
-    # per-core clock port when it is not the tile contract's `clk`
+    # per-core clock port when it is not the core contract's `clk`
     # (identity-axil's s_axi_aclk); empty string = combinational, no clock
     # constraint and no timing report
     clock_ports: Mapping[str, str] = Field(default_factory=lambda: MappingProxyType({}))
@@ -376,7 +376,7 @@ class SynthesizeCoresTask(BuildCallableModel):
             selected.setdefault(name, model)
 
         visit(definition.name)
-        # dau-core's own first: a contributed tile depends on them, never the reverse
+        # dau-core's own first: a contributed core depends on them, never the reverse
         ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
         from .render_cores import RENDER_DIRNAME
 

@@ -140,10 +140,10 @@ def test_two_spellings_of_one_clock_still_find_the_measured_point(tmp_path: Path
     """A drift report that cannot see drift is worse than no drift report.
 
     The 150 MHz tier is DERIVED (1000 / 150 = 6.666666666666667), so the
-    registry carries it written both ways -- 6.66667 on most tiles, 6.667 on
+    registry carries it written both ways -- 6.66667 on most cores, 6.667 on
     others -- while the XDC this task writes rounds both to `-period 6.667`.
     One physical constraint. An exact float comparison found no point for the
-    tiles carrying the other spelling, and no point reports no comparison,
+    cores carrying the other spelling, and no point reports no comparison,
     which rolls up as `envelope_drift=none` however far the numbers moved.
     """
     _reports(tmp_path)

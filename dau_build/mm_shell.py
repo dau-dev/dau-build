@@ -249,7 +249,7 @@ def _project_preamble_tcl(request, *, banner: str) -> str:
     reduced to the subset that looks load-bearing."""
     xdma_config = request.platform.host_link.xdma_personality.to_tcl_config()
     generated_paths = tuple(request.output_root / name for name, _ in request.generated_sources)
-    # A tile that `include`s a header needs that header IN THE PROJECT, not
+    # A core that `include`s a header needs that header IN THE PROJECT, not
     # merely on an include path: Vivado refuses with "Given include File
     # ... needs to be addded to the project in order to use it as an RTL
     # module" and the block design fails at create_bd_cell. Headers are not

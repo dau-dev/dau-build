@@ -81,15 +81,15 @@ module dau_mm_bar_noc_job_sim (
     wire filt_status_ready_0;
     wire filt_status_error_0;
     wire [7:0] filt_status_error_code_0;
-    wire tile_out_valid_0;
-    wire tile_out_ready_0;
-    wire [63:0] tile_out_data_0;
-    wire tile_out_last_0;
-    wire tile_status_valid_0;
-    wire tile_status_ready_0;
-    wire tile_status_error_0;
-    wire [7:0] tile_status_error_code_0;
-    wire [63:0] tile_bar_count_0;
+    wire sink_out_valid_0;
+    wire sink_out_ready_0;
+    wire [63:0] sink_out_data_0;
+    wire sink_out_last_0;
+    wire sink_status_valid_0;
+    wire sink_status_ready_0;
+    wire sink_status_error_0;
+    wire [7:0] sink_status_error_code_0;
+    wire [63:0] sink_bar_count_0;
     wire unit_status_valid_0;
     wire unit_status_ready_0;
     wire unit_status_error_0;
@@ -118,15 +118,15 @@ module dau_mm_bar_noc_job_sim (
     wire filt_status_ready_1;
     wire filt_status_error_1;
     wire [7:0] filt_status_error_code_1;
-    wire tile_out_valid_1;
-    wire tile_out_ready_1;
-    wire [63:0] tile_out_data_1;
-    wire tile_out_last_1;
-    wire tile_status_valid_1;
-    wire tile_status_ready_1;
-    wire tile_status_error_1;
-    wire [7:0] tile_status_error_code_1;
-    wire [63:0] tile_bar_count_1;
+    wire sink_out_valid_1;
+    wire sink_out_ready_1;
+    wire [63:0] sink_out_data_1;
+    wire sink_out_last_1;
+    wire sink_status_valid_1;
+    wire sink_status_ready_1;
+    wire sink_status_error_1;
+    wire [7:0] sink_status_error_code_1;
+    wire [63:0] sink_bar_count_1;
     wire unit_status_valid_1;
     wire unit_status_ready_1;
     wire unit_status_error_1;
@@ -155,15 +155,15 @@ module dau_mm_bar_noc_job_sim (
     wire filt_status_ready_2;
     wire filt_status_error_2;
     wire [7:0] filt_status_error_code_2;
-    wire tile_out_valid_2;
-    wire tile_out_ready_2;
-    wire [63:0] tile_out_data_2;
-    wire tile_out_last_2;
-    wire tile_status_valid_2;
-    wire tile_status_ready_2;
-    wire tile_status_error_2;
-    wire [7:0] tile_status_error_code_2;
-    wire [63:0] tile_bar_count_2;
+    wire sink_out_valid_2;
+    wire sink_out_ready_2;
+    wire [63:0] sink_out_data_2;
+    wire sink_out_last_2;
+    wire sink_status_valid_2;
+    wire sink_status_ready_2;
+    wire sink_status_error_2;
+    wire [7:0] sink_status_error_code_2;
+    wire [63:0] sink_bar_count_2;
     wire unit_status_valid_2;
     wire unit_status_ready_2;
     wire unit_status_error_2;
@@ -192,15 +192,15 @@ module dau_mm_bar_noc_job_sim (
     wire filt_status_ready_3;
     wire filt_status_error_3;
     wire [7:0] filt_status_error_code_3;
-    wire tile_out_valid_3;
-    wire tile_out_ready_3;
-    wire [63:0] tile_out_data_3;
-    wire tile_out_last_3;
-    wire tile_status_valid_3;
-    wire tile_status_ready_3;
-    wire tile_status_error_3;
-    wire [7:0] tile_status_error_code_3;
-    wire [63:0] tile_bar_count_3;
+    wire sink_out_valid_3;
+    wire sink_out_ready_3;
+    wire [63:0] sink_out_data_3;
+    wire sink_out_last_3;
+    wire sink_status_valid_3;
+    wire sink_status_ready_3;
+    wire sink_status_error_3;
+    wire [7:0] sink_status_error_code_3;
+    wire [63:0] sink_bar_count_3;
     wire unit_status_valid_3;
     wire unit_status_ready_3;
     wire unit_status_error_3;
@@ -346,7 +346,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_0)
     );
 
-    dau_bar_aggregation tile_0 (
+    dau_bar_aggregation sink_0 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -355,22 +355,22 @@ module dau_mm_bar_noc_job_sim (
         .input_ready(filt_out_ready_0),
         .input_data(filt_out_data_0),
         .input_last(filt_out_last_0),
-        .output_valid(tile_out_valid_0),
-        .output_ready(tile_out_ready_0),
-        .output_data(tile_out_data_0),
-        .output_last(tile_out_last_0),
-        .status_valid(tile_status_valid_0),
-        .status_ready(tile_status_ready_0),
-        .status_error(tile_status_error_0),
-        .status_error_code(tile_status_error_code_0),
-        .bar_count(tile_bar_count_0)
+        .output_valid(sink_out_valid_0),
+        .output_ready(sink_out_ready_0),
+        .output_data(sink_out_data_0),
+        .output_last(sink_out_last_0),
+        .status_valid(sink_status_valid_0),
+        .status_ready(sink_status_ready_0),
+        .status_error(sink_status_error_0),
+        .status_error_code(sink_status_error_code_0),
+        .bar_count(sink_bar_count_0)
     );
 
-    assign unit_status_valid_0 = tile_status_valid_0 || filt_status_valid_0;
-    assign unit_status_error_0 = filt_status_valid_0 ? filt_status_error_0 : tile_status_error_0;
-    assign unit_status_error_code_0 = filt_status_valid_0 ? filt_status_error_code_0 : tile_status_error_code_0;
+    assign unit_status_valid_0 = sink_status_valid_0 || filt_status_valid_0;
+    assign unit_status_error_0 = filt_status_valid_0 ? filt_status_error_0 : sink_status_error_0;
+    assign unit_status_error_code_0 = filt_status_valid_0 ? filt_status_error_code_0 : sink_status_error_code_0;
     assign filt_status_ready_0 = unit_status_ready_0 && filt_status_valid_0;
-    assign tile_status_ready_0 = unit_status_ready_0 && !filt_status_valid_0;
+    assign sink_status_ready_0 = unit_status_ready_0 && !filt_status_valid_0;
 
     dau_axi_record_writer #(
         .ADDR_WIDTH(32),
@@ -399,10 +399,10 @@ module dau_mm_bar_noc_job_sim (
         .m_axi_bresp(wr_bresp),
         .m_axi_bvalid(wr_bvalid_0),
         .m_axi_bready(wr_bready_0),
-        .record_valid(tile_out_valid_0),
-        .record_ready(tile_out_ready_0),
-        .record_data(tile_out_data_0),
-        .record_last(tile_out_last_0),
+        .record_valid(sink_out_valid_0),
+        .record_ready(sink_out_ready_0),
+        .record_data(sink_out_data_0),
+        .record_last(sink_out_last_0),
         .status_valid(unit_status_valid_0),
         .status_ready(unit_status_ready_0),
         .status_error(unit_status_error_0),
@@ -428,7 +428,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_1)
     );
 
-    dau_bar_aggregation tile_1 (
+    dau_bar_aggregation sink_1 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -437,22 +437,22 @@ module dau_mm_bar_noc_job_sim (
         .input_ready(filt_out_ready_1),
         .input_data(filt_out_data_1),
         .input_last(filt_out_last_1),
-        .output_valid(tile_out_valid_1),
-        .output_ready(tile_out_ready_1),
-        .output_data(tile_out_data_1),
-        .output_last(tile_out_last_1),
-        .status_valid(tile_status_valid_1),
-        .status_ready(tile_status_ready_1),
-        .status_error(tile_status_error_1),
-        .status_error_code(tile_status_error_code_1),
-        .bar_count(tile_bar_count_1)
+        .output_valid(sink_out_valid_1),
+        .output_ready(sink_out_ready_1),
+        .output_data(sink_out_data_1),
+        .output_last(sink_out_last_1),
+        .status_valid(sink_status_valid_1),
+        .status_ready(sink_status_ready_1),
+        .status_error(sink_status_error_1),
+        .status_error_code(sink_status_error_code_1),
+        .bar_count(sink_bar_count_1)
     );
 
-    assign unit_status_valid_1 = tile_status_valid_1 || filt_status_valid_1;
-    assign unit_status_error_1 = filt_status_valid_1 ? filt_status_error_1 : tile_status_error_1;
-    assign unit_status_error_code_1 = filt_status_valid_1 ? filt_status_error_code_1 : tile_status_error_code_1;
+    assign unit_status_valid_1 = sink_status_valid_1 || filt_status_valid_1;
+    assign unit_status_error_1 = filt_status_valid_1 ? filt_status_error_1 : sink_status_error_1;
+    assign unit_status_error_code_1 = filt_status_valid_1 ? filt_status_error_code_1 : sink_status_error_code_1;
     assign filt_status_ready_1 = unit_status_ready_1 && filt_status_valid_1;
-    assign tile_status_ready_1 = unit_status_ready_1 && !filt_status_valid_1;
+    assign sink_status_ready_1 = unit_status_ready_1 && !filt_status_valid_1;
 
     dau_axi_record_writer #(
         .ADDR_WIDTH(32),
@@ -481,10 +481,10 @@ module dau_mm_bar_noc_job_sim (
         .m_axi_bresp(wr_bresp),
         .m_axi_bvalid(wr_bvalid_1),
         .m_axi_bready(wr_bready_1),
-        .record_valid(tile_out_valid_1),
-        .record_ready(tile_out_ready_1),
-        .record_data(tile_out_data_1),
-        .record_last(tile_out_last_1),
+        .record_valid(sink_out_valid_1),
+        .record_ready(sink_out_ready_1),
+        .record_data(sink_out_data_1),
+        .record_last(sink_out_last_1),
         .status_valid(unit_status_valid_1),
         .status_ready(unit_status_ready_1),
         .status_error(unit_status_error_1),
@@ -510,7 +510,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_2)
     );
 
-    dau_bar_aggregation tile_2 (
+    dau_bar_aggregation sink_2 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -519,22 +519,22 @@ module dau_mm_bar_noc_job_sim (
         .input_ready(filt_out_ready_2),
         .input_data(filt_out_data_2),
         .input_last(filt_out_last_2),
-        .output_valid(tile_out_valid_2),
-        .output_ready(tile_out_ready_2),
-        .output_data(tile_out_data_2),
-        .output_last(tile_out_last_2),
-        .status_valid(tile_status_valid_2),
-        .status_ready(tile_status_ready_2),
-        .status_error(tile_status_error_2),
-        .status_error_code(tile_status_error_code_2),
-        .bar_count(tile_bar_count_2)
+        .output_valid(sink_out_valid_2),
+        .output_ready(sink_out_ready_2),
+        .output_data(sink_out_data_2),
+        .output_last(sink_out_last_2),
+        .status_valid(sink_status_valid_2),
+        .status_ready(sink_status_ready_2),
+        .status_error(sink_status_error_2),
+        .status_error_code(sink_status_error_code_2),
+        .bar_count(sink_bar_count_2)
     );
 
-    assign unit_status_valid_2 = tile_status_valid_2 || filt_status_valid_2;
-    assign unit_status_error_2 = filt_status_valid_2 ? filt_status_error_2 : tile_status_error_2;
-    assign unit_status_error_code_2 = filt_status_valid_2 ? filt_status_error_code_2 : tile_status_error_code_2;
+    assign unit_status_valid_2 = sink_status_valid_2 || filt_status_valid_2;
+    assign unit_status_error_2 = filt_status_valid_2 ? filt_status_error_2 : sink_status_error_2;
+    assign unit_status_error_code_2 = filt_status_valid_2 ? filt_status_error_code_2 : sink_status_error_code_2;
     assign filt_status_ready_2 = unit_status_ready_2 && filt_status_valid_2;
-    assign tile_status_ready_2 = unit_status_ready_2 && !filt_status_valid_2;
+    assign sink_status_ready_2 = unit_status_ready_2 && !filt_status_valid_2;
 
     dau_axi_record_writer #(
         .ADDR_WIDTH(32),
@@ -563,10 +563,10 @@ module dau_mm_bar_noc_job_sim (
         .m_axi_bresp(wr_bresp),
         .m_axi_bvalid(wr_bvalid_2),
         .m_axi_bready(wr_bready_2),
-        .record_valid(tile_out_valid_2),
-        .record_ready(tile_out_ready_2),
-        .record_data(tile_out_data_2),
-        .record_last(tile_out_last_2),
+        .record_valid(sink_out_valid_2),
+        .record_ready(sink_out_ready_2),
+        .record_data(sink_out_data_2),
+        .record_last(sink_out_last_2),
         .status_valid(unit_status_valid_2),
         .status_ready(unit_status_ready_2),
         .status_error(unit_status_error_2),
@@ -592,7 +592,7 @@ module dau_mm_bar_noc_job_sim (
         .status_error_code(filt_status_error_code_3)
     );
 
-    dau_bar_aggregation tile_3 (
+    dau_bar_aggregation sink_3 (
         .clk(clk),
         .rst(lane_rst),
         .cfg_mode(2'd0),
@@ -601,22 +601,22 @@ module dau_mm_bar_noc_job_sim (
         .input_ready(filt_out_ready_3),
         .input_data(filt_out_data_3),
         .input_last(filt_out_last_3),
-        .output_valid(tile_out_valid_3),
-        .output_ready(tile_out_ready_3),
-        .output_data(tile_out_data_3),
-        .output_last(tile_out_last_3),
-        .status_valid(tile_status_valid_3),
-        .status_ready(tile_status_ready_3),
-        .status_error(tile_status_error_3),
-        .status_error_code(tile_status_error_code_3),
-        .bar_count(tile_bar_count_3)
+        .output_valid(sink_out_valid_3),
+        .output_ready(sink_out_ready_3),
+        .output_data(sink_out_data_3),
+        .output_last(sink_out_last_3),
+        .status_valid(sink_status_valid_3),
+        .status_ready(sink_status_ready_3),
+        .status_error(sink_status_error_3),
+        .status_error_code(sink_status_error_code_3),
+        .bar_count(sink_bar_count_3)
     );
 
-    assign unit_status_valid_3 = tile_status_valid_3 || filt_status_valid_3;
-    assign unit_status_error_3 = filt_status_valid_3 ? filt_status_error_3 : tile_status_error_3;
-    assign unit_status_error_code_3 = filt_status_valid_3 ? filt_status_error_code_3 : tile_status_error_code_3;
+    assign unit_status_valid_3 = sink_status_valid_3 || filt_status_valid_3;
+    assign unit_status_error_3 = filt_status_valid_3 ? filt_status_error_3 : sink_status_error_3;
+    assign unit_status_error_code_3 = filt_status_valid_3 ? filt_status_error_code_3 : sink_status_error_code_3;
     assign filt_status_ready_3 = unit_status_ready_3 && filt_status_valid_3;
-    assign tile_status_ready_3 = unit_status_ready_3 && !filt_status_valid_3;
+    assign sink_status_ready_3 = unit_status_ready_3 && !filt_status_valid_3;
 
     dau_axi_record_writer #(
         .ADDR_WIDTH(32),
@@ -645,10 +645,10 @@ module dau_mm_bar_noc_job_sim (
         .m_axi_bresp(wr_bresp),
         .m_axi_bvalid(wr_bvalid_3),
         .m_axi_bready(wr_bready_3),
-        .record_valid(tile_out_valid_3),
-        .record_ready(tile_out_ready_3),
-        .record_data(tile_out_data_3),
-        .record_last(tile_out_last_3),
+        .record_valid(sink_out_valid_3),
+        .record_ready(sink_out_ready_3),
+        .record_data(sink_out_data_3),
+        .record_last(sink_out_last_3),
         .status_valid(unit_status_valid_3),
         .status_ready(unit_status_ready_3),
         .status_error(unit_status_error_3),
@@ -786,17 +786,17 @@ module dau_mm_bar_noc_job_sim (
                 lane_bar_count_2 <= 64'd0;
                 lane_bar_count_3 <= 64'd0;
             end
-            if (tile_status_valid_0 && tile_status_ready_0) begin
-                lane_bar_count_0 <= tile_bar_count_0;
+            if (sink_status_valid_0 && sink_status_ready_0) begin
+                lane_bar_count_0 <= sink_bar_count_0;
             end
-            if (tile_status_valid_1 && tile_status_ready_1) begin
-                lane_bar_count_1 <= tile_bar_count_1;
+            if (sink_status_valid_1 && sink_status_ready_1) begin
+                lane_bar_count_1 <= sink_bar_count_1;
             end
-            if (tile_status_valid_2 && tile_status_ready_2) begin
-                lane_bar_count_2 <= tile_bar_count_2;
+            if (sink_status_valid_2 && sink_status_ready_2) begin
+                lane_bar_count_2 <= sink_bar_count_2;
             end
-            if (tile_status_valid_3 && tile_status_ready_3) begin
-                lane_bar_count_3 <= tile_bar_count_3;
+            if (sink_status_valid_3 && sink_status_ready_3) begin
+                lane_bar_count_3 <= sink_bar_count_3;
             end
         end
     end
