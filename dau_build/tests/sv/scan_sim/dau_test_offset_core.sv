@@ -1,10 +1,10 @@
 `default_nettype none
 
-// Test-only conforming operator tile for scan-composition benches: a
+// Test-only conforming operator core for scan-composition benches: a
 // stream pass-through that adds cfg_offset to every 64-bit row, counts
 // rows into row_count, and closes out with a success status after the
 // last row is delivered.
-module dau_test_offset_tile (
+module dau_test_offset_core (
     input  wire logic        clk,
     input  wire logic        rst,
     input  wire logic [63:0] cfg_offset,

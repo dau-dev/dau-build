@@ -1,5 +1,5 @@
 """Bench for the generated scan-composition sim harness: a two-lane
-broadcast composition over the test-only offset tile, built against the
+broadcast composition over the test-only offset core, built against the
 behavioral doubles in ``tests/sv/scan_sim`` (dau-build ships no dau-core
 HDL), driven end-to-end through the backdoor RAM."""
 
@@ -12,7 +12,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
 from cocotb_tools.runner import get_runner
 
-from dau_build.scan_composition import LaneTile, ScanComposition, generate_scan_composition_sim_sv
+from dau_build.scan_composition import LaneSink, ScanComposition, generate_scan_composition_sim_sv
 
 _SCAN_SIM_SV = Path(__file__).resolve().parent / "sv" / "scan_sim"
 _MASK64 = (1 << 64) - 1
@@ -28,7 +28,7 @@ def _bench_composition() -> ScanComposition:
         name="offset-bench",
         module_name="dau_offset_bench_job",
         burst_beats=16,
-        lanes=tuple(LaneTile(module="dau_test_offset_tile", config={"cfg_offset": f"64'd{offset}"}, count_port="row_count") for offset in _OFFSETS),
+        lanes=tuple(LaneSink(module="dau_test_offset_core", config={"cfg_offset": f"64'd{offset}"}, count_port="row_count") for offset in _OFFSETS),
     )
 
 
@@ -96,7 +96,7 @@ async def _check_good_job(dut):
 
 @cocotb.test()
 async def broadcast_roundtrip(dut):
-    """One scan fans to both lanes; each lane's tile offsets the rows and
+    """One scan fans to both lanes; each lane's core offsets the rows and
     its writer lands them in the lane's own region."""
     clock = Clock(dut.clk, 10, unit="ns")
     cocotb.start_soon(clock.start(start_high=False))
@@ -129,7 +129,7 @@ def test_scan_composition_sim_bench(tmp_path: Path):
         composition,
         module_name="dau_offset_bench_sim",
         mem_words=4096,
-        sources=(_SCAN_SIM_SV / "dau_test_offset_tile.sv",),
+        sources=(_SCAN_SIM_SV / "dau_test_offset_core.sv",),
     )
     top = tmp_path / "dau_offset_bench_sim.v"
     top.write_text(harness)

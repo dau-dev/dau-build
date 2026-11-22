@@ -109,13 +109,13 @@ def test_synthesis_reads_sources_from_this_build_tree(tmp_path: Path, monkeypatc
     from dau_build.synthesize_cores import SynthesizeCoresTask
 
     package = _RegistryCore("pkg")
-    tile = _RegistryCore("tile", depends=("pkg",))
-    registry = SimpleNamespace(models={"pkg": package, "tile": tile})
+    core = _RegistryCore("core", depends=("pkg",))
+    registry = SimpleNamespace(models={"pkg": package, "core": core})
     monkeypatch.setattr(SynthesizeCoresTask, "_registries", lambda self: (registry,))
 
-    task = SynthesizeCoresTask(cores=("/dau-core/tile",), output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
-    assert task._sources_for(tile, root=tmp_path) == (Path("pkg.sv"), Path("tile.sv"))
-    assert package.rendered_into == tile.rendered_into == tmp_path / RENDER_DIRNAME
+    task = SynthesizeCoresTask(cores=("/dau-core/core",), output_root=tmp_path, part="xc7a200tfbg484-2", clock_period_ns=8.0)
+    assert task._sources_for(core, root=tmp_path) == (Path("pkg.sv"), Path("core.sv"))
+    assert package.rendered_into == core.rendered_into == tmp_path / RENDER_DIRNAME
 
 
 def test_multiple_generated_cores_all_render(tmp_path: Path) -> None:

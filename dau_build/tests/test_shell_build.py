@@ -77,8 +77,8 @@ def test_a_timing_miss_is_its_own_status_whatever_marker_printed_it() -> None:
 
 def test_manifest_packages_outputs_with_digests(tmp_path: Path) -> None:
     output_root = _fake_shell_output(tmp_path)
-    source = tmp_path / "tile.sv"
-    source.write_text("module tile; endmodule\n")
+    source = tmp_path / "core.sv"
+    source.write_text("module core; endmodule\n")
 
     manifest = shell_build_manifest(output_root, name="dpv1-bar-noc", source_paths=(source,), metadata={"wns_ns": 0.459, "build_status": "built"})
 

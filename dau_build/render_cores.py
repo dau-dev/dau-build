@@ -1,6 +1,6 @@
 """Materialize cores whose HDL is rendered rather than checked in.
 
-Most tiles ship a ``.sv`` beside their registry entry. A few cannot: a
+Most cores ship a ``.sv`` beside their registry entry. A few cannot: a
 fixed-point transcendental needs a table of constants that no HDL language
 can compute at elaboration, so its source is a function of its configured
 operating point. Those cores declare a generator in the registry and refuse

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from dau_build.sv_contract import StreamContractError, module_ports, validate_stream_tile
+from dau_build.sv_contract import StreamContractError, module_ports, validate_stream_core
 
 _CONFORMING = """
-module good_tile (
+module good_core (
     input  wire logic        clk,
     input  wire logic        rst,
     input  wire logic [31:0] cfg_thing,
@@ -29,7 +29,7 @@ endmodule
 """
 
 _VECTORED = """
-module fanout_tile #(parameter int N = 4) (
+module fanout_core #(parameter int N = 4) (
     input  wire logic          clk,
     input  wire logic          rst,
     input  wire logic          input_valid,
@@ -49,7 +49,7 @@ endmodule
 """
 
 _BROKEN = """
-module bad_tile (
+module bad_core (
     input  wire logic        clk,
     input  wire logic        rst,
     input  wire logic        input_valid,
@@ -69,32 +69,32 @@ endmodule
 
 
 def _write(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "tile.sv"
+    path = tmp_path / "core.sv"
     path.write_text(text, encoding="utf-8")
     return path
 
 
-def test_conforming_tile_passes(tmp_path: Path) -> None:
+def test_conforming_core_passes(tmp_path: Path) -> None:
     source = _write(tmp_path, _CONFORMING)
-    assert validate_stream_tile([source], "good_tile", count_port="row_count") == []
+    assert validate_stream_core([source], "good_core", count_port="row_count") == []
 
 
-def test_vectored_fanout_tile_passes(tmp_path: Path) -> None:
+def test_vectored_fanout_core_passes(tmp_path: Path) -> None:
     # per-lane vectored ports conform: names and directions are the contract
     source = _write(tmp_path, _VECTORED)
-    assert validate_stream_tile([source], "fanout_tile") == []
+    assert validate_stream_core([source], "fanout_core") == []
 
 
 def test_violations_are_reported_individually(tmp_path: Path) -> None:
     source = _write(tmp_path, _BROKEN)
-    violations = validate_stream_tile([source], "bad_tile")
+    violations = validate_stream_core([source], "bad_core")
     assert "port 'input_ready' must be an output, is 'input'" in violations
     assert "missing output port 'status_error_code'" in violations
 
 
 def test_missing_count_port_is_a_violation(tmp_path: Path) -> None:
     source = _write(tmp_path, _CONFORMING)
-    violations = validate_stream_tile([source], "good_tile", count_port="bar_count")
+    violations = validate_stream_core([source], "good_core", count_port="bar_count")
     assert violations == ["missing declared count port 'bar_count'"]
 
 

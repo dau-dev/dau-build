@@ -59,7 +59,7 @@ PUBLISHED_METADATA_KEYS: tuple[str, ...] = (
 # drops every other artifact by construction.
 
 
-class _ContractTile(BaseModel):
+class _ContractCore(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     core: str = Field(min_length=1)
@@ -70,15 +70,15 @@ class _ContractTile(BaseModel):
 class _ContractLane(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    tile: _ContractTile
+    core: _ContractCore
 
 
 class _PublishedContract(BaseModel):
     """The part of a capability contract the inventory projects: each
-    lane's tile core, unit kind and opcodes. Every key read here is
-    required, so a missing or misspelled ``lanes``, ``tile``, ``core``,
+    lane's core core, unit kind and opcodes. Every key read here is
+    required, so a missing or misspelled ``lanes``, ``core``, ``core``,
     ``unit_kind`` or ``opcodes`` fails instead of publishing an empty
-    inventory. The other contract keys (bitmaps, partition, chain, tile
+    inventory. The other contract keys (bitmaps, partition, chain, core
     config) belong to the contract's own schema, which this public module
     does not restate, so they are not validated here."""
 
@@ -104,9 +104,9 @@ def _capabilities_from_contract(contract: Mapping[str, Any]) -> tuple[Capability
     counts: dict[tuple[str, str], int] = {}
     opcodes: dict[tuple[str, str], tuple[str, ...]] = {}
     for lane in lanes:
-        key = (lane.tile.core, lane.tile.unit_kind or "")
+        key = (lane.sink.core, lane.sink.unit_kind or "")
         counts[key] = counts.get(key, 0) + 1
-        opcodes.setdefault(key, lane.tile.opcodes)
+        opcodes.setdefault(key, lane.sink.opcodes)
     capabilities = []
     for (core, unit_kind), count in sorted(counts.items()):
         metadata: dict[str, Any] = {"count": count}

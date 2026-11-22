@@ -25,7 +25,7 @@ from dau_build.scan_composition import (
     HANDLE_FAULT_BAD_ID,
     HANDLE_FAULT_OUT_OF_BOUNDS,
     HANDLE_FAULT_STALE,
-    LaneTile,
+    LaneSink,
     ScanComposition,
     generate_scan_composition_sim_sv,
 )
@@ -51,7 +51,7 @@ def _bench_composition() -> ScanComposition:
         name="handle-table-bench",
         module_name="dau_handle_table_bench_job",
         burst_beats=16,
-        lanes=(LaneTile(module="dau_test_offset_tile", config={"cfg_offset": f"64'd{_OFFSET}"}, count_port="row_count"),),
+        lanes=(LaneSink(module="dau_test_offset_core", config={"cfg_offset": f"64'd{_OFFSET}"}, count_port="row_count"),),
         handle_table_capacity=_CAPACITY,
     )
 
@@ -262,7 +262,7 @@ def test_handle_table_sim_bench(tmp_path: Path):
         _bench_composition(),
         module_name="dau_handle_table_bench_sim",
         mem_words=4096,
-        sources=(_SCAN_SIM_SV / "dau_test_offset_tile.sv",),
+        sources=(_SCAN_SIM_SV / "dau_test_offset_core.sv",),
     )
     top = tmp_path / "dau_handle_table_bench_sim.v"
     top.write_text(harness)

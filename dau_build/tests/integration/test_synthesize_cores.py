@@ -27,7 +27,7 @@ def test_handoff_writes_ooc_tcl_and_plan(tmp_path: Path) -> None:
     assert "read_verilog -sv" in tcl and tcl.index("read_verilog") < tcl.index("synth_design")
     assert "synth_design -top dau_streaming_top_k -part xc7a200tfbg484-2 -mode out_of_context" in tcl
     assert "-generic K=8" in tcl
-    # a tile that includes a header beside it must synthesize; the flag is
+    # a core that includes a header beside it must synthesize; the flag is
     # harmless when there is no include and removes a wall that would only
     # ever appear on a remote build
     assert "-include_dirs [list {" in tcl and "dau_core/hdl}]" in tcl
@@ -44,7 +44,7 @@ def test_sources_are_dependency_closed_in_order(tmp_path: Path) -> None:
     _task(tmp_path, cores=("/dau-core/stream-aggregation",))(NullContext())
     tcl = (tmp_path / "dau_stream_aggregation.ooc.tcl").read_text()
     reads = [line for line in tcl.splitlines() if line.startswith("read_verilog")]
-    assert len(reads) > 1  # the package + tile deps come along
+    assert len(reads) > 1  # the package + core deps come along
     assert reads.index(next(r for r in reads if "dau_aggregation_pkg.sv" in r)) < reads.index(
         next(r for r in reads if "dau_stream_aggregation.sv" in r)
     )
@@ -139,7 +139,7 @@ def test_part_and_clock_fall_back_to_platform_and_error_without_either(tmp_path:
 _UTIL_RPT = """
 | Slice LUTs*             | 1295 |     0 |          0 |    134600 |  0.96 |
 | Slice Registers         | 1196 |     0 |          0 |    269200 |  0.44 |
-| Block RAM Tile |    0 |     0 |          0 |       365 |  0.00 |
+| Block RAM Core |    0 |     0 |          0 |       365 |  0.00 |
 | DSPs      |    0 |     0 |          0 |       740 |  0.00 |
 """
 
@@ -155,7 +155,7 @@ def test_parse_reports_builds_envelope_and_flags_drift(tmp_path: Path) -> None:
     # this core carries a measurement SURFACE: several points share the part
     # and clock, so the comparison is only meaningful with the params too --
     # ALL of them, since the comparison is an exact coordinate match and the
-    # tile declares its element type beside K (int32 encodes as 32)
+    # core declares its element type beside K (int32 encodes as 32)
     at_k8: dict[str, Any] = {"part": "xc7a200tfbg484-2", "clock_period_ns": 8.0, "params": {"K": 8, "FIELD_WIDTH": 32}}
     report = SynthesizeCoresTask.parse_reports(definition, output_root=tmp_path, **at_k8)
     assert (report.lut, report.ff, report.bram36, report.dsp) == (1295, 1196, 0.0, 0)
@@ -171,7 +171,7 @@ def test_parse_reports_needs_every_axis_to_compare_a_measurement_surface(tmp_pat
     """A point is keyed by (part, clock, params). Drop any axis and there is
     no way to tell which point of a surface the build corresponds to, so the
     comparison is skipped rather than made against whichever point happens
-    to be first — including the clock, which matters the moment a tile
+    to be first — including the clock, which matters the moment a core
     carries the same part and params at two clocks."""
     from dau_core.registry import core
 
@@ -399,10 +399,10 @@ def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
     emits rounds every one of them to `-period 6.667`. One physical clock.
 
     An exact float comparison therefore found NO registered point for the
-    tiles carrying the other spelling, and no point is reported as no
+    cores carrying the other spelling, and no point is reported as no
     comparison — which rolls up as `envelope_drift=none` however far the
     numbers moved. Enumerated from the registry rather than listed here, so
-    a tile added at this tier is covered the day it lands.
+    a core added at this tier is covered the day it lands.
     """
     from dau_core.registry import loaded_cores
 
@@ -424,18 +424,18 @@ def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
 
 
 def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) -> None:
-    """A tile another package contributes resolves under /dau-core-contrib,
+    """A core another package contributes resolves under /dau-core-contrib,
     and its sources close over dau-core's own, which come first."""
     from ccflow import ModelRegistry
     from omegaconf import OmegaConf
 
-    tile = {
+    core = {
         "_target_": "dau_core.cores.CoreDefinition",
         "name": "vendor-alu",
         "kind": "operator",
         "module": "dau_row_map_alu",
         "source": "dau_row_map_alu.sv",
-        "description": "a contributed tile reusing a stock module",
+        "description": "a contributed core reusing a stock module",
         "depends": ["map-alu-pkg"],
         "contract_kind": "row-stream",
         "record_words": 2,
@@ -446,7 +446,7 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
     installed = root.models.get("dau-core-contrib")
     if installed is not None:
         root.remove("dau-core-contrib")
-    root.load_config(OmegaConf.create({"dau-core-contrib": {"vendor-alu": tile}}))
+    root.load_config(OmegaConf.create({"dau-core-contrib": {"vendor-alu": core}}))
     try:
         task = _task(tmp_path, cores=("/dau-core-contrib/vendor-alu",))
         definition = task._resolve_core("/dau-core-contrib/vendor-alu")
