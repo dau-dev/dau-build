@@ -70,13 +70,13 @@ class _ContractCore(BaseModel):
 class _ContractLane(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    core: _ContractCore
+    sink: _ContractCore
 
 
 class _PublishedContract(BaseModel):
     """The part of a capability contract the inventory projects: each
-    lane's core core, unit kind and opcodes. Every key read here is
-    required, so a missing or misspelled ``lanes``, ``core``, ``core``,
+    lane's sink core, unit kind and opcodes. Every key read here is
+    required, so a missing or misspelled ``lanes``, ``sink``, ``core``,
     ``unit_kind`` or ``opcodes`` fails instead of publishing an empty
     inventory. The other contract keys (bitmaps, partition, chain, core
     config) belong to the contract's own schema, which this public module
@@ -93,7 +93,7 @@ def _capabilities_from_contract(contract: Mapping[str, Any]) -> tuple[Capability
     capabilities.
 
     Takes the contract mapping as plain data, so this module needs nothing
-    from the package that produced it. Identical lane tiles collapse into
+    from the package that produced it. Identical lane cores collapse into
     one capability with a count, which is what makes the inventory readable
     for a wide composition.
     """

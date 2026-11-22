@@ -13,9 +13,9 @@ _CONTRACT = {
     "contract": "dau-capability-contract",
     "name": "example",
     "lanes": [
-        {"core": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
-        {"core": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
-        {"core": {"core": "int32-example-sum", "unit_kind": "aggregation", "opcodes": ["sum", "count"]}},
+        {"sink": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
+        {"sink": {"core": "int32-example-sort", "unit_kind": "sort", "opcodes": []}},
+        {"sink": {"core": "int32-example-sum", "unit_kind": "aggregation", "opcodes": ["sum", "count"]}},
     ],
 }
 
@@ -42,7 +42,7 @@ def _private_manifest(tmp_path: Path):
             "part": "xc7a200tfbg484-2",
             "top_module": "dau_mm_job",
             "spec_hash": "5:deadbeefcafe",
-            "composition_spec": '{"lanes":[{"core":{"core":"int32-example-sort"}}]}',
+            "composition_spec": '{"lanes":[{"sink":{"core":"int32-example-sort"}}]}',
             "resource_estimate_lut": "3116",
             "wns_ns": 0.161,
             "build_status": "built",
@@ -170,8 +170,8 @@ def test_a_manifest_without_timing_or_status_is_not_publishable(tmp_path: Path) 
     "contract",
     [
         {"contract": "dau-capability-contract", "lane": _CONTRACT["lanes"]},
-        {"contract": "dau-capability-contract", "lanes": [{"core": {"core": "int32-example-sum", "unit_kind": "aggregation"}}]},
-        {"contract": "dau-capability-contract", "lanes": [{"cores": {"core": "int32-example-sum"}}]},
+        {"contract": "dau-capability-contract", "lanes": [{"sink": {"core": "int32-example-sum", "unit_kind": "aggregation"}}]},
+        {"contract": "dau-capability-contract", "lanes": [{"sinks": {"core": "int32-example-sum"}}]},
         {"lanes": _CONTRACT["lanes"]},
     ],
 )

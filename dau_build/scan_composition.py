@@ -40,11 +40,11 @@ __all__ = (
     "HANDLE_FAULT_OUT_OF_BOUNDS",
     "HANDLE_FAULT_STALE",
     "MAX_HANDLE_TABLE_CAPACITY",
+    "CoreInstance",
     "LaneSink",
     "RegisterLayout",
     "ScanComposition",
     "ScanCompositionError",
-    "CoreInstance",
     "generate_scan_composition_sim_sv",
     "generate_scan_composition_top_sv",
     "generate_shell_handle_table_v",
@@ -325,7 +325,7 @@ def _validate_composition_shape(composition: ScanComposition) -> None:
     if composition.partitioner is not None:
         for lane in composition.lanes:
             if lane.partition is not None:
-                raise ScanCompositionError(f"lane core {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
+                raise ScanCompositionError(f"lane sink {lane.module!r} carries a partition filter but the scan already has a shared partitioner")
     # Two width surfaces: DATA_WIDTH (the burst reader's DDR read/stream
     # width, the memory-bandwidth knob) and the FEED width entering the
     # fan-out (the rows/cycle framing the dispatcher accepts). A front unpacker
@@ -1110,7 +1110,7 @@ def _lane_units_sv(composition: ScanComposition, *, clk: str, writer_rst: str, s
     burst_beats = composition.burst_beats
     return "\n\n".join(
         f"""{_lane_front_sv(composition, i, clk=clk)}
-{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module}{_core_param_override_sv(composition.lanes[i])} core_{i} (
+{_lane_chain_sv(composition, i, clk=clk)}    {composition.lanes[i].module}{_core_param_override_sv(composition.lanes[i])} sink_{i} (
         .clk({clk}),
         .rst(lane_rst),
 {_core_config_binds_sv(composition.lanes[i].config)}        .input_valid({_lane_sink_upstream(composition, i)}_valid_{i}),

@@ -453,7 +453,7 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
         assert [path.name for path in task._sources_for(definition, root=tmp_path)] == ["dau_map_alu_pkg.sv", "dau_row_map_alu.sv"]
         assert "status=handoff-written" in task(NullContext()).message
         with pytest.raises(BuildStepError, match="unknown core"):
-            task._resolve_core("/dau-core-contrib/no-such-tile")
+            task._resolve_core("/dau-core-contrib/no-such-core")
     finally:
         root.remove("dau-core-contrib")
         if installed is not None:
