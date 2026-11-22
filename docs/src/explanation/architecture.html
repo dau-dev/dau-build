@@ -318,7 +318,7 @@ suite runs on every push.</p></li>
 dau-build’s own synthesizable sources. <code class="docutils literal notranslate"><span class="pre">frontend=slang</span></code> uses the yosys-slang
 plugin’s <code class="docutils literal notranslate"><span class="pre">read_slang</span></code>, the same slang engine as the project’s <code class="docutils literal notranslate"><span class="pre">pyslang</span></code>
 parser, for the full SystemVerilog surface (packages, interfaces) the dau-core
-tiles use.</p>
+cores use.</p>
 <p>Only <code class="docutils literal notranslate"><span class="pre">name</span></code> and <code class="docutils literal notranslate"><span class="pre">invocation</span></code> reach the resolved-config view
 (<code class="docutils literal notranslate"><span class="pre">ResolvedBuildConfig</span></code> normalizes the engine to that label), so an engine’s
 own fields never leak into build-config reporting. A third engine (a nextpnr

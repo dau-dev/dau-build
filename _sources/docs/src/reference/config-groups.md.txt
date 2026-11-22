@@ -211,7 +211,7 @@ Configure a plan with `plan.<field>=…`; see
 ## `design`
 
 Declared in the defaults (`optional design: null`) but no option is packaged
-in `dau-build`. It is the reserved group for higher-level design and tile
+in `dau-build`. It is the reserved group for higher-level design and core
 compositions registered by extension packages on the search path.
 
 ## `callable`
