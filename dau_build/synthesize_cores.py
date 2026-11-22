@@ -497,7 +497,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         util = (output_root / f"{definition.module}.util.rpt").read_text()
         lut = _util_value(util, r"Slice LUTs\*?")
         ff = _util_value(util, r"Slice Registers")
-        bram = _util_float(util, r"Block RAM Core")
+        bram = _util_float(util, r"Block RAM Tile")
         dsp = _util_value(util, r"DSPs")
         wns = None
         met = None

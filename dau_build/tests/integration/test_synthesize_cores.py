@@ -139,7 +139,7 @@ def test_part_and_clock_fall_back_to_platform_and_error_without_either(tmp_path:
 _UTIL_RPT = """
 | Slice LUTs*             | 1295 |     0 |          0 |    134600 |  0.96 |
 | Slice Registers         | 1196 |     0 |          0 |    269200 |  0.44 |
-| Block RAM Core |    0 |     0 |          0 |       365 |  0.00 |
+| Block RAM Tile |    0 |     0 |          0 |       365 |  0.00 |
 | DSPs      |    0 |     0 |          0 |       740 |  0.00 |
 """
 
