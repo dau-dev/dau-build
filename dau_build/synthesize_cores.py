@@ -33,14 +33,15 @@ from ccflow import BaseModel, Flow, NullContext
 from pydantic import Field, field_serializer, field_validator
 
 from dau_build.build_steps import BuildCallableModel, BuildStepError, BuildStepResult
-from dau_build.config import CONTRIB_GROUP as _CONTRIB_GROUP
 from dau_build.platforms import PlatformDefinition
 
 __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
 _REGISTRY_PREFIX = "/dau-core/"
 _REGISTRY_GROUP = "dau-core"
-_CONTRIB_PREFIX = f"/{_CONTRIB_GROUP}/"
+# where a package contributing cores composes them (dau-core's CONTRIB_GROUP)
+_CONTRIB_PREFIX = "/dau-core-contrib/"
+_CONTRIB_GROUP = "dau-core-contrib"
 
 
 class CoreEnvelopeReport(BaseModel):
