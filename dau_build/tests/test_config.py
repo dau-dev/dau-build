@@ -215,3 +215,21 @@ def test_a_valid_task_and_a_bare_invocation_still_explain() -> None:
 
     assert main(["task=tasks/build/synthesize-cores", "--explain"]) == 0
     assert main(["--explain"]) == 0
+
+
+def test_a_config_dir_overlay_contributes_cores_to_the_composition(tmp_path) -> None:
+    """A core provider composing alone never sees a ``--config-dir`` given to
+    this CLI, so the cores an overlay contributes are selected here; a
+    composition with no overlay selects none."""
+    from dau_build.config import CONTRIB_GROUP, compose_config
+
+    group = tmp_path / CONTRIB_GROUP
+    group.mkdir()
+    (group / "vendor.yaml").write_text("vendor-alu:\n  module: vendor_alu\n")
+    (group / "other.yaml").write_text("other-alu:\n  module: other_alu\n")
+
+    composed = compose_config(config_dir=str(tmp_path)).cfg
+    assert sorted(composed[CONTRIB_GROUP]) == ["other-alu", "vendor-alu"]
+    assert CONTRIB_GROUP not in compose_config().cfg
+    # an explicit selection is the caller's and is left alone
+    assert sorted(compose_config([f"+{CONTRIB_GROUP}=vendor"], config_dir=str(tmp_path)).cfg[CONTRIB_GROUP]) == ["vendor-alu"]
