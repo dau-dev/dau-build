@@ -26,6 +26,7 @@ def test_task_dispatch_uses_ccflow_callable_models() -> None:
         "tasks/build/synthesize",
         "tasks/build/synthesize-cores",
         "tasks/hardware/hardware-plan",
+        "tasks/sim/bench",
         "tasks/sim/simulate",
         "tasks/spec/build",
         "tasks/spec/inspect",

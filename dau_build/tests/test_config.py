@@ -69,6 +69,7 @@ def _target(model_type: type) -> str:
 
 def _task_overrides(name: str, tmp_path: Path) -> tuple[str, ...]:
     base = {
+        "bench": ("model.core=/dau-core/time-bucket-key", f"model.output_root={tmp_path / 'bench'}"),
         "build-shell-project": (f"model.output_root={tmp_path / 'shell'}",),
         "build-vivado-artifacts": (f"model.work_root={tmp_path / 'work'}",),
         "hardware-plan": ("plan=plans/thunderbolt-release", f"model.work_root={tmp_path / 'work'}"),
