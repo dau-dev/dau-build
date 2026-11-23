@@ -1,0 +1,16 @@
+# @package model
+
+# Run one core's cocotb bench through the registry: resolves a /dau-core/<name>
+# entry from the dau-core lernaplugin, builds its dependency-closed sources with
+# Verilator and runs the bench module the core declares. model.waves=true keeps
+# the waveform, model.testcase=<test> runs a single test function and
+# model.parameters overrides module parameters (otherwise the core's defaults).
+#   dau-build task=tasks/sim/bench model.core=/dau-core/time-bucket-key \
+#     model.output_root=./bench model.waves=true model.testcase=bucket_key_matches_golden
+_target_: dau_build.core_bench.CoreBenchTask
+core: ???
+output_root: ???
+testcase: null
+waves: false
+# null (no overrides): a dict override replaces it
+parameters: null

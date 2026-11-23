@@ -226,6 +226,53 @@ def resolve_core_definition(entry: str):
     return definition
 
 
+def core_registries() -> tuple:
+    contributed = contributed_registry()
+    return (core_registry(),) if contributed is None else (core_registry(), contributed)
+
+
+def core_sources(definition, registries: tuple, *, root: Path) -> tuple[Path, ...]:
+    """Dependency-closed source paths for one core, in registry order.
+
+    Walks the model's own ``depends`` and ``source_path()`` surface rather
+    than calling into the provider package, for the same reason
+    :func:`core_registry` does. Generated cores are read from the directory
+    this build rendered them into under ``root``.
+    """
+    selected: dict[str, object] = {}
+
+    def visit(name: str) -> None:
+        model = next((found for registry in registries if (found := registry.models.get(name)) is not None), None)
+        if model is None:
+            raise BuildStepError(f"core {name!r} is a declared dependency but is not in the registry")
+        for dependency in model.depends:
+            visit(dependency)
+        selected.setdefault(name, model)
+
+    visit(definition.name)
+    # dau-core's own first: a contributed core depends on them, never the reverse
+    ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
+    from .render_cores import RENDER_DIRNAME
+
+    return tuple(model.source_path(rendered_into=root / RENDER_DIRNAME) for model in ordered)
+
+
+def core_generics(definition, overrides: Mapping[str, int | str]) -> dict[str, int]:
+    """The core's declared parameter defaults with ``overrides`` applied;
+    an override of a parameter the core does not declare is rejected."""
+    values = {name: spec.default for name, spec in definition.parameters.items()}
+    unknown = set(overrides) - set(values)
+    if unknown:
+        raise BuildStepError(f"core {definition.name!r} declares no parameter {sorted(unknown)}; declared: {sorted(values) or 'none'}")
+    for name, value in overrides.items():
+        spec = definition.parameters[name]
+        _validate_override(definition.name, name, value, spec)
+        # a tool takes the integer, never the spelling: `-generic
+        # FIELD_WIDTH=int32` is not something vivado can elaborate
+        values[name] = spec.normalize(value)
+    return values
+
+
 def resolve_core_definitions(entries) -> list:
     """Registry definitions for a list of `/dau-core/<name>` entries."""
     return [resolve_core_definition(entry) for entry in entries]
@@ -320,8 +367,7 @@ class SynthesizeCoresTask(BuildCallableModel):
         return core_registry()
 
     def _registries(self) -> tuple:
-        contributed = contributed_registry()
-        return (self._core_registry(),) if contributed is None else (self._core_registry(), contributed)
+        return core_registries()
 
     def _resolve_core(self, entry: str):
         return resolve_core_definition(entry)
@@ -342,44 +388,10 @@ class SynthesizeCoresTask(BuildCallableModel):
         raise BuildStepError("no clock selected; pass model.clock_period_ns=... or compose a platform= group")
 
     def _generics(self, definition) -> dict[str, int]:
-        values = {name: spec.default for name, spec in definition.parameters.items()}
-        overrides = self.parameters.get(definition.name, {})
-        unknown = set(overrides) - set(values)
-        if unknown:
-            raise BuildStepError(f"core {definition.name!r} declares no parameter {sorted(unknown)}; declared: {sorted(values) or 'none'}")
-        for name, value in overrides.items():
-            spec = definition.parameters[name]
-            _validate_override(definition.name, name, value, spec)
-            # a tool takes the integer, never the spelling: `-generic
-            # FIELD_WIDTH=int32` is not something vivado can elaborate
-            values[name] = spec.normalize(value)
-        return values
+        return core_generics(definition, self.parameters.get(definition.name, {}))
 
     def _sources_for(self, definition, *, root: Path) -> tuple[Path, ...]:
-        """Dependency-closed source paths for one core, in registry order.
-
-        Walks the model's own ``depends`` and ``source_path()`` surface
-        rather than calling into the provider package, for the same reason
-        :meth:`_core_registry` does. Generated cores are read from the
-        directory this build rendered them into under ``root``.
-        """
-        registries = self._registries()
-        selected: dict[str, object] = {}
-
-        def visit(name: str) -> None:
-            model = next((found for registry in registries if (found := registry.models.get(name)) is not None), None)
-            if model is None:
-                raise BuildStepError(f"core {name!r} is a declared dependency but is not in the registry")
-            for dependency in model.depends:
-                visit(dependency)
-            selected.setdefault(name, model)
-
-        visit(definition.name)
-        # dau-core's own first: a contributed core depends on them, never the reverse
-        ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
-        from .render_cores import RENDER_DIRNAME
-
-        return tuple(model.source_path(rendered_into=root / RENDER_DIRNAME) for model in ordered)
+        return core_sources(definition, self._registries(), root=root)
 
     def _stage_core(self, definition, *, part: str, clock_ns: float, root: Path) -> Path:
         sources = self._sources_for(definition, root=root)
