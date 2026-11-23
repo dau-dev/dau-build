@@ -49,6 +49,31 @@ and configure the simulator together, for example
 `simulator=simulators/verilator simulator.profile=<name>`. Mode: **run**. The
 simulator models are in the [config group reference](config-groups.md).
 
+### `tasks/sim/bench`: `CoreBenchTask`
+
+Runs one core's cocotb bench through the registry. It resolves `model.core`
+(`/dau-core/<name>`) from the dau-core lernaplugin's config tree and builds the
+core's dependency-closed sources with Verilator, with the core's `module` as
+the top, then runs the cocotb module the core declares as `bench`. A core that
+declares no bench is refused. The bench runs at the core's parameter defaults;
+`model.parameters` overrides module parameters and unknown names are refused.
+Required: `model.core`, `model.output_root`.
+
+- `model.testcase=<test>` runs only that test function of the bench.
+- `model.waves=true` records a waveform, `<output_root>/<core name>/dump.vcd`.
+
+The build tree is `<output_root>/<core name>` and the results XML is
+`<output_root>/<core name>-cocotb-results.xml`. The result line gives the core,
+the test case or `all`, pass and fail counts and, with waves, the waveform
+path. A failing bench or a test case that matches no test fails the task.
+
+```bash
+dau-build task=tasks/sim/bench model.core=/dau-core/time-bucket-key \
+  model.output_root=./bench model.testcase=bucket_key_matches_golden model.waves=true
+```
+
+Mode: **run**.
+
 ### `tasks/build/synthesize`: `SynthesizeTask`
 
 Writes the generated DAU top, manifest and `artlink.manifest/v0` bundle, then

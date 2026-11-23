@@ -151,6 +151,9 @@
     <a href="#tasks-sim-simulate-simulatetask">tasks/sim/simulate: SimulateTask</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
+    <a href="#tasks-sim-bench-corebenchtask">tasks/sim/bench: CoreBenchTask</a>
+  </li>
+  <li class="fd-toc-item" data-depth="1">
     <a href="#tasks-build-synthesize-synthesizetask">tasks/build/synthesize: SynthesizeTask</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
@@ -235,6 +238,29 @@ runs a Verilator testbench (<code class="docutils literal notranslate"><span cla
 and configure the simulator together, for example
 <code class="docutils literal notranslate"><span class="pre">simulator=simulators/verilator</span> <span class="pre">simulator.profile=&lt;name&gt;</span></code>. Mode: <strong>run</strong>. The
 simulator models are in the <a class="reference internal" href="config-groups.html"><span class="std std-doc">config group reference</span></a>.</p>
+</section>
+<section id="tasks-sim-bench-corebenchtask">
+<h3><code class="docutils literal notranslate"><span class="pre">tasks/sim/bench</span></code>: <code class="docutils literal notranslate"><span class="pre">CoreBenchTask</span></code><a class="headerlink" href="#tasks-sim-bench-corebenchtask" title="Link to this heading">¶</a></h3>
+<p>Runs one core’s cocotb bench through the registry. It resolves <code class="docutils literal notranslate"><span class="pre">model.core</span></code>
+(<code class="docutils literal notranslate"><span class="pre">/dau-core/&lt;name&gt;</span></code>) from the dau-core lernaplugin’s config tree and builds the
+core’s dependency-closed sources with Verilator, with the core’s <code class="docutils literal notranslate"><span class="pre">module</span></code> as
+the top, then runs the cocotb module the core declares as <code class="docutils literal notranslate"><span class="pre">bench</span></code>. A core that
+declares no bench is refused. The bench runs at the core’s parameter defaults;
+<code class="docutils literal notranslate"><span class="pre">model.parameters</span></code> overrides module parameters and unknown names are refused.
+Required: <code class="docutils literal notranslate"><span class="pre">model.core</span></code>, <code class="docutils literal notranslate"><span class="pre">model.output_root</span></code>.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">model.testcase=&lt;test&gt;</span></code> runs only that test function of the bench.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model.waves=true</span></code> records a waveform, <code class="docutils literal notranslate"><span class="pre">&lt;output_root&gt;/&lt;core</span> <span class="pre">name&gt;/dump.vcd</span></code>.</p></li>
+</ul>
+<p>The build tree is <code class="docutils literal notranslate"><span class="pre">&lt;output_root&gt;/&lt;core</span> <span class="pre">name&gt;</span></code> and the results XML is
+<code class="docutils literal notranslate"><span class="pre">&lt;output_root&gt;/&lt;core</span> <span class="pre">name&gt;-cocotb-results.xml</span></code>. The result line gives the core,
+the test case or <code class="docutils literal notranslate"><span class="pre">all</span></code>, pass and fail counts and, with waves, the waveform
+path. A failing bench or a test case that matches no test fails the task.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>dau-build<span class="w"> </span><span class="nv">task</span><span class="o">=</span>tasks/sim/bench<span class="w"> </span>model.core<span class="o">=</span>/dau-core/time-bucket-key<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>model.output_root<span class="o">=</span>./bench<span class="w"> </span>model.testcase<span class="o">=</span>bucket_key_matches_golden<span class="w"> </span>model.waves<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+<p>Mode: <strong>run</strong>.</p>
 </section>
 <section id="tasks-build-synthesize-synthesizetask">
 <h3><code class="docutils literal notranslate"><span class="pre">tasks/build/synthesize</span></code>: <code class="docutils literal notranslate"><span class="pre">SynthesizeTask</span></code><a class="headerlink" href="#tasks-build-synthesize-synthesizetask" title="Link to this heading">¶</a></h3>
@@ -390,6 +416,9 @@ the hardware host). The plan models are in the
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#tasks-sim-simulate-simulatetask">tasks/sim/simulate: SimulateTask</a>
+  </li>
+  <li class="fd-toc-item" data-depth="1">
+    <a href="#tasks-sim-bench-corebenchtask">tasks/sim/bench: CoreBenchTask</a>
   </li>
   <li class="fd-toc-item" data-depth="1">
     <a href="#tasks-build-synthesize-synthesizetask">tasks/build/synthesize: SynthesizeTask</a>
