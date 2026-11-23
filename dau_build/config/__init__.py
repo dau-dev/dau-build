@@ -8,14 +8,7 @@ from ccflow import ModelRegistry
 from ccflow.utils.hydra import ConfigLoadResult, cfg_run, load_config as base_load_config
 from omegaconf import OmegaConf
 
-__all__ = ("CONTRIB_GROUP", "compose_config", "load_config", "request_config", "resolve_platform", "run_request_config")
-
-# The group a package or an overlay directory contributes cores under. A core
-# provider composing alone selects every option of it on its own search path,
-# which never includes a ``--config-dir`` given to this CLI. So this
-# composition selects them too, and the provider keeps a group the application
-# already composed.
-CONTRIB_GROUP = "dau-core-contrib"
+__all__ = ("compose_config", "load_config", "request_config", "resolve_platform", "run_request_config")
 
 
 def resolve_platform(name: str, *, config_dir: str | None = None, version_base: str | None = None):
@@ -122,42 +115,12 @@ def _load_base_config(
     version_base: str | None = None,
 ) -> ConfigLoadResult:
     parent_dir = str(Path(__file__).resolve().parent)
-    resolved = list(overrides or ())
-    if not any(override.lstrip("+~").startswith(f"{CONTRIB_GROUP}=") for override in resolved):
-        contributed = _contributed_options(parent_dir, config_dir, version_base)
-        if contributed:
-            resolved.append(f"+{CONTRIB_GROUP}=[{','.join(contributed)}]")
     return base_load_config(
         root_config_dir=parent_dir,
         root_config_name="base",
         config_dir=config_dir or "",  # ccflow treats an empty directory like an absent one
-        overrides=resolved,
+        overrides=list(overrides or ()),
         version_base=version_base,
         basepath=parent_dir,
         debug=False,
     )
-
-
-def _contributed_options(parent_dir: str, config_dir: str | None, version_base: str | None) -> tuple[str, ...]:
-    """The :data:`CONTRIB_GROUP` options on this composition's search path,
-    the ``config_dir`` overlay included. Hydra lists a group's options only
-    once it has a search path, so this initializes it to ask, and leaves the
-    root registry and hydra's global state as it found them."""
-    from hydra import initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-
-    searchpath = [f"hydra.searchpath=[file://{Path(config_dir).resolve()}]"] if config_dir else []
-    instance = GlobalHydra.instance()
-    if instance.is_initialized():
-        return tuple(sorted(instance.config_loader().get_group_options(CONTRIB_GROUP, overrides=searchpath)))
-    # initializing runs the search path plugins, which may load provider
-    # configs into the root registry; asking what is installed must not
-    # change what is loaded
-    root = ModelRegistry.root()
-    before = set(root.models)
-    try:
-        with initialize_config_dir(config_dir=parent_dir, version_base=version_base):
-            return tuple(sorted(GlobalHydra.instance().config_loader().get_group_options(CONTRIB_GROUP, overrides=searchpath)))
-    finally:
-        for added in set(root.models) - before:
-            root.remove(added)
