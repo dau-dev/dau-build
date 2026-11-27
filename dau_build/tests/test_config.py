@@ -218,28 +218,29 @@ def test_a_valid_task_and_a_bare_invocation_still_explain() -> None:
     assert main(["--explain"]) == 0
 
 
-def test_an_overlay_contribution_is_composed_when_something_selects_it(tmp_path) -> None:
-    """A ``--config-dir`` overlay puts its ``dau-core-contrib`` options on the
-    search path, and hydra composes the ones a defaults list or an override
-    names. Nothing here discovers them: a design that needs a contribution
-    says so, and a name that is not on the search path is hydra's error."""
+def test_another_packages_core_group_is_composed_when_something_selects_it(tmp_path) -> None:
+    """A ``--config-dir`` overlay puts another package's ``<group>/cores.yaml``
+    on the search path, and hydra composes the groups a defaults list or an
+    override selects. Nothing here looks for them: a design that needs a
+    group says so, two files can select two groups, and an option that is
+    not on the search path is hydra's error."""
     from hydra.errors import MissingConfigException
 
     from dau_build.config import compose_config
 
-    group = tmp_path / "dau-core-contrib"
-    group.mkdir()
-    (group / "vendor.yaml").write_text("vendor-alu:\n  module: vendor_alu\n")
-    (group / "other.yaml").write_text("other-alu:\n  module: other_alu\n")
+    for vendor in ("vendor", "other"):
+        (tmp_path / vendor).mkdir()
+        (tmp_path / vendor / "cores.yaml").write_text(f"{vendor}-alu:\n  module: {vendor}_alu\n")
     needing = tmp_path / "platform" / "platforms" / "vendor"
     needing.mkdir(parents=True)
-    (needing / "needs-vendor.yaml").write_text(
-        "# @package platform\ndefaults:\n  - /dau-core-contrib@_global_.dau-core-contrib: vendor\n  - _self_\n\nname: x\n"
-    )
+    (needing / "needs-vendor.yaml").write_text("# @package platform\ndefaults:\n  - /vendor@_global_.vendor: cores\n  - _self_\n\nname: x\n")
+    (needing / "needs-absent.yaml").write_text("# @package platform\ndefaults:\n  - /vendor@_global_.vendor: absent\n  - _self_\n\nname: x\n")
     overlay = str(tmp_path)
 
-    assert "dau-core-contrib" not in compose_config(config_dir=overlay).cfg
-    assert sorted(compose_config(["+dau-core-contrib=[vendor,other]"], config_dir=overlay).cfg["dau-core-contrib"]) == ["other-alu", "vendor-alu"]
-    assert sorted(compose_config(["platform=platforms/vendor/needs-vendor"], config_dir=overlay).cfg["dau-core-contrib"]) == ["vendor-alu"]
-    with pytest.raises(MissingConfigException, match="Could not find 'dau-core-contrib/absent'"):
-        compose_config(["+dau-core-contrib=absent"], config_dir=overlay)
+    assert not {"vendor", "other"} & set(compose_config(config_dir=overlay).cfg)
+    by_override = compose_config(["+vendor=cores", "+other=cores"], config_dir=overlay).cfg
+    assert list(by_override["vendor"]) == ["vendor-alu"] and list(by_override["other"]) == ["other-alu"]
+    by_defaults = compose_config(["platform=platforms/vendor/needs-vendor", "+other=cores"], config_dir=overlay).cfg
+    assert list(by_defaults["vendor"]) == ["vendor-alu"] and list(by_defaults["other"]) == ["other-alu"]
+    with pytest.raises(MissingConfigException, match="Could not find 'vendor/absent'"):
+        compose_config(["platform=platforms/vendor/needs-absent"], config_dir=overlay)

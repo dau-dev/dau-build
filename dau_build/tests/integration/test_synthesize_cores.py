@@ -117,6 +117,8 @@ def test_unknown_core_and_bad_path_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(BuildStepError, match="unknown core"):
         _task(tmp_path, cores=("/dau-core/no-such-core",))(NullContext())
     with pytest.raises(BuildStepError, match="registry path"):
+        _task(tmp_path, cores=("/dau-core/nested/thing",))(NullContext())
+    with pytest.raises(BuildStepError, match="the group 'elsewhere', which is not composed"):
         _task(tmp_path, cores=("/elsewhere/thing",))(NullContext())
 
 
@@ -423,9 +425,10 @@ def test_every_150_mhz_point_resolves_at_every_spelling_of_that_clock() -> None:
     assert len(spellings) > 1, f"the registry now spells the 150 MHz tier one way ({spellings}); this guard's premise is gone, and so is its value"
 
 
-def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) -> None:
-    """A core another package contributes resolves under /dau-core-contrib,
-    and its sources close over dau-core's own, which come first."""
+def test_another_packages_core_synthesizes_with_its_dependencies(tmp_path: Path) -> None:
+    """A core another package declares resolves under its own group once
+    that group is composed, and its sources close over dau-core's own,
+    which come first. A group nothing composed is refused by name."""
     from ccflow import ModelRegistry
     from omegaconf import OmegaConf
 
@@ -435,40 +438,25 @@ def test_a_contributed_core_synthesizes_with_its_dependencies(tmp_path: Path) ->
         "kind": "operator",
         "module": "dau_row_map_alu",
         "source": "dau_row_map_alu.sv",
-        "description": "a contributed core reusing a stock module",
+        "description": "another package's core reusing a stock module",
         "depends": ["map-alu-pkg"],
         "contract_kind": "row-stream",
         "record_words": 2,
         "ingest": {"_target_": "dau_core.cores.IngestRate", "rows": 1, "per_cycles": 7},
     }
     root = ModelRegistry.root()
-    # an installed contributor may already have composed the group
-    installed = root.models.get("dau-core-contrib")
-    if installed is not None:
-        root.remove("dau-core-contrib")
-    root.load_config(OmegaConf.create({"dau-core-contrib": {"vendor-alu": core}}))
+    task = _task(tmp_path, cores=("/vendor/vendor-alu",))
+    with pytest.raises(BuildStepError, match=r"the group 'vendor', which is not composed; select it, for example \+vendor=cores"):
+        task._resolve_core("/vendor/vendor-alu")
+
+    root.load_config(OmegaConf.create({"vendor": {"vendor-alu": core}}))
     try:
-        task = _task(tmp_path, cores=("/dau-core-contrib/vendor-alu",))
-        definition = task._resolve_core("/dau-core-contrib/vendor-alu")
+        definition = task._resolve_core("/vendor/vendor-alu")
         assert [path.name for path in task._sources_for(definition, root=tmp_path)] == ["dau_map_alu_pkg.sv", "dau_row_map_alu.sv"]
         assert "status=handoff-written" in task(NullContext()).message
         with pytest.raises(BuildStepError, match="unknown core"):
-            task._resolve_core("/dau-core-contrib/no-such-core")
+            task._resolve_core("/vendor/no-such-core")
+        with pytest.raises(BuildStepError, match="not a /<group>/<name> registry path"):
+            task._resolve_core("vendor-alu")
     finally:
-        root.remove("dau-core-contrib")
-        if installed is not None:
-            root.add("dau-core-contrib", installed)
-
-
-def test_discovering_contributed_cores_leaves_the_root_registry_alone() -> None:
-    """With no contributed group composed, the task composes whatever is
-    installed into a detached registry (or finds nothing), never the root."""
-    from ccflow import ModelRegistry
-
-    from dau_build.synthesize_cores import contributed_registry
-
-    before = set(ModelRegistry.root().models)
-    contributed = contributed_registry()
-    assert set(ModelRegistry.root().models) == before
-    if contributed is not None:
-        assert len(contributed.models) > 0
+        root.remove("vendor")
