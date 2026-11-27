@@ -39,9 +39,6 @@ __all__ = ("CoreEnvelopeReport", "SynthesizeCoresTask")
 
 _REGISTRY_PREFIX = "/dau-core/"
 _REGISTRY_GROUP = "dau-core"
-# where a package contributing cores composes them (dau-core's CONTRIB_GROUP)
-_CONTRIB_PREFIX = "/dau-core-contrib/"
-_CONTRIB_GROUP = "dau-core-contrib"
 
 
 class CoreEnvelopeReport(BaseModel):
@@ -169,55 +166,34 @@ def core_registry():
     return subregistry
 
 
-def contributed_registry():
-    """The composed ``/dau-core-contrib`` subregistry: cores other packages
-    contribute through the same hydra searchpath, or None when none are
-    installed. Every installed option is composed, discovered rather than
-    named, into a detached registry for the reason :func:`core_registry`
-    gives."""
+def other_core_registries() -> tuple:
+    """The composed registry groups besides ``/dau-core``. Another package's
+    cores are an ordinary config group, ``/<group>/<core-name>``, and are
+    here only when a defaults list or an override selected that group:
+    nothing looks for groups that were not composed."""
     from ccflow import ModelRegistry
 
-    subregistry = ModelRegistry.root().models.get(_CONTRIB_GROUP)
-    if subregistry is not None:
-        return subregistry
-    from hydra import initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-    from omegaconf import OmegaConf
-
-    from .config import compose_config
-
-    instance = GlobalHydra.instance()
-    if instance.is_initialized():
-        options = instance.config_loader().get_group_options(_CONTRIB_GROUP)
-    else:
-        with initialize_config_dir(config_dir=str(Path(__file__).resolve().parent / "config"), version_base=None):
-            options = GlobalHydra.instance().config_loader().get_group_options(_CONTRIB_GROUP)
-    if not options:
-        return None
-    group = compose_config([f"+{_CONTRIB_GROUP}=[{','.join(options)}]"]).cfg.get(_CONTRIB_GROUP)
-    scratch = ModelRegistry(name=f"{_CONTRIB_GROUP}-synthesize-cores")
-    scratch.load_config(OmegaConf.create({_CONTRIB_GROUP: group}))
-    return scratch.models.get(_CONTRIB_GROUP)
+    return tuple(group for name, group in ModelRegistry.root().models.items() if name != _REGISTRY_GROUP and hasattr(group, "models"))
 
 
 def lookup_core(name: str):
-    """A core by name: dau-core's own first, then contributed ones."""
-    definition = core_registry().models.get(name)
-    if definition is None and (contributed := contributed_registry()) is not None:
-        definition = contributed.models.get(name)
-    return definition
+    """A core by name: dau-core's own first, then the other composed groups."""
+    return next((found for registry in core_registries() if (found := registry.models.get(name)) is not None), None)
 
 
 def resolve_core_definition(entry: str):
-    if entry.startswith(_CONTRIB_PREFIX):
-        name = entry.removeprefix(_CONTRIB_PREFIX)
-        contributed = contributed_registry()
-        definition = None if contributed is None or "/" in name else contributed.models.get(name)
+    group, _, name = entry.removeprefix("/").partition("/")
+    if not entry.startswith("/") or not group or not name or "/" in name:
+        raise BuildStepError(f"core entry {entry!r} is not a /<group>/<name> registry path such as /dau-core/<name>")
+    if group == _REGISTRY_GROUP:
+        registry = core_registry()
     else:
-        name = entry.removeprefix(_REGISTRY_PREFIX)
-        definition = None if "/" in name else core_registry().models.get(name)
-    if "/" in name:
-        raise BuildStepError(f"core entry {entry!r} is not a /dau-core/<name> or /dau-core-contrib/<name> registry path")
+        from ccflow import ModelRegistry
+
+        registry = ModelRegistry.root().models.get(group)
+        if registry is None:
+            raise BuildStepError(f"core entry {entry!r} names the group {group!r}, which is not composed; select it, for example +{group}=cores")
+    definition = registry.models.get(name)
     if definition is None:
         raise BuildStepError(f"unknown core {entry!r}")
     if definition.kind.value == "package":
@@ -228,8 +204,7 @@ def resolve_core_definition(entry: str):
 
 
 def core_registries() -> tuple:
-    contributed = contributed_registry()
-    return (core_registry(),) if contributed is None else (core_registry(), contributed)
+    return (core_registry(), *other_core_registries())
 
 
 def core_sources(definition, registries: tuple, *, root: Path) -> tuple[Path, ...]:
@@ -251,8 +226,8 @@ def core_sources(definition, registries: tuple, *, root: Path) -> tuple[Path, ..
         selected.setdefault(name, model)
 
     visit(definition.name)
-    # dau-core's own first: a contributed core depends on them, never the reverse
-    ordered = [model for registry in registries for name, model in registry.models.items() if name in selected]
+    # dau-core's own first: another package's core depends on them, never the reverse
+    ordered = [model for registry in registries for name, model in registry.models.items() if selected.get(name) is model]
     from .render_cores import RENDER_DIRNAME
 
     return tuple(model.source_path(rendered_into=root / RENDER_DIRNAME) for model in ordered)
